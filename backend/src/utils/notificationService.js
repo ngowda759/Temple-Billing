@@ -146,7 +146,7 @@ const createBroadcastNotifications = async ({ title, message, category, role }) 
     });
   }
 
-  return Notification.insertMany(docs);
+  return Notification.create(docs);
 };
 
 module.exports = {

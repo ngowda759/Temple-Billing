@@ -831,15 +831,13 @@ const getNotifications = async (req, res) => {
 
         const notifications = await Notification.find({
           $or: filters,
-          category: { $in: ["festival", "event", "pooja", "prasada"] }
         }).sort({ createdAt: -1 });
         return res.status(200).json({ notifications });
       }
 
-      // No email: return only public devotee broadcasts
+      // No email: return public devotee broadcasts
       const notifications = await Notification.find({
         audienceRole: "devotee",
-        category: { $in: ["festival", "event", "pooja", "prasada"] }
       }).sort({ createdAt: -1 });
       return res.status(200).json({ notifications });
     } else {

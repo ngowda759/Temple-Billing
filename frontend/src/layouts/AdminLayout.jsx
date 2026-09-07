@@ -48,7 +48,7 @@ const AdminLayout = ({ children, onLogoutClick }) => {
     <div
       className={`${
         darkMode
-          ? "dark bg-[#0f172a]"
+          ? "dark bg-[#0b1120] text-slate-100"
           : "bg-[#f5f3ef]"
       } min-h-screen transition-colors duration-300`}
     >

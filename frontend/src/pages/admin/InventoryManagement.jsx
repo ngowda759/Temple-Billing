@@ -475,7 +475,7 @@ const InventoryManagement = () => {
  <td className="p-3">{req.status}</td>
  <td className="p-3">
  {req.status === "Pending" && (
- <button onClick={() => handleApproveRequest(req._id)} className="bg-emerald-50 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-white px-3 py-1 rounded text-xs font-bold">Approve</button>
+ <button onClick={() => handleApproveRequest(req._id)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-md text-xs font-bold shadow-xs transition-colors">Approve</button>
  )}
  {req.status === "Approved" && (
  <button onClick={() => handleIssueRequest(req._id)} className="bg-blue-600 text-white px-3 py-1 rounded text-xs font-bold mt-1">Issue</button>
@@ -582,7 +582,7 @@ const InventoryManagement = () => {
  <button onClick={() => {
  setSelectedRepair(r);
  setShowCompleteRepairModal(true);
- }} className="bg-emerald-50 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-white px-3 py-1 rounded text-xs font-bold">Complete</button>
+ }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-md text-xs font-bold shadow-xs transition-colors">Complete</button>
  )}
  </td>
  </tr>

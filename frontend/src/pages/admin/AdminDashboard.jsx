@@ -43,21 +43,21 @@ const isSameDay = (left, right) =>
  left.getDate() === right.getDate();
 
 const cardIcons = {
- revenue: { icon: <FaRupeeSign />, accent: "bg-orange-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-orange-600" },
- daily: { icon: <FaDonate />, accent: "bg-green-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-green-600" },
- pooja: { icon: <MdTempleBuddhist />, accent: "bg-violet-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-violet-600" },
- donation: { icon: <FaDonate />, accent: "bg-amber-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-amber-600" },
- prasadam: { icon: <FaBoxes />, accent: "bg-sky-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-sky-600" },
- room: { icon: <FaBed />, accent: "bg-teal-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-teal-600" },
- pending: { icon: <MdOutlinePayments />, accent: "bg-rose-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-rose-600" },
- devotees: { icon: <FaUsers />, accent: "bg-blue-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-blue-600" },
+  revenue: { icon: <FaRupeeSign />, accent: "bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 border border-orange-200/50 dark:border-orange-800/50" },
+  daily: { icon: <FaDonate />, accent: "bg-green-100 dark:bg-emerald-950/60 text-green-600 dark:text-emerald-400 border border-green-200/50 dark:border-emerald-800/50" },
+  pooja: { icon: <MdTempleBuddhist />, accent: "bg-violet-100 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 border border-violet-200/50 dark:border-violet-800/50" },
+  donation: { icon: <FaDonate />, accent: "bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/50" },
+  prasadam: { icon: <FaBoxes />, accent: "bg-sky-100 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200/50 dark:border-sky-800/50" },
+  room: { icon: <FaBed />, accent: "bg-teal-100 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 border border-teal-200/50 dark:border-teal-800/50" },
+  pending: { icon: <MdOutlinePayments />, accent: "bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-800/50" },
+  devotees: { icon: <FaUsers />, accent: "bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/50" },
 };
 
 const PlaceholderView = ({ title, darkMode }) => (
- <div className={`mt-5 rounded-2xl border p-8 ${darkMode ? "bg-[#1f2937] border-[#334155]" : "bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] border-[#ece8e1] dark:border-slate-700 "}`}>
- <h2 className={`text-3xl font-bold ${darkMode ? "text-slate-100" : "text-[#1d1b19]"}`}>{title}</h2>
- <p className={`mt-2 ${darkMode ? "text-slate-300" : "text-gray-600 dark:text-slate-200 "}`}>Module layout is ready. Connect forms, APIs, and database operations next.</p>
- </div>
+  <div className={`mt-5 rounded-2xl border p-8 ${darkMode ? "bg-slate-800 border-slate-700" : "bg-temple-100 border-[#ece8e1]"}`}>
+    <h2 className={`text-3xl font-bold ${darkMode ? "text-slate-100" : "text-[#1d1b19]"}`}>{title}</h2>
+    <p className={`mt-2 ${darkMode ? "text-slate-300" : "text-gray-600"}`}>Module layout is ready. Connect forms, APIs, and database operations next.</p>
+  </div>
 );
 
 const AdminDashboard = () => {
@@ -293,22 +293,22 @@ const AdminDashboard = () => {
  <DashboardCards cards={dynamicStatCards} />
 
  <div className="mt-4">
- <div className={`rounded-2xl border p-5 ${darkMode ? "bg-[#1f2937] border-[#334155]" : "bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] border-[#ece8e1] dark:border-slate-700 "}`}>
+ <div className={`rounded-2xl border p-5 ${darkMode ? "bg-slate-800 border-slate-700" : "bg-temple-100 border-[#ece8e1]"}`}>
  <h3 className={`text-2xl font-bold ${darkMode ? "text-slate-100" : "text-[#1d1b19]"}`}>Donation Sources</h3>
  {donationSources.length ? (
  <DonationChart sources={donationSources} showCounts />
  ) : (
- <p className="mt-6 text-sm text-gray-500 dark:text-slate-200 ">No donation records yet.</p>
+ <p className="mt-6 text-sm text-gray-500 dark:text-slate-300">No donation records yet.</p>
  )}
  </div>
  </div>
 
  <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mt-5">
- <div className={`rounded-2xl border p-6 ${darkMode ? "bg-[#1f2937] border-[#334155]" : "bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] border-[#ece8e1] dark:border-slate-700 "}`}>
+ <div className={`rounded-2xl border p-6 ${darkMode ? "bg-slate-800 border-slate-700" : "bg-temple-100 border-[#ece8e1]"}`}>
  <h3 className={`text-3xl font-bold mb-4 ${darkMode ? "text-slate-100" : "text-[#1d1b19]"}`}>Recent Bookings</h3>
  <RecentBookings bookings={recentBookings} />
  </div>
- <div className={`rounded-2xl border p-6 ${darkMode ? "bg-[#1f2937] border-[#334155]" : "bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] border-[#ece8e1] dark:border-slate-700 "}`}>
+ <div className={`rounded-2xl border p-6 ${darkMode ? "bg-slate-800 border-slate-700" : "bg-temple-100 border-[#ece8e1]"}`}>
  <h3 className={`text-3xl font-bold mb-4 ${darkMode ? "text-slate-100" : "text-[#1d1b19]"}`}>Low Stock Alerts & Store Requests</h3>
  <LowStock
  items={inventoryItems.map(i => ({ name: i.name, stock: i.currentStock, currentStock: i.currentStock, minimumStock: i.minimumStock, status: i.currentStock <= i.minimumStock ? "Low" : "OK" }))}

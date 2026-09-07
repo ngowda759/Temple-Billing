@@ -360,18 +360,18 @@ const IconCircle = ({ className, icon }) => (
 );
 
 const SidebarItem = ({ label, icon, active, onClick }) => (
- <button
- type="button"
- onClick={onClick}
- className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[18px] font-semibold transition ${
- active
- ? "bg-gradient-to-r from-[#ff9f2f] to-[#ff6a00] text-white shadow-[0_8px_24px_rgba(255,106,0,0.38)]"
- : "text-[#2d1608] border border-white/35 bg-temple-100/35 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-300 backdrop-blur-sm hover:bg-temple-100/60 dark:hover:bg-slate-800 dark:hover:text-amber-300"
- }`}
- >
- <AppIcon name={icon} className="h-[21px] w-[21px]" />
- <span className="text-[18px] leading-none">{label}</span>
- </button>
+  <button
+    type="button"
+    onClick={onClick}
+    className={`group flex w-full items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[17px] font-bold transition-all duration-300 ${
+      active
+        ? "bg-gradient-to-r from-[#ff8c00] to-[#ff5500] text-white shadow-[0_8px_24px_rgba(255,106,0,0.42)] scale-[1.02]"
+        : "text-[#2c1d12] dark:text-slate-200 border border-white/60 dark:border-slate-700/60 bg-white/45 dark:bg-slate-900/45 backdrop-blur-md hover:bg-white/70 dark:hover:bg-slate-800/70 hover:shadow-sm"
+    }`}
+  >
+    <AppIcon name={icon} className={`h-[21px] w-[21px] transition-transform duration-200 group-hover:scale-110 ${active ? "text-white" : "text-[#2c1d12] dark:text-slate-200"}`} />
+    <span className="text-[17px] leading-tight font-bold">{label}</span>
+  </button>
 );
 
 const loadRazorpayScript = () =>
@@ -394,6 +394,10 @@ const DevoteeDashboard = () => {
  const [bookingsData, setBookingsData] = useState([]);
  const [donationsData, setDonationsData] = useState([]);
  const [notificationsData, setNotificationsData] = useState([]);
+ const [notificationTab, setNotificationTab] = useState("all");
+ const [notificationCategory, setNotificationCategory] = useState("all");
+ const [notificationSearch, setNotificationSearch] = useState("");
+ const [selectedNotificationDetail, setSelectedNotificationDetail] = useState(null);
  const [eventsData, setEventsData] = useState([]);
  const [prasadamOrders, setPrasadamOrders] = useState([]);
  const [viewingReceiptData, setViewingReceiptData] = useState(null);
@@ -3359,7 +3363,7 @@ const DevoteeDashboard = () => {
  </div>
 
  <div>
- <label className="block text-sm font-semibold text-[#5d5d5d]">Notes</label>
+ <label className="block text-sm font-semibold text-[#5d5d5d] dark:text-slate-300">Notes</label>
  <textarea
  rows={4}
  value={donationNotes}
@@ -3386,7 +3390,7 @@ const DevoteeDashboard = () => {
  setActivePage("Receipts");
  setHistoryTab("Donations");
  }}
- className="mt-2 w-full text-center text-sm font-semibold text-[#b46a13] hover:underline bg-transparent border-0"
+ className="mt-2 w-full text-center text-sm font-semibold text-[#b46a13] dark:text-amber-400 hover:underline bg-transparent border-0"
  >
  View Donation History
  </button>
@@ -3395,18 +3399,18 @@ const DevoteeDashboard = () => {
 
  <div className={glassSection}>
  <div className="flex items-center justify-between">
- <h3 className="text-xl font-semibold">Donation History</h3>
+ <h3 className="text-xl font-semibold dark:text-slate-100">Donation History</h3>
  {donationsData.length > 5 && (
  <button
  type="button"
  onClick={() => setShowAllDonations(!showAllDonations)}
- className="rounded-xl bg-[#1b7f77]/10 hover:bg-[#1b7f77]/20 text-[#1b7f77] px-3 py-1.5 text-xs font-semibold transition"
+ className="rounded-xl bg-[#1b7f77]/10 hover:bg-[#1b7f77]/20 dark:bg-teal-900/30 dark:hover:bg-teal-900/50 text-[#1b7f77] dark:text-teal-400 px-3 py-1.5 text-xs font-semibold transition"
  >
  {showAllDonations ? "Show Recent 5" : "View All"}
  </button>
  )}
  </div>
- <p className="mt-2 text-sm text-[#5d5d5d]">Your latest donations are stored here and used in payment history and receipts.</p>
+ <p className="mt-2 text-sm text-[#5d5d5d] dark:text-slate-400">Your latest donations are stored here and used in payment history and receipts.</p>
  <div className="mt-6 space-y-3">
  {(() => {
  const filtered = donationView === "Festival"
@@ -3418,15 +3422,15 @@ const DevoteeDashboard = () => {
  const displayed = showAllDonations ? filtered : filtered.slice(0, 5);
 
  return displayed.map((item) => (
- <div key={`${item._id || Math.random()}`} className="rounded-[26px] border border-white/40 bg-temple-100/55 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 p-4 shadow-sm backdrop-blur-sm">
+ <div key={`${item._id || Math.random()}`} className="rounded-[26px] border border-white/40 dark:border-slate-800 bg-temple-100/55 dark:bg-slate-900/90 dark:text-slate-200 p-4 shadow-sm backdrop-blur-sm transition-colors">
  <div className="flex flex-wrap items-center justify-between gap-4">
  <div>
- <p className="font-semibold text-[#1f1f1f]">{item.category || item.type || (item.eventTitle ? `Donation - ${item.eventTitle}` : "Donation")}</p>
- <p className="text-sm text-[#5d5d5d]">{item.eventTitle ? `${item.eventTitle} • ${item.date || new Date(item.createdAt).toLocaleDateString()}` : item.date || new Date(item.createdAt).toLocaleDateString()}</p>
+ <p className="font-semibold text-[#1f1f1f] dark:text-slate-100">{item.category || item.type || (item.eventTitle ? `Donation - ${item.eventTitle}` : "Donation")}</p>
+ <p className="text-sm text-[#5d5d5d] dark:text-slate-400">{item.eventTitle ? `${item.eventTitle} • ${item.date || new Date(item.createdAt).toLocaleDateString()}` : item.date || new Date(item.createdAt).toLocaleDateString()}</p>
  </div>
- <p className="text-lg font-bold text-[#1b7f77]">{formatCurrency(item.amount)}</p>
+ <p className="text-lg font-bold text-[#1b7f77] dark:text-teal-400">{formatCurrency(item.amount)}</p>
  </div>
- <p className="mt-2 text-sm text-[#6b6b6b]">{item.paymentMethod || "UPI"} • {item.status || "Completed"}</p>
+ <p className="mt-2 text-sm text-[#6b6b6b] dark:text-slate-400">{item.paymentMethod || "UPI"} • {item.status || "Completed"}</p>
  </div>
  ));
  })()}
@@ -3506,12 +3510,12 @@ const DevoteeDashboard = () => {
  <tbody>
  {donationRows.length > 0 ? (
  donationRows.map((row) => (
- <tr key={`Donation-${row._id || Math.random()}`} className="border-t border-[#f0f0f0]">
- <td className="px-5 py-3 font-semibold">{row.transaction}</td>
- <td className="px-5 py-3 text-sm text-[#3f3f3f]">{row.date}</td>
- <td className="px-5 py-3 font-semibold">{formatCurrency(row.amount)}</td>
- <td className="px-5 py-3 text-[1.15rem] text-[#af6317]">
- <button type="button" onClick={() => handleReceiptDownload(donationsData.find((x) => x._id === row._id) || row)} className="font-semibold">
+ <tr key={`Donation-${row._id || Math.random()}`} className="border-t border-[#f0f0f0] dark:border-slate-800">
+ <td className="px-5 py-3 font-semibold dark:text-slate-100">{row.transaction}</td>
+ <td className="px-5 py-3 text-sm text-[#3f3f3f] dark:text-slate-300">{row.date}</td>
+ <td className="px-5 py-3 font-semibold dark:text-teal-400">{formatCurrency(row.amount)}</td>
+ <td className="px-5 py-3 text-[1.15rem] text-[#af6317] dark:text-amber-400">
+ <button type="button" onClick={() => handleReceiptDownload(donationsData.find((x) => x._id === row._id) || row)} className="font-semibold hover:underline">
  Download
  </button>
  </td>
@@ -3519,7 +3523,7 @@ const DevoteeDashboard = () => {
  ))
  ) : (
  <tr>
- <td colSpan="4" className="px-5 py-6 text-center text-[#5d5d5d]">
+ <td colSpan="4" className="px-5 py-6 text-center text-[#5d5d5d] dark:text-slate-400">
  No donations available.
  </td>
  </tr>
@@ -3937,7 +3941,7 @@ const DevoteeDashboard = () => {
  const handleMarkAllRead = async () => {
  const unread = notificationsData.filter((n) => !n.read && n._id);
  if (unread.length === 0) return;
- try {
+try {
  await Promise.all(unread.map((n) => markNotificationAsRead(n._id)));
  setNotificationsData((prev) =>
  prev.map((n) => ({ ...n, read: true, readAt: new Date() }))
@@ -3949,104 +3953,265 @@ const DevoteeDashboard = () => {
 
  const renderNotifications = () => {
  const unread = notificationsData.filter((n) => !n.read);
+ const userEmail = user?.email || profileData?.email || "devotee";
 
- const getNotificationStyle = (title) => {
+ const getNotificationCategory = (title, category) => {
+ if (category) return String(category).toLowerCase();
  const t = String(title || "").toLowerCase();
- if (t.includes("booking") || t.includes("pooja")) {
+ if (t.includes("booking") || t.includes("pooja")) return "bookings";
+ if (t.includes("donation") || t.includes("received") || t.includes("payment")) return "donations";
+ if (t.includes("event") || t.includes("festival") || t.includes("utsav")) return "events";
+ if (t.includes("feedback") || t.includes("reply") || t.includes("support")) return "support";
+ return "announcements";
+ };
+
+ const getNotificationStyle = (title, category) => {
+ const cat = getNotificationCategory(title, category);
+ if (cat === "bookings") {
  return {
  icon: "calendar",
- color: "bg-[#eaf1ff] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#3468db]",
+ badge: "Booking",
+ color: "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50",
+ badgeColor: "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300",
  };
  }
- if (t.includes("donation") || t.includes("received") || t.includes("payment")) {
+ if (cat === "donations") {
  return {
  icon: "heart",
- color: "bg-[#edf7ee] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#16853f]",
+ badge: "Donation",
+ color: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50",
+ badgeColor: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300",
  };
  }
- if (t.includes("feedback") || t.includes("reply") || t.includes("support")) {
+ if (cat === "events") {
+ return {
+ icon: "temple",
+ badge: "Festival / Event",
+ color: "bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/50",
+ badgeColor: "bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300",
+ };
+ }
+ if (cat === "support") {
  return {
  icon: "gear",
- color: "bg-[#fcf0e4] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#cf7c2b]",
+ badge: "Support",
+ color: "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50",
+ badgeColor: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300",
  };
  }
  return {
  icon: "bell",
- color: "bg-[#f1f1f1] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#6b6b6b]",
+ badge: "Notice",
+ color: "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700",
+ badgeColor: "bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-200",
  };
+ };
+
+ const filteredList = notificationsData
+ .filter((item) => {
+ if (notificationTab === "unread" && item.read) return false;
+ if (notificationCategory !== "all") {
+ const cat = getNotificationCategory(item.title, item.category);
+ if (cat !== notificationCategory) return false;
+ }
+ if (notificationSearch.trim()) {
+ const q = notificationSearch.toLowerCase();
+ const matchTitle = (item.title || "").toLowerCase().includes(q);
+ const matchMessage = (item.message || "").toLowerCase().includes(q);
+ if (!matchTitle && !matchMessage) return false;
+ }
+ return true;
+ })
+ .sort((a, b) => {
+ const dateA = new Date(a.date || a.createdAt || 0).getTime();
+ const dateB = new Date(b.date || b.createdAt || 0).getTime();
+ return dateB - dateA;
+ });
+
+ const handleItemClick = (item) => {
+ setSelectedNotificationDetail(item);
+ if (!item.read && item._id) {
+ markNotificationAsRead(item._id)
+ .then(() => {
+ setNotificationsData((prev) =>
+ prev.map((n) => (n._id === item._id ? { ...n, read: true, readAt: new Date() } : n))
+ );
+ })
+ .catch((err) => console.error("Failed to mark notification as read:", err));
+ }
  };
 
  return (
  <div className="space-y-6">
  <div className={`${glassCard}`}>
- <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#f3ebde]/80 pb-4">
+ {/* Header Banner */}
+ <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 dark:border-slate-700 pb-5">
  <div>
- <h2 className="text-[2.2rem] font-bold text-[#2d1b08] dark:text-slate-100">Notifications</h2>
- <p className="mt-1 text-sm text-[#665e55] dark:text-slate-400">Stay updated with your temple activities, bookings, and donations.</p>
+ <div className="flex items-center gap-3">
+ <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-md">
+ <FaBell className="text-xl" />
+ </div>
+ <div>
+ <h2 className="text-[2.2rem] font-bold text-slate-900 dark:text-slate-100 leading-tight">
+ Notifications & Email Inbox
+ </h2>
+ <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+ All notifications are also automatically dispatched to <strong>{userEmail}</strong>
+ </p>
+ </div>
+ </div>
  </div>
  {unread.length > 0 && (
  <button
  type="button"
  onClick={handleMarkAllRead}
- className="rounded-full bg-[#1b7f77]/10 px-4 py-2 text-sm font-semibold text-[#1b7f77] transition hover:bg-[#1b7f77] hover:text-white"
+ className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 px-4 py-2 text-sm font-bold text-amber-800 dark:text-amber-300 transition hover:bg-amber-100 dark:hover:bg-amber-900/50 shadow-xs"
  >
- Mark all as read
+ ✓ Mark all as read ({unread.length})
  </button>
  )}
  </div>
 
- <div className="mt-6 space-y-4">
- {notificationsData.length > 0 ? (
- notificationsData.map((item) => {
- const style = getNotificationStyle(item.title);
+ {/* Inbox Controls & Filters */}
+ <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+ {/* View Tabs */}
+ <div className="flex items-center gap-2">
+ <button
+ type="button"
+ onClick={() => setNotificationTab("all")}
+ className={`rounded-xl px-4 py-2 text-sm font-bold transition ${
+ notificationTab === "all"
+ ? "bg-amber-600 text-white shadow-md"
+ : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+ }`}
+ >
+ All Messages ({notificationsData.length})
+ </button>
+ <button
+ type="button"
+ onClick={() => setNotificationTab("unread")}
+ className={`relative rounded-xl px-4 py-2 text-sm font-bold transition ${
+ notificationTab === "unread"
+ ? "bg-amber-600 text-white shadow-md"
+ : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+ }`}
+ >
+ Unread
+ {unread.length > 0 && (
+ <span className="ml-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+ {unread.length}
+ </span>
+ )}
+ </button>
+ </div>
+
+ {/* Search Input */}
+ <div className="flex items-center gap-3">
+ <div className="relative w-full sm:w-64">
+ <input
+ type="text"
+ value={notificationSearch}
+ onChange={(e) => setNotificationSearch(e.target.value)}
+ placeholder="Search notifications..."
+ className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3.5 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+ />
+ {notificationSearch && (
+ <button
+ onClick={() => setNotificationSearch("")}
+ className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-slate-600"
+ >
+ ✕
+ </button>
+ )}
+ </div>
+ </div>
+ </div>
+
+ {/* Category Pills */}
+ <div className="mt-3 flex flex-wrap gap-2">
+ {[
+ { id: "all", label: "All Categories" },
+ { id: "bookings", label: "Bookings" },
+ { id: "donations", label: "Donations" },
+ { id: "events", label: "Festivals & Events" },
+ { id: "support", label: "Support & Queries" },
+ ].map((cat) => (
+ <button
+ key={cat.id}
+ onClick={() => setNotificationCategory(cat.id)}
+ className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
+ notificationCategory === cat.id
+ ? "bg-slate-800 dark:bg-slate-700 text-white shadow-xs"
+ : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700"
+ }`}
+ >
+ {cat.label}
+ </button>
+ ))}
+ </div>
+
+ {/* Notification Items List */}
+ <div className="mt-6 space-y-3">
+ {filteredList.length > 0 ? (
+ filteredList.map((item) => {
+ const style = getNotificationStyle(item.title, item.category);
  return (
  <div
  key={`${item.title}-${item.date}-${item._id || Math.random()}`}
- onClick={() => {
- if (!item.read && item._id) {
- markNotificationAsRead(item._id)
- .then(() => {
- setNotificationsData((prev) =>
- prev.map((n) =>
- n._id === item._id ? { ...n, read: true, readAt: new Date() } : n
- )
- );
- })
- .catch((err) => console.error("Failed to mark notification as read:", err));
- }
- }}
+ onClick={() => handleItemClick(item)}
  className={`group relative flex items-start gap-4 rounded-2xl border p-5 transition-all duration-300 cursor-pointer ${
  !item.read
- ? "border-[#fecdd3] dark:border-rose-900/50 bg-[#fff0f3] dark:bg-rose-950/25 shadow-[0_8px_20px_rgba(244,63,94,0.06)]"
- : "border-[#e5e7eb] dark:border-slate-800 bg-white/70 dark:bg-slate-800/60 hover:bg-[#fafafa] dark:hover:bg-slate-800"
+ ? "border-amber-400/80 dark:border-amber-500/40 bg-amber-50/40 dark:bg-amber-950/20 shadow-md ring-1 ring-amber-400/20"
+ : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800"
  }`}
  >
- <div className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl shadow-sm ${style.color}`}>
+ <div className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl shadow-xs ${style.color}`}>
  <AppIcon name={style.icon} className="h-5 w-5" />
  </div>
 
- <div className="flex-1">
+ <div className="flex-1 min-w-0">
  <div className="flex flex-wrap items-center justify-between gap-2">
- <p className={`text-base font-bold transition group-hover:text-[#bc6c10] dark:group-hover:text-amber-400 ${!item.read ? "text-[#3f2711] dark:text-slate-100" : "text-[#5c564f] dark:text-slate-300"}`}>
- {item.title}
- </p>
- <span className="text-xs text-[#8c857b] font-medium">{item.date}</span>
+ <div className="flex items-center gap-2 flex-wrap">
+ <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${style.badgeColor}`}>
+ {style.badge}
+ </span>
+ <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+ ✉️ Sent to Email
+ </span>
  </div>
+ <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+ {item.date || "Recent"}
+ </span>
+ </div>
+
+ <h3 className={`mt-1.5 text-base font-bold transition group-hover:text-amber-600 dark:group-hover:text-amber-400 ${
+ !item.read ? "text-slate-900 dark:text-slate-100" : "text-slate-800 dark:text-slate-200"
+ }`}>
+ {item.title}
+ </h3>
+
  {item.message && (
- <p className={`mt-2 text-sm leading-relaxed ${!item.read ? "text-[#5d4f3f] dark:text-slate-300" : "text-[#797268] dark:text-slate-400"}`}>
+ <p className={`mt-1.5 text-sm leading-relaxed line-clamp-2 ${
+ !item.read ? "text-slate-700 dark:text-slate-300" : "text-slate-600 dark:text-slate-400"
+ }`}>
  {item.message}
  </p>
  )}
+
  {item.attachment && (
  <div className="mt-3">
  {item.attachment.startsWith("data:image/") ? (
- <img src={item.attachment} alt="Invitation" className="max-h-60 rounded-lg object-contain border border-[#ececec]" />
+ <img
+ src={item.attachment}
+ alt="Invitation"
+ className="max-h-48 rounded-xl object-contain border border-slate-200 dark:border-slate-700"
+ />
  ) : (
  <a
  href={item.attachment}
  download={`Invitation-${item.title.replace(/\s+/g, "_")}.pdf`}
  onClick={(e) => e.stopPropagation()}
- className="inline-flex items-center gap-2 rounded-xl bg-[#1b7f77] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#166353]"
+ className="inline-flex items-center gap-2 rounded-xl bg-teal-600 hover:bg-teal-700 px-3.5 py-1.5 text-xs font-bold text-white transition shadow-xs"
  >
  📄 Download PDF Invitation
  </a>
@@ -4056,22 +4221,122 @@ const DevoteeDashboard = () => {
  </div>
 
  {!item.read && (
- <span className="absolute right-4 top-4 h-2.5 w-2.5 rounded-full bg-[#f43f5e] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 ring-4 ring-[#f43f5e]/20 animate-pulse"></span>
+ <span className="flex-shrink-0 h-3 w-3 rounded-full bg-amber-500 ring-4 ring-amber-500/25 animate-pulse" title="Unread" />
  )}
  </div>
  );
  })
  ) : (
- <div className="flex flex-col items-center justify-center py-12 text-center">
- <div className="rounded-full bg-[#fcf9f5] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 p-4 text-[#8d6925]/40 mb-4">
- <AppIcon name="bell" className="h-12 w-12" />
+ <div className="flex flex-col items-center justify-center py-12 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
+ <div className="rounded-2xl bg-amber-100 dark:bg-slate-800 p-4 text-amber-600 dark:text-amber-400 mb-3 shadow-xs">
+ <AppIcon name="bell" className="h-8 w-8" />
  </div>
- <p className="text-base font-semibold text-[#5c544d]">No notifications yet</p>
- <p className="text-sm text-[#8c847b] mt-1">We will notify you when something happens.</p>
+ <p className="text-base font-bold text-slate-800 dark:text-slate-200">No notifications found</p>
+ <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+ {notificationTab === "unread"
+ ? "You have read all notifications."
+ : "No notification matches the selected filters."}
+ </p>
  </div>
  )}
  </div>
  </div>
+
+ {/* EMAIL PREVIEW MODAL */}
+ {selectedNotificationDetail && (
+ <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+ <div className="w-full max-w-xl rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6 shadow-2xl space-y-4">
+ <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
+ <div className="flex items-center gap-2">
+ <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500 text-white shadow-xs">
+ ✉️
+ </div>
+ <div>
+ <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+ Email Notification
+ </h3>
+ <p className="text-xs text-slate-500 dark:text-slate-400">
+ Dispatched from Sri Shanti Mahadev Mandir
+ </p>
+ </div>
+ </div>
+ <button
+ onClick={() => setSelectedNotificationDetail(null)}
+ className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-600"
+ >
+ ✕
+ </button>
+ </div>
+
+ {/* Email Envelope Header */}
+ <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 p-4 text-xs space-y-1.5 font-medium">
+ <div className="flex gap-2">
+ <span className="text-slate-400 w-16">From:</span>
+ <span className="text-slate-800 dark:text-slate-200 font-bold">
+ Sri Shanti Mahadev Mandir &lt;ganga.mca2002@gmail.com&gt;
+ </span>
+ </div>
+ <div className="flex gap-2">
+ <span className="text-slate-400 w-16">To:</span>
+ <span className="text-slate-800 dark:text-slate-200 font-semibold">
+ {userEmail}
+ </span>
+ </div>
+ <div className="flex gap-2">
+ <span className="text-slate-400 w-16">Date:</span>
+ <span className="text-slate-800 dark:text-slate-200">
+ {selectedNotificationDetail.date || "Just now"}
+ </span>
+ </div>
+ <div className="flex gap-2">
+ <span className="text-slate-400 w-16">Subject:</span>
+ <span className="text-amber-700 dark:text-amber-400 font-bold text-sm">
+ {selectedNotificationDetail.title}
+ </span>
+ </div>
+ </div>
+
+ {/* Email Body */}
+ <div className="rounded-2xl border border-amber-200/60 dark:border-slate-700 bg-amber-50/20 dark:bg-slate-900/40 p-5">
+ <h4 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-2">
+ {selectedNotificationDetail.title}
+ </h4>
+ <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-line">
+ {selectedNotificationDetail.message}
+ </p>
+
+ {selectedNotificationDetail.attachment && (
+ <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+ {selectedNotificationDetail.attachment.startsWith("data:image/") ? (
+ <img
+ src={selectedNotificationDetail.attachment}
+ alt="Attachment"
+ className="max-h-56 rounded-xl object-contain border"
+ />
+ ) : (
+ <a
+ href={selectedNotificationDetail.attachment}
+ download="Attachment.pdf"
+ className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-teal-700"
+ >
+ 📄 Download Attached Document
+ </a>
+ )}
+ </div>
+ )}
+ </div>
+
+ <div className="flex justify-end pt-2">
+ <button
+ onClick={() => setSelectedNotificationDetail(null)}
+ className="rounded-xl bg-slate-900 dark:bg-slate-100 px-5 py-2 text-sm font-bold text-white dark:text-slate-900 hover:opacity-90 transition"
+ >
+ Close
+ </button>
+ </div>
+ </div>
+ </div>
+ )}
  </div>
  );
  };
@@ -4264,97 +4529,140 @@ const DevoteeDashboard = () => {
  {mobileOpen && (
  <div className="fixed inset-0 z-50 flex lg:hidden">
  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
- <aside className={`relative z-10 w-[280px] h-full overflow-y-auto p-5 shadow-2xl flex flex-col justify-between ${
- darkMode ? "bg-[#0b1120] border-r border-slate-800 text-slate-100" : "bg-gradient-to-b from-[#ffecce] to-[#ffd6a6] border-r border-amber-200 text-[#2c1d12]"
- }`}>
- <div>
- <div className="flex items-center justify-between pb-6 pt-2 border-b border-amber-200/40 dark:border-slate-800">
- <div>
- <p className="text-2xl font-black text-[#bc6c10] dark:text-amber-400">Sri Shanti</p>
- <p className="text-xl font-black text-[#2c1d12] dark:text-slate-100">Mahadev Mandir</p>
- </div>
- <button
- type="button"
- onClick={() => setMobileOpen(false)}
- className="rounded-xl p-2 text-slate-500 hover:bg-black/5 dark:text-slate-400 dark:hover:bg-slate-800 text-lg font-bold"
- >
- ✕
- </button>
- </div>
- <div className="mt-4 space-y-2">
- {menuItems.map((item) => (
- <SidebarItem
- key={item.label}
- label={item.label}
- icon={item.icon}
- active={activePage === item.label}
- onClick={() => {
- setActivePage(item.label);
- setMobileOpen(false);
- }}
- />
- ))}
- </div>
- </div>
- <div className="pt-4 border-t border-amber-200/40 dark:border-slate-800">
- <button
- type="button"
- onClick={() => {
- setMobileOpen(false);
- setShowLogout(true);
- }}
- className="w-full rounded-xl border border-rose-200 bg-rose-50/80 dark:bg-rose-950/40 dark:border-rose-900/50 px-3 py-2.5 text-left text-base font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition flex items-center gap-3"
- >
- <FaSignOutAlt size={18} />
- Logout
- </button>
- </div>
- </aside>
- </div>
- )}
+ <aside className={`relative z-10 w-[290px] h-full overflow-hidden shadow-2xl flex flex-col justify-between border-r ${
+        darkMode ? "bg-[#0b1120] border-slate-800 text-slate-100" : "border-amber-200/60 text-[#2c1d12]"
+      }`}>
+        {/* Background image for mobile drawer */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <img
+            src={templeImage}
+            alt="Temple background"
+            className={`h-full w-full object-cover object-[50%_center] transition-opacity duration-300 ${
+              darkMode ? "opacity-25" : "opacity-100"
+            }`}
+          />
+          <div className={`absolute inset-0 transition-colors duration-300 ${darkMode ? "bg-[#0b1120]/80" : "bg-[#fff0dc]/15"}`} />
+          <div className={`absolute inset-0 bg-gradient-to-b transition-colors duration-300 ${
+            darkMode 
+              ? "from-[#0b1120]/85 via-[#0b1120]/70 to-[#0f172a]/90" 
+              : "from-[#fff4df]/60 via-[#ffdcb1]/15 to-[#ff9f44]/20"
+          }`} />
+        </div>
 
- <div className="flex w-full">
- {/* Desktop Sidebar */}
- <aside className={`relative hidden min-h-screen w-[320px] overflow-hidden border-r backdrop-blur-md lg:block transition-colors duration-300 ${
- darkMode 
- ? "bg-[#0b1120] border-slate-800/80 shadow-[0_0_42px_rgba(0,0,0,0.5)]" 
- : "border-white/35 bg-[radial-gradient(circle_at_top_left,_rgba(255,220,146,0.36),_transparent_28%)] bg-gradient-to-b from-[#ffecce]/70 to-[#ffd6a6]/40 shadow-[0_0_42px_rgba(153,90,31,0.22)]"
- }`}>
- <div className="pointer-events-none absolute inset-0">
- <img src={templeImage} alt="Temple background" className={`h-full w-full object-cover object-[56%_center] transition-opacity duration-300 ${darkMode ? "opacity-15" : "opacity-100"}`} />
- <div className={`absolute inset-0 transition-colors duration-300 ${darkMode ? "bg-[#0b1120]/85" : "bg-[#fff0dc]/22"}`}></div>
- <div className={`absolute inset-0 bg-gradient-to-b transition-colors duration-300 ${darkMode ? "from-[#0b1120]/90 via-[#0b1120]/75 to-[#0f172a]/90" : "from-[#fff4df]/68 via-[#ffdcb1]/24 to-[#ff9f44]/20"}`}></div>
- </div>
- <div className="relative z-10 px-5 pb-5 pt-8">
- <p className="text-[2.55rem] font-black leading-[1.03] text-[#bc6c10] dark:text-amber-400">Sri Shanti</p>
- <p className={`text-[2.1rem] font-black leading-[1.03] transition-colors duration-300 ${darkMode ? "text-slate-100" : "text-[#2c1d12]"}`}>Mahadev Mandir</p>
- </div>
- <div className="relative z-10 space-y-2 px-4">
- {menuItems.map((item) => (
- <SidebarItem
- key={item.label}
- label={item.label}
- icon={item.icon}
- active={activePage === item.label}
- onClick={() => setActivePage(item.label)}
- />
- ))}
- <button
- type="button"
- onClick={() => setShowLogout(true)}
- className={`mt-3 w-full rounded-xl border px-3 py-3 text-left text-[18px] font-semibold transition flex items-center justify-between ${
- darkMode 
- ? "border-rose-900/40 bg-rose-950/30 text-rose-400 hover:bg-rose-950/60" 
- : "border-white/40 bg-temple-100/45 text-[#7f470a] hover:bg-temple-100/80"
- }`}
- >
- <span className="inline-flex items-center gap-3">
- <FaSignOutAlt size={18} />
- Logout
- </span>
- </button>
- </div>
- </aside>
+        <div className="relative z-10 flex flex-col h-full justify-between p-4 overflow-y-auto">
+          <div>
+            <div className="flex items-center justify-between pb-4 pt-1 border-b border-amber-200/40 dark:border-slate-800">
+              <div>
+                <p className="text-2xl font-black text-[#bc6c10] dark:text-amber-400">Sri Shanti</p>
+                <p className="text-xl font-black text-[#2c1d12] dark:text-slate-100">Mahadev Mandir</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                className="rounded-xl p-2 text-slate-500 hover:bg-black/5 dark:text-slate-400 dark:hover:bg-slate-800 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {menuItems.map((item) => (
+                <SidebarItem
+                  key={item.label}
+                  label={item.label}
+                  icon={item.icon}
+                  active={activePage === item.label}
+                  onClick={() => {
+                    setActivePage(item.label);
+                    setMobileOpen(false);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="pt-3 border-t border-amber-200/40 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                setMobileOpen(false);
+                setShowLogout(true);
+              }}
+              className="group flex w-full items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[17px] font-bold transition-all duration-300 text-[#2c1d12] dark:text-slate-200 border border-white/60 dark:border-slate-700/60 bg-white/45 dark:bg-slate-900/45 backdrop-blur-md hover:bg-white/70 dark:hover:bg-slate-800/70 hover:shadow-sm"
+            >
+              <FaSignOutAlt className="h-[20px] w-[20px] text-[#2c1d12] dark:text-slate-200 group-hover:scale-110 transition-transform duration-200" />
+              <span className="text-[17px] leading-tight font-bold">Logout</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  )}
+
+  <div className="flex w-full min-h-screen">
+    {/* Desktop Sidebar */}
+    <aside className={`sticky top-0 h-screen w-[320px] shrink-0 overflow-hidden border-r backdrop-blur-md hidden lg:flex flex-col z-30 transition-colors duration-300 ${
+      darkMode 
+        ? "bg-[#0b1120] border-slate-800/80 shadow-[0_0_42px_rgba(0,0,0,0.5)]" 
+        : "border-amber-200/50 shadow-[0_0_42px_rgba(153,90,31,0.18)]"
+    }`}>
+      {/* Static pinned background image - strictly fixed dimensions so it never zooms or shifts */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <img
+          src={templeImage}
+          alt="Temple background"
+          className={`h-full w-full object-cover object-[50%_center] transition-opacity duration-300 ${
+            darkMode ? "opacity-25" : "opacity-100"
+          }`}
+        />
+        <div className={`absolute inset-0 transition-colors duration-300 ${
+          darkMode ? "bg-[#0b1120]/80" : "bg-[#fff0dc]/10"
+        }`} />
+        <div className={`absolute inset-0 bg-gradient-to-b transition-colors duration-300 ${
+          darkMode 
+            ? "from-[#0b1120]/85 via-[#0b1120]/65 to-[#0f172a]/90" 
+            : "from-[#fff4df]/35 via-transparent to-[#ff9f44]/15"
+        }`} />
+      </div>
+
+      {/* Interactive content above background */}
+      <div className="relative z-10 flex flex-col h-full overflow-y-auto custom-scrollbar p-5">
+        {/* Header */}
+        <div className="pb-5 pt-3 select-none">
+          <p className="text-[2.35rem] font-black leading-[1.05] text-[#bc6c10] dark:text-amber-400 drop-shadow-xs">
+            Sri Shanti
+          </p>
+          <p className={`text-[1.95rem] font-black leading-[1.05] transition-colors duration-300 ${
+            darkMode ? "text-slate-100" : "text-[#2c1d12]"
+          }`}>
+            Mahadev Mandir
+          </p>
+        </div>
+
+        {/* Menu Items */}
+        <div className="space-y-2 flex-1">
+          {menuItems.map((item) => (
+            <SidebarItem
+              key={item.label}
+              label={item.label}
+              icon={item.icon}
+              active={activePage === item.label}
+              onClick={() => setActivePage(item.label)}
+            />
+          ))}
+        </div>
+
+        {/* Logout Button */}
+        <div className="pt-3 mt-2">
+          <button
+            type="button"
+            onClick={() => setShowLogout(true)}
+            className="group flex w-full items-center gap-3.5 rounded-2xl px-4 py-3 text-left text-[17px] font-bold transition-all duration-300 text-[#2c1d12] dark:text-slate-200 border border-white/60 dark:border-slate-700/60 bg-white/45 dark:bg-slate-900/45 backdrop-blur-md hover:bg-white/70 dark:hover:bg-slate-800/70 hover:shadow-sm"
+          >
+            <FaSignOutAlt className="h-[20px] w-[20px] text-[#2c1d12] dark:text-slate-200 group-hover:scale-110 transition-transform duration-200" />
+            <span className="text-[17px] leading-tight font-bold">Logout</span>
+          </button>
+        </div>
+      </div>
+    </aside>
 
  <main className="flex-1 px-4 py-4 sm:px-6 sm:py-6 lg:px-10 min-w-0">
  {/* Top Navigation Header */}

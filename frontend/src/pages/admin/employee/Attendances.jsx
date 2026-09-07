@@ -607,7 +607,6 @@ const Attendances = () => {
  <th className="px-4 py-3">Role</th>
  <th className="px-4 py-3">Department</th>
  <th className="px-4 py-3">Assigned Shift</th>
- <th className="px-4 py-3">Shift Time</th>
  <th className="px-4 py-3">Check In</th>
  <th className="px-4 py-3">Check Out</th>
  <th className="px-4 py-3">Working Hours</th>
@@ -647,9 +646,6 @@ const Attendances = () => {
  <td className="px-4 py-4 text-slate-600 dark:text-slate-200 capitalize">{record.role || "-"}</td>
  <td className="px-4 py-4 text-slate-600 dark:text-slate-200 ">{record.department || "-"}</td>
  <td className="px-4 py-4 text-slate-600 dark:text-slate-200 ">{record.shift || "-"}</td>
- <td className="px-4 py-4 text-slate-600 dark:text-slate-200 ">
- {record.shiftStartTime && record.shiftEndTime ? `${record.shiftStartTime} - ${record.shiftEndTime}` : "--"}
- </td>
  <td className="px-4 py-4 text-slate-600 dark:text-slate-200 ">{record.checkIn || "--"}</td>
  <td className="px-4 py-4 text-slate-600 dark:text-slate-200 ">{record.checkOut || "--"}</td>
  <td className="px-4 py-4 text-slate-700 dark:text-slate-200 ">{record.workingHours || "--"}</td>

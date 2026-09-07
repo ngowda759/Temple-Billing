@@ -3,6 +3,9 @@ import {
  FiCalendar, 
  FiClock, 
  FiUser, 
+ FiUsers,
+ FiLayers,
+ FiCheckCircle,
  FiAlertTriangle, 
  FiPlus, 
  FiTrash2, 
@@ -111,6 +114,44 @@ const ShiftManagement = () => {
  overtimeHours: 0,
  manpowerAvailable: 0,
  });
+
+  const summaryCards = useMemo(() => [
+    {
+      title: "Total Shift Types",
+      value: stats.totalShifts,
+      icon: FiLayers,
+      iconBg: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60",
+      valueColor: "text-slate-900 dark:text-slate-100",
+    },
+    {
+      title: "Completed Shifts",
+      value: stats.completedShifts,
+      icon: FiCheckCircle,
+      iconBg: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60",
+      valueColor: "text-emerald-600 dark:text-emerald-400",
+    },
+    {
+      title: "Missed Shifts",
+      value: stats.missedShifts,
+      icon: FiAlertTriangle,
+      iconBg: "bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/60",
+      valueColor: "text-rose-600 dark:text-rose-400",
+    },
+    {
+      title: "Overtime Hours",
+      value: `${stats.overtimeHours} hrs`,
+      icon: FiClock,
+      iconBg: "bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400 border border-sky-200/60 dark:border-sky-800/60",
+      valueColor: "text-sky-600 dark:text-sky-400",
+    },
+    {
+      title: "Active Staff Available",
+      value: stats.manpowerAvailable,
+      icon: FiUsers,
+      iconBg: "bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/60",
+      valueColor: "text-amber-600 dark:text-amber-400",
+    },
+  ], [stats]);
  
  const [employees, setEmployees] = useState([]);
  const [weekStart, setWeekStart] = useState(getCurrentWeekStartKey);
@@ -513,29 +554,32 @@ const ShiftManagement = () => {
  </button>
  }
  >
- {/* Statistics Cards */}
- <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
- <div className="rounded-[24px] border border-white/10 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-5 shadow-xl backdrop-blur-sm transition-all hover:bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-800 dark:bg-[#0f172a] ">
- <p className="text-xs uppercase tracking-wider text-white/60">Total Shift Types</p>
- <p className="mt-3 text-3xl font-bold text-white">{stats.totalShifts}</p>
- </div>
- <div className="rounded-[24px] border border-white/10 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-5 shadow-xl backdrop-blur-sm transition-all hover:bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-800 dark:bg-[#0f172a] ">
- <p className="text-xs uppercase tracking-wider text-white/60">Completed Shifts</p>
- <p className="mt-3 text-3xl font-bold text-emerald-400">{stats.completedShifts}</p>
- </div>
- <div className="rounded-[24px] border border-white/10 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-5 shadow-xl backdrop-blur-sm transition-all hover:bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-800 dark:bg-[#0f172a] ">
- <p className="text-xs uppercase tracking-wider text-white/60">Missed Shifts</p>
- <p className="mt-3 text-3xl font-bold text-rose-400">{stats.missedShifts}</p>
- </div>
- <div className="rounded-[24px] border border-white/10 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-5 shadow-xl backdrop-blur-sm transition-all hover:bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-800 dark:bg-[#0f172a] ">
- <p className="text-xs uppercase tracking-wider text-white/60">Overtime Hours</p>
- <p className="mt-3 text-3xl font-bold text-sky-400">{stats.overtimeHours} hrs</p>
- </div>
- <div className="rounded-[24px] border border-white/10 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-5 shadow-xl backdrop-blur-sm transition-all hover:bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-800 dark:bg-[#0f172a] ">
- <p className="text-xs uppercase tracking-wider text-white/60">Active Staff Available</p>
- <p className="mt-3 text-3xl font-bold text-amber-400">{stats.manpowerAvailable}</p>
- </div>
- </div>
+        {/* Statistics Cards */}
+        <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
+          {summaryCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.title}
+                className="rounded-[24px] border border-amber-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 p-5 shadow-sm hover:shadow-md transition-all duration-300 backdrop-blur-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      {card.title}
+                    </p>
+                    <p className={`mt-2 text-2xl sm:text-3xl font-black tracking-tight ${card.valueColor}`}>
+                      {card.value}
+                    </p>
+                  </div>
+                  <div className={`flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-2xl ${card.iconBg}`}>
+                    <Icon className="text-lg sm:text-xl" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
  </SectionCard>
 
  {error && (

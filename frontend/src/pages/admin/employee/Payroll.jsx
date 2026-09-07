@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import SectionCard from "../../../components/admin/employee/SectionCard";
+import { FiCreditCard, FiClock, FiUsers, FiGift } from "react-icons/fi";
 import { getPayrollDashboard, payEmployeePayroll, verifyPayrollPayment } from "../../../services/payrollService";
 
 const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
@@ -55,15 +56,39 @@ const Payroll = () => {
  loadDashboard();
  }, [loadDashboard]);
 
- const summaryTiles = useMemo(() => {
- const summary = dashboard?.summary || {};
- return [
- { title: "Monthly Payroll", value: formatCurrency(summary.monthlyPayroll), accent: "bg-violet-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-violet-700" },
- { title: "Pending Salary", value: formatCurrency(summary.pendingSalary), accent: "bg-amber-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-amber-700" },
- { title: "Paid Employees", value: summary.paidEmployees || 0, accent: "bg-emerald-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-emerald-700" },
- { title: "Bonus Distribution", value: formatCurrency(summary.bonusDistribution), accent: "bg-sky-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-sky-700" },
- ];
- }, [dashboard]);
+  const summaryTiles = useMemo(() => {
+    const summary = dashboard?.summary || {};
+    return [
+      {
+        title: "Monthly Payroll",
+        value: formatCurrency(summary.monthlyPayroll),
+        icon: FiCreditCard,
+        iconBg: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60",
+        valueColor: "text-slate-900 dark:text-slate-100",
+      },
+      {
+        title: "Pending Salary",
+        value: formatCurrency(summary.pendingSalary),
+        icon: FiClock,
+        iconBg: "bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/60",
+        valueColor: "text-amber-600 dark:text-amber-400",
+      },
+      {
+        title: "Paid Employees",
+        value: summary.paidEmployees || 0,
+        icon: FiUsers,
+        iconBg: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60",
+        valueColor: "text-emerald-600 dark:text-emerald-400",
+      },
+      {
+        title: "Bonus Distribution",
+        value: formatCurrency(summary.bonusDistribution),
+        icon: FiGift,
+        iconBg: "bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400 border border-sky-200/60 dark:border-sky-800/60",
+        valueColor: "text-slate-900 dark:text-slate-100",
+      },
+    ];
+  }, [dashboard]);
 
  const updatePaymentForm = (employeeId, field, value) => {
  setPaymentForms((prev) => ({
@@ -163,24 +188,41 @@ const Payroll = () => {
  className="bg-gradient-to-r from-amber-500/15 via-orange-500/15 to-amber-600/15 text-[#4a2b0f] dark:text-slate-200 border border-amber-200/60 shadow-md backdrop-blur-md"
  >
  <div className="mb-5 flex flex-wrap items-center gap-3">
- <label className="text-sm font-extrabold text-[#7a4918]">
- Payroll Month
- <input
- type="month"
- value={monthKey}
- onChange={(event) => setMonthKey(event.target.value)}
- className="ml-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] px-4 py-2 text-slate-800 dark:text-slate-200 font-semibold shadow-xs outline-none focus:border-amber-500"
- />
- </label>
+        <label className="text-sm font-extrabold text-[#7a4918] dark:text-amber-400">
+          Payroll Month
+          <input
+            type="month"
+            value={monthKey}
+            onChange={(event) => setMonthKey(event.target.value)}
+            className="ml-3 rounded-2xl border border-amber-300/80 dark:border-slate-700 bg-white/90 dark:bg-slate-900 px-4 py-2 text-slate-800 dark:text-slate-200 font-semibold shadow-xs outline-none focus:border-amber-500"
+          />
+        </label>
  </div>
- <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
- {summaryTiles.map((tile) => (
- <div key={tile.title} className={`rounded-[28px] border border-white/10 px-5 py-6 ${tile.accent} bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] shadow-xl shadow-slate-900/10`}>
- <p className="text-sm uppercase tracking-[0.16em] text-slate-100/70">{tile.title}</p>
- <p className="mt-4 text-3xl font-semibold text-white">{tile.value}</p>
- </div>
- ))}
- </div>
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          {summaryTiles.map((tile) => {
+            const Icon = tile.icon;
+            return (
+              <div
+                key={tile.title}
+                className="rounded-[24px] border border-amber-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 p-5 shadow-sm hover:shadow-md transition-all duration-300 backdrop-blur-sm"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      {tile.title}
+                    </p>
+                    <p className={`mt-2 text-2xl sm:text-3xl font-black tracking-tight ${tile.valueColor}`}>
+                      {tile.value}
+                    </p>
+                  </div>
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${tile.iconBg}`}>
+                    <Icon className="text-xl" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
  </SectionCard>
 
  {error ? (

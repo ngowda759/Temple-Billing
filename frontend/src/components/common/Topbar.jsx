@@ -57,19 +57,19 @@ const Topbar = ({ darkMode, toggleDarkMode, onOpenMobileSidebar, onLogoutClick }
 
   return (
     <div className={`h-[78px] rounded-2xl flex items-center justify-between px-4 md:px-6 sticky top-4 z-20 backdrop-blur-md border
-      ${darkMode ? "bg-[#1f2937]/70 border-white/10" : "bg-temple-100/30 border-white/40 shadow-[0_10px_30px_rgba(0,0,0,0.08)]"}`}>
+      ${darkMode ? "bg-[#1e293b]/90 border-slate-700/80 shadow-lg shadow-black/20" : "bg-temple-100/30 border-white/40 shadow-[0_10px_30px_rgba(0,0,0,0.08)]"}`}>
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={onOpenMobileSidebar}
-          className={`lg:hidden h-10 w-10 rounded-xl border flex items-center justify-center ${darkMode ? "border-white/10 text-slate-100" : "border-[#ece8e1] text-[#6b4c2e] bg-temple-100/70"}`}
+          className={`lg:hidden h-10 w-10 rounded-xl border flex items-center justify-center ${darkMode ? "border-slate-700 text-slate-100 bg-[#0f172a]" : "border-[#ece8e1] text-[#6b4c2e] bg-temple-100/70"}`}
         >
           <MdMenu size={20} />
         </button>
 
-        <div className={`w-[220px] md:w-[340px] px-4 py-2.5 rounded-xl border flex items-center gap-3 ${darkMode ? "border-white/10 text-slate-300 bg-temple-100/5" : "border-[#ece8e1] text-gray-500 bg-temple-100/70"}`}>
-          <FiSearch />
-          <input type="text" placeholder="Search here..." className="w-full bg-transparent outline-none text-sm" />
+        <div className={`w-[220px] md:w-[340px] px-4 py-2.5 rounded-xl border flex items-center gap-3 ${darkMode ? "border-slate-700 text-slate-200 bg-[#0f172a]" : "border-[#ece8e1] text-gray-500 bg-temple-100/70"}`}>
+          <FiSearch className={darkMode ? "text-slate-400" : "text-gray-500"} />
+          <input type="text" placeholder="Search here..." className={`w-full bg-transparent outline-none text-sm ${darkMode ? "text-slate-100 placeholder:text-slate-500" : "text-slate-800"}`} />
         </div>
       </div>
 

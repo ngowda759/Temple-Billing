@@ -211,3 +211,403 @@ label {
 .logout-btn {
   @apply flex-1 rounded-xl bg-gradient-to-r from-red-500 to-red-600 py-3 font-medium text-white shadow-lg shadow-red-500/25 transition hover:shadow-xl hover:shadow-red-500/40;
 }
+
+/* ==========================================================================
+   GLOBAL COMPREHENSIVE DARK MODE DESIGN SYSTEM (ADMIN & ALL PORTALS)
+   ========================================================================== */
+
+.dark {
+  color-scheme: dark;
+}
+
+/* 0. BASE PAGE BACKGROUND */
+.dark body,
+.dark [class*="min-h-screen"],
+.dark.min-h-screen {
+  background-color: #0b1120 !important;
+  color: #f8fafc;
+}
+
+/* 1. ELEVATED CARDS, PANELS & CONTAINERS (LEVEL 1 ELEVATION) */
+/* All cards across Admin and all portals clearly pop above the #0b1120 background */
+.dark .card,
+.dark .glass,
+.dark .glass-card,
+.dark .glass-panel,
+.dark .glass-section,
+.dark div[class*="rounded-2xl"]:not([class*="min-h-screen"]):not([class*="h-"]):not(input):not(select):not(textarea):not(table):not(thead):not(th):not(td):not(tr):not(button):not(span),
+.dark div[class*="rounded-3xl"]:not([class*="min-h-screen"]):not([class*="h-"]):not(input):not(select):not(textarea):not(table):not(thead):not(th):not(td):not(tr):not(button):not(span),
+.dark div[class*="rounded-[20px]"]:not([class*="min-h-screen"]):not([class*="h-"]):not(input):not(select):not(textarea):not(table):not(thead):not(th):not(td):not(tr):not(button):not(span),
+.dark div[class*="rounded-[22px]"]:not([class*="min-h-screen"]):not([class*="h-"]):not(input):not(select):not(textarea):not(table):not(thead):not(th):not(td):not(tr):not(button):not(span),
+.dark div[class*="rounded-[24px]"]:not([class*="min-h-screen"]):not([class*="h-"]):not(input):not(select):not(textarea):not(table):not(thead):not(th):not(td):not(tr):not(button):not(span),
+.dark div[class*="rounded-[28px]"]:not([class*="min-h-screen"]):not([class*="h-"]):not(input):not(select):not(textarea):not(table):not(thead):not(th):not(td):not(tr):not(button):not(span),
+.dark div[class*="rounded-[32px]"]:not([class*="min-h-screen"]):not([class*="h-"]):not(input):not(select):not(textarea):not(table):not(thead):not(th):not(td):not(tr):not(button):not(span),
+.dark div[class*="bg-temple-"]:not([class*="min-h-screen"]):not(button):not(span),
+.dark div[class*="bg-[#fffdfb]"]:not([class*="min-h-screen"]),
+.dark div[class*="bg-[#fcfbf9]"]:not([class*="min-h-screen"]) {
+  background-color: #1e293b !important; /* Slate-800 elevated card background */
+  border-color: #334155 !important;     /* Slate-700 distinct border */
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.45), 0 4px 6px -4px rgba(0, 0, 0, 0.25) !important;
+  color: #f8fafc;
+}
+
+/* 2. NESTED CARDS & INNER SUB-BOXES (LEVEL 2 ELEVATION) */
+/* Cards nested inside primary cards get distinct recessed styling */
+.dark div[class*="rounded-2xl"] div[class*="rounded-2xl"]:not([class*="h-"]):not(button):not(span),
+.dark div[class*="rounded-3xl"] div[class*="rounded-2xl"]:not([class*="h-"]):not(button):not(span),
+.dark div[class*="rounded-[28px]"] div[class*="rounded-2xl"]:not([class*="h-"]):not(button):not(span),
+.dark div[class*="rounded-[32px]"] div[class*="rounded-2xl"]:not([class*="h-"]):not(button):not(span),
+.dark div[class*="rounded-2xl"] div[class*="rounded-xl"]:not([class*="h-"]):not(button):not(span),
+.dark div[class*="rounded-3xl"] div[class*="rounded-xl"]:not([class*="h-"]):not(button):not(span),
+.dark div[class*="rounded-[28px]"] div[class*="rounded-xl"]:not([class*="h-"]):not(button):not(span),
+.dark div[class*="rounded-[32px]"] div[class*="rounded-xl"]:not([class*="h-"]):not(button):not(span) {
+  background-color: #131d2e !important; /* Deep navy recessed card */
+  border-color: #334155 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* 3. ACCENT STAT TILES (COLORED CARDS WITH GLOW) */
+.dark div[class*="bg-amber-50"],
+.dark div[class*="bg-amber-100"],
+.dark div[class*="bg-orange-50"],
+.dark div[class*="bg-orange-100"],
+.dark div[class*="bg-[#fffbeb]"],
+.dark div[class*="bg-[#fff1df]"],
+.dark div[class*="bg-[#fef3c7]"],
+.dark div[class*="border-[#fef3c7]"] {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  border-color: rgba(245, 158, 11, 0.4) !important;
+}
+
+.dark div[class*="bg-emerald-50"],
+.dark div[class*="bg-emerald-100"],
+.dark div[class*="bg-green-50"],
+.dark div[class*="bg-green-100"],
+.dark div[class*="bg-[#ecfdf5]"],
+.dark div[class*="bg-[#e8f6e9]"],
+.dark div[class*="border-[#d1fae5]"] {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
+}
+
+.dark div[class*="bg-rose-50"],
+.dark div[class*="bg-rose-100"],
+.dark div[class*="bg-red-50"],
+.dark div[class*="bg-red-100"],
+.dark div[class*="bg-[#fef2f2]"],
+.dark div[class*="bg-[#fde8e8]"],
+.dark div[class*="border-[#fecaca]"] {
+  background-color: rgba(244, 63, 94, 0.15) !important;
+  border-color: rgba(244, 63, 94, 0.4) !important;
+}
+
+.dark div[class*="bg-blue-50"],
+.dark div[class*="bg-blue-100"],
+.dark div[class*="bg-sky-50"],
+.dark div[class*="bg-sky-100"],
+.dark div[class*="bg-[#eef2ff]"],
+.dark div[class*="bg-[#e9efff]"],
+.dark div[class*="border-[#e0e7ff]"] {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  border-color: rgba(59, 130, 246, 0.4) !important;
+}
+
+.dark div[class*="bg-purple-50"],
+.dark div[class*="bg-purple-100"],
+.dark div[class*="bg-violet-50"],
+.dark div[class*="bg-violet-100"],
+.dark div[class*="bg-[#f2ecff]"] {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+  border-color: rgba(168, 85, 247, 0.4) !important;
+}
+
+/* 4. HEADINGS & TITLES IN DARK MODE */
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4,
+.dark h5,
+.dark h6 {
+  color: #f8fafc !important;
+}
+
+/* 5. HIGH-CONTRAST TEXT OVERRIDES IN DARK MODE */
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700,
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-gray-700,
+.dark [class*="text-[#15141f]"],
+.dark [class*="text-[#1d1b19]"],
+.dark [class*="text-[#1f1914]"],
+.dark [class*="text-[#1f1f1f]"],
+.dark [class*="text-[#202632]"],
+.dark [class*="text-[#242938]"],
+.dark [class*="text-[#2b3240]"],
+.dark [class*="text-[#2f3645]"],
+.dark [class*="text-[#2d1b08]"],
+.dark [class*="text-[#2d1608]"],
+.dark [class*="text-[#3f2711]"],
+.dark [class*="text-[#3f3f3f]"],
+.dark [class*="text-[#4a2b0f]"] {
+  color: #f8fafc !important;
+}
+
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .text-slate-400,
+.dark .text-gray-600,
+.dark .text-gray-500,
+.dark .text-gray-400,
+.dark [class*="text-[#5d5d5d]"],
+.dark [class*="text-[#6b6b6b]"],
+.dark [class*="text-[#4f4f4f]"],
+.dark [class*="text-[#575757]"],
+.dark [class*="text-[#5c564f]"],
+.dark [class*="text-[#5d4f3f]"],
+.dark [class*="text-[#5d6674]"],
+.dark [class*="text-[#4b5563]"],
+.dark [class*="text-[#5c6675]"],
+.dark [class*="text-[#4f5866]"],
+.dark [class*="text-[#665e55]"],
+.dark [class*="text-[#797268]"],
+.dark [class*="text-[#858b96]"],
+.dark [class*="text-[#8c857b]"] {
+  color: #cbd5e1 !important; /* Slate-300: clean, readable text */
+}
+
+/* Colored accent texts in dark mode */
+.dark .text-amber-950,
+.dark .text-amber-900,
+.dark .text-amber-850,
+.dark .text-amber-800,
+.dark .text-amber-700,
+.dark .text-amber-600,
+.dark .text-orange-700,
+.dark .text-orange-600,
+.dark [class*="text-[#7f470a]"],
+.dark [class*="text-[#8b5a0a]"],
+.dark [class*="text-[#b46a13]"],
+.dark [class*="text-[#af6317]"],
+.dark [class*="text-[#bc6c10]"],
+.dark [class*="text-[#b66000]"],
+.dark [class*="text-[#f07f00]"],
+.dark [class*="text-[#ff8b00]"],
+.dark [class*="text-[#cf7c2b]"] {
+  color: #fbbf24 !important; /* Amber-400 glowing */
+}
+
+.dark .text-emerald-950,
+.dark .text-emerald-900,
+.dark .text-emerald-800,
+.dark .text-emerald-700,
+.dark .text-emerald-600,
+.dark .text-green-900,
+.dark .text-green-800,
+.dark .text-green-700,
+.dark .text-green-600,
+.dark [class*="text-[#187a3b]"],
+.dark [class*="text-[#1b7f77]"],
+.dark [class*="text-[#1c6f3d]"],
+.dark [class*="text-[#16853f]"],
+.dark [class*="text-[#166353]"],
+.dark [class*="text-[#2f8d42]"] {
+  color: #34d399 !important; /* Emerald-400 glowing */
+}
+
+.dark .text-rose-950,
+.dark .text-rose-900,
+.dark .text-rose-800,
+.dark .text-rose-700,
+.dark .text-rose-600,
+.dark .text-red-900,
+.dark .text-red-800,
+.dark .text-red-700,
+.dark .text-red-600,
+.dark [class*="text-[#a12525]"],
+.dark [class*="text-[#f26037]"] {
+  color: #fb7185 !important; /* Rose-400 glowing */
+}
+
+.dark .text-blue-950,
+.dark .text-blue-900,
+.dark .text-blue-800,
+.dark .text-blue-700,
+.dark .text-blue-600,
+.dark [class*="text-[#3468db]"],
+.dark [class*="text-[#2454c9]"],
+.dark [class*="text-[#3058d6]"],
+.dark [class*="text-[#234ea5]"] {
+  color: #60a5fa !important; /* Blue-400 glowing */
+}
+
+.dark .text-purple-950,
+.dark .text-purple-900,
+.dark .text-purple-800,
+.dark .text-purple-700,
+.dark .text-purple-600,
+.dark .text-violet-800,
+.dark .text-violet-700,
+.dark .text-violet-600,
+.dark [class*="text-[#6b3df0]"],
+.dark [class*="text-[#6d28d9]"] {
+  color: #c084fc !important; /* Purple-400 glowing */
+}
+
+.dark .text-teal-950,
+.dark .text-teal-900,
+.dark .text-teal-800,
+.dark .text-teal-700,
+.dark .text-teal-600,
+.dark [class*="text-[#0f766e]"] {
+  color: #2dd4bf !important; /* Teal-400 glowing */
+}
+
+/* 6. ICON CONTAINERS IN DARK MODE */
+.dark div[class*="rounded-full"][class*="w-10"],
+.dark div[class*="rounded-full"][class*="w-11"],
+.dark div[class*="rounded-full"][class*="w-12"],
+.dark div[class*="rounded-full"][class*="w-14"],
+.dark div[class*="rounded-full"][class*="h-10"],
+.dark div[class*="rounded-full"][class*="h-11"],
+.dark div[class*="rounded-full"][class*="h-12"],
+.dark div[class*="rounded-full"][class*="h-14"],
+.dark span[class*="rounded-full"][class*="h-10"],
+.dark span[class*="rounded-full"][class*="w-10"] {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.dark div[class*="rounded-full"][class*="bg-red-"],
+.dark div[class*="rounded-full"][class*="bg-rose-"] {
+  background-color: rgba(244, 63, 94, 0.2) !important;
+  border: 1px solid rgba(244, 63, 94, 0.4) !important;
+  color: #fb7185 !important;
+}
+
+.dark div[class*="rounded-full"][class*="bg-emerald-"],
+.dark div[class*="rounded-full"][class*="bg-green-"] {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+  border: 1px solid rgba(16, 185, 129, 0.4) !important;
+  color: #34d399 !important;
+}
+
+.dark div[class*="rounded-full"][class*="bg-amber-"],
+.dark div[class*="rounded-full"][class*="bg-orange-"] {
+  background-color: rgba(245, 158, 11, 0.2) !important;
+  border: 1px solid rgba(245, 158, 11, 0.4) !important;
+  color: #fbbf24 !important;
+}
+
+.dark div[class*="rounded-full"][class*="bg-blue-"],
+.dark div[class*="rounded-full"][class*="bg-sky-"] {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+  border: 1px solid rgba(59, 130, 246, 0.4) !important;
+  color: #60a5fa !important;
+}
+
+.dark div[class*="rounded-full"][class*="bg-purple-"],
+.dark div[class*="rounded-full"][class*="bg-violet-"] {
+  background-color: rgba(168, 85, 247, 0.2) !important;
+  border: 1px solid rgba(168, 85, 247, 0.4) !important;
+  color: #c084fc !important;
+}
+
+/* 7. FORM INPUTS & CONTROLS IN DARK MODE */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="color"]),
+.dark select,
+.dark textarea {
+  background-color: #0b1120 !important; /* Recessed dark field inside card */
+  color: #f8fafc !important;
+  border-color: #475569 !important;
+}
+
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+.dark select option {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+.dark label {
+  color: #e2e8f0 !important;
+}
+
+/* 8. TABLES IN DARK MODE */
+.dark table {
+  color: #f8fafc !important;
+}
+
+.dark thead,
+.dark thead tr,
+.dark th {
+  background-color: #131d2e !important;
+  color: #cbd5e1 !important;
+  border-color: #334155 !important;
+}
+
+.dark tbody tr {
+  border-color: #334155 !important;
+}
+
+.dark td {
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+.dark tr:hover td,
+.dark tbody tr:hover {
+  background-color: rgba(51, 65, 85, 0.5) !important;
+}
+
+/* 9. MODALS & DIALOGS IN DARK MODE */
+.dark .fixed .rounded-3xl,
+.dark .fixed .rounded-2xl {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7) !important;
+}
+
+/* 10. STATUS PILLS & BADGES IN DARK MODE */
+.dark span[class*="e8f6e9"],
+.dark span[class*="bg-emerald-50"],
+.dark span[class*="bg-green-50"] {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+  color: #34d399 !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
+}
+
+.dark span[class*="fff1df"],
+.dark span[class*="bg-amber-50"],
+.dark span[class*="bg-orange-50"] {
+  background-color: rgba(245, 158, 11, 0.2) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(245, 158, 11, 0.4) !important;
+}
+
+.dark span[class*="e9efff"],
+.dark span[class*="bg-blue-50"] {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+  color: #60a5fa !important;
+  border-color: rgba(59, 130, 246, 0.4) !important;
+}
+
+.dark span[class*="fde8e8"],
+.dark span[class*="bg-rose-50"],
+.dark span[class*="bg-red-50"] {
+  background-color: rgba(244, 63, 94, 0.2) !important;
+  color: #fb7185 !important;
+  border-color: rgba(244, 63, 94, 0.4) !important;
+}
