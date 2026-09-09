@@ -12,9 +12,9 @@ const DonationChart = () => {
         <div key={source.label}>
           <div className="flex justify-between text-sm mb-1">
             <span className="text-gray-600">{source.label}</span>
-            <span className="font-semibold text-gray-700">{source.value}%</span>
+            <span className="font-semibold text-gray-700 dark:text-slate-200">{source.value}%</span>
           </div>
-          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-3 bg-gray-100 dark:bg-[#0f172a] rounded-full overflow-hidden">
             <div className={`h-3 rounded-full ${source.color}`} style={{ width: `${source.value}%` }} />
           </div>
         </div>

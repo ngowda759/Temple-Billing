@@ -114,7 +114,7 @@ const DevoateeProfileComponent = () => {
   }
 
   return (
-    <div className={`rounded-[28px] border border-white/45 bg-temple-100/60 p-6 shadow-[0_28px_80px_rgba(115,83,27,0.12)] backdrop-blur-xl`}>
+    <div className={`rounded-[28px] border border-white/45 bg-temple-100/60 dark:bg-[#0f172a] p-6 shadow-[0_28px_80px_rgba(115,83,27,0.12)] backdrop-blur-xl`}>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-amber-900">👤 My Profile</h2>
         <button
@@ -129,7 +129,7 @@ const DevoateeProfileComponent = () => {
       </div>
 
       {successMessage && (
-        <div className="mb-4 p-3 rounded-lg bg-green-50 border border-green-200 text-green-800">
+        <div className="mb-4 p-3 rounded-lg bg-green-50 dark:bg-[#0f172a] border border-green-200 text-green-800">
           {successMessage}
         </div>
       )}
@@ -144,11 +144,7 @@ const DevoateeProfileComponent = () => {
             value={profile.name}
             onChange={handleChange}
             disabled={!isEditing}
-            className={`w-full rounded-xl border ${
-              errors.name ? "border-red-500" : "border-white/70"
-            } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${
-              isEditing ? "focus:ring-2 focus:ring-amber-400" : ""
-            } transition-all`}
+            className={`w-full rounded-xl border ${ errors.name ? "border-red-500" : "border-white/70" } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${ isEditing ? "focus:ring-2 focus:ring-amber-400" : "" } transition-all`}
           />
           {errors.name && <p className="text-red-600 text-sm mt-1">❌ {errors.name}</p>}
         </div>
@@ -162,11 +158,7 @@ const DevoateeProfileComponent = () => {
             value={profile.email}
             onChange={handleChange}
             disabled={!isEditing}
-            className={`w-full rounded-xl border ${
-              errors.email ? "border-red-500" : "border-white/70"
-            } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${
-              isEditing ? "focus:ring-2 focus:ring-amber-400" : ""
-            } transition-all`}
+            className={`w-full rounded-xl border ${ errors.email ? "border-red-500" : "border-white/70" } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${ isEditing ? "focus:ring-2 focus:ring-amber-400" : "" } transition-all`}
           />
           {errors.email && <p className="text-red-600 text-sm mt-1">❌ {errors.email}</p>}
         </div>
@@ -181,11 +173,7 @@ const DevoateeProfileComponent = () => {
             onChange={handleChange}
             disabled={!isEditing}
             placeholder="Enter 10-digit phone number"
-            className={`w-full rounded-xl border ${
-              errors.phone ? "border-red-500" : "border-white/70"
-            } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${
-              isEditing ? "focus:ring-2 focus:ring-amber-400" : ""
-            } transition-all`}
+            className={`w-full rounded-xl border ${ errors.phone ? "border-red-500" : "border-white/70" } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${ isEditing ? "focus:ring-2 focus:ring-amber-400" : "" } transition-all`}
           />
           {errors.phone && <p className="text-red-600 text-sm mt-1">❌ {errors.phone}</p>}
         </div>
@@ -199,11 +187,7 @@ const DevoateeProfileComponent = () => {
             value={profile.place}
             onChange={handleChange}
             disabled={!isEditing}
-            className={`w-full rounded-xl border ${
-              errors.place ? "border-red-500" : "border-white/70"
-            } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${
-              isEditing ? "focus:ring-2 focus:ring-amber-400" : ""
-            } transition-all`}
+            className={`w-full rounded-xl border ${ errors.place ? "border-red-500" : "border-white/70" } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${ isEditing ? "focus:ring-2 focus:ring-amber-400" : "" } transition-all`}
           />
           {errors.place && <p className="text-red-600 text-sm mt-1">❌ {errors.place}</p>}
         </div>
@@ -217,11 +201,7 @@ const DevoateeProfileComponent = () => {
             onChange={handleChange}
             disabled={!isEditing}
             rows="3"
-            className={`w-full rounded-xl border ${
-              errors.address ? "border-red-500" : "border-white/70"
-            } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${
-              isEditing ? "focus:ring-2 focus:ring-amber-400" : ""
-            } resize-none transition-all`}
+            className={`w-full rounded-xl border ${ errors.address ? "border-red-500" : "border-white/70" } ${isEditing ? "bg-temple-100/80 cursor-text" : "bg-gray-100 cursor-default"} p-3.5 outline-none ${ isEditing ? "focus:ring-2 focus:ring-amber-400" : "" } resize-none transition-all`}
           />
           {errors.address && <p className="text-red-600 text-sm mt-1">❌ {errors.address}</p>}
         </div>
@@ -233,7 +213,7 @@ const DevoateeProfileComponent = () => {
             type="text"
             value={profile.memberSince}
             disabled
-            className="w-full rounded-xl border border-white/70 bg-gray-100 p-3.5 outline-none"
+            className="w-full rounded-xl border border-white/70 bg-gray-100 dark:bg-[#0f172a] p-3.5 outline-none"
           />
         </div>
 
@@ -250,20 +230,20 @@ const DevoateeProfileComponent = () => {
       </form>
 
       {/* Notification Info */}
-      <div className="mt-8 p-4 rounded-xl bg-blue-50 border border-blue-200">
+      <div className="mt-8 p-4 rounded-xl bg-blue-50 dark:bg-[#0f172a] border border-blue-200">
         <h3 className="font-semibold text-blue-900 mb-3">🔔 Your Notification Channels</h3>
         <p className="text-sm text-blue-800 mb-2">
           You will receive notifications on these channels for all your bookings, donations, and prasadam orders:
         </p>
         <div className="space-y-2 mt-3">
-          <div className="flex items-center space-x-2 p-2 bg-temple-100 rounded border border-blue-100">
+          <div className="flex items-center space-x-2 p-2 bg-temple-100 dark:bg-[#0f172a] rounded border border-blue-100">
             <span className="text-lg">📧</span>
             <div>
               <p className="text-xs font-semibold text-blue-900">Email</p>
               <p className="text-sm text-blue-800">{profile.email || "Not provided"}</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 p-2 bg-temple-100 rounded border border-blue-100">
+          <div className="flex items-center space-x-2 p-2 bg-temple-100 dark:bg-[#0f172a] rounded border border-blue-100">
             <span className="text-lg">📱</span>
             <div>
               <p className="text-xs font-semibold text-blue-900">SMS/WhatsApp</p>

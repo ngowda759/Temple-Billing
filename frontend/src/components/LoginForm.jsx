@@ -81,7 +81,7 @@ const LoginForm = () => {
             value={formData.email}
             onChange={handleChange}
             required
-            className="w-full px-5 py-3.5 rounded-xl bg-temple-100/10 border border-white/10 text-white placeholder:text-white/40 focus:bg-temple-100/20 focus:border-temple-400 focus:ring-2 focus:ring-temple-400/20 outline-none transition-all duration-300"
+            className="w-full px-5 py-3.5 rounded-xl bg-temple-100/10 dark:bg-[#0f172a] border border-white/10 text-white placeholder:text-white/40 focus:bg-temple-100/20 focus:border-temple-400 focus:ring-2 focus:ring-temple-400/20 outline-none transition-all duration-300"
           />
         </div>
 
@@ -97,7 +97,7 @@ const LoginForm = () => {
             value={formData.password}
             onChange={handleChange}
             required
-            className="w-full px-5 py-3.5 rounded-xl bg-temple-100/10 border border-white/10 text-white placeholder:text-white/40 focus:bg-temple-100/20 focus:border-temple-400 focus:ring-2 focus:ring-temple-400/20 outline-none transition-all duration-300"
+            className="w-full px-5 py-3.5 rounded-xl bg-temple-100/10 dark:bg-[#0f172a] border border-white/10 text-white placeholder:text-white/40 focus:bg-temple-100/20 focus:border-temple-400 focus:ring-2 focus:ring-temple-400/20 outline-none transition-all duration-300"
           />
         </div>
 

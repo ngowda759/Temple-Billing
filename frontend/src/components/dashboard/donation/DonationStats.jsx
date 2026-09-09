@@ -22,12 +22,12 @@ const DonationStats = ({ stats = {} }) => {
       {displayStats.map((item, index) => (
         <div
           key={index}
-          className="rounded-[32px] border border-amber-200/60 bg-temple-100 p-6 shadow-md backdrop-blur-lg"
+          className="rounded-[32px] border border-amber-200/60 bg-temple-100 dark:bg-[#0f172a] p-6 shadow-md backdrop-blur-lg"
         >
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.24em] font-extrabold text-amber-700">{item.title}</p>
-              <h2 className="mt-2 text-3xl font-black text-slate-800">{item.value}</h2>
+              <h2 className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-200">{item.value}</h2>
             </div>
 
             <div className={`h-14 w-14 rounded-2xl bg-gradient-to-br ${item.accent} text-white flex items-center justify-center text-2xl shadow-md`}>

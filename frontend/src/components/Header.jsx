@@ -7,7 +7,7 @@ export default function Header({ title = "Accountant Dashboard", subtitle = "Fin
 					<h1 className="text-3xl font-semibold">{title}</h1>
 					<p className="mt-1 text-sm text-slate-300">{subtitle}</p>
 				</div>
-				<div className="rounded-full bg-temple-100/10 px-4 py-2 text-sm text-slate-100">Live revenue, receipts, and transactions</div>
+				<div className="rounded-full bg-temple-100/10 dark:bg-[#0f172a] px-4 py-2 text-sm text-slate-100">Live revenue, receipts, and transactions</div>
 			</div>
 		</header>
 	);

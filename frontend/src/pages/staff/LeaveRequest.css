@@ -22,7 +22,7 @@
 
 /* The apply leave section */
 .apply-leave-page {
-  background: white;
+  background: var(--panel);
   padding: 30px;
   border-radius: 16px;
   border: 1px solid #ece3d8;
@@ -145,7 +145,7 @@
 
 /* History View Styles */
 .leave-history-container {
-  background: white;
+  background: var(--panel);
   padding: 30px;
   border-radius: 16px;
   border: 1px solid #ece3d8;
@@ -170,8 +170,16 @@
   margin-bottom: 24px;
 }
 
+.leave-summary-cards .summary-card {
+  background: var(--panel);
+  padding: 24px;
+  border-radius: 12px;
+  text-align: center;
+  border: 1px solid #e9ecef;
+}
+
 .leave-card {
-  background: #f8f9fa;
+  background: var(--panel);
   padding: 20px;
   border-radius: 12px;
   text-align: center;

@@ -19,20 +19,7 @@ const RoleSelector = ({ selectedRole, setSelectedRole }) => {
           key={role}
           type="button"
           onClick={() => setSelectedRole(role)}
-          className={`
-            py-3 px-2
-            rounded-xl
-            font-medium text-sm
-            capitalize
-            transition-all
-            duration-300
-            border
-            ${
-              selectedRole === role
-                ? "bg-temple-500 text-white border-temple-400 shadow-[0_4px_15px_rgba(229,130,32,0.4)] scale-[1.02]"
-                : "bg-temple-100/10 text-white/80 border-white/10 hover:bg-temple-100/20 hover:text-white"
-            }
-          `}
+          className={` py-3 px-2 rounded-xl font-medium text-sm capitalize transition-all duration-300 border ${ selectedRole === role ? "bg-temple-500 text-white border-temple-400 shadow-[0_4px_15px_rgba(229,130,32,0.4)] scale-[1.02]" : "bg-temple-100/10 text-white/80 border-white/10 hover:bg-temple-100/20 dark:hover:bg-slate-800 hover:text-white" } `}
         >
           {role}
         </button>

@@ -4,20 +4,20 @@ import { useAuth } from "../../context/AuthContext";
 const normalizeRole = (role) => String(role || "").toLowerCase();
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { user, isAuthenticated } = useAuth();
+ const { user, isAuthenticated } = useAuth();
 
-  if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
+ if (!isAuthenticated) {
+ return <Navigate to="/" replace />;
+ }
 
-  const currentRole = normalizeRole(user?.role);
-  const allowed = allowedRoles?.map(normalizeRole) ?? [];
+ const currentRole = normalizeRole(user?.role);
+ const allowed = allowedRoles?.map(normalizeRole) ?? [];
 
-  if (allowedRoles && !allowed.includes(currentRole)) {
-    return <Navigate to={`/${currentRole}`} replace />;
-  }
+ if (allowedRoles && !allowed.includes(currentRole)) {
+ return <Navigate to={`/${currentRole}`} replace />;
+ }
 
-  return children;
+ return children;
 };
 
 export default ProtectedRoute;

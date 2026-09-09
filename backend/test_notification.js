@@ -16,7 +16,7 @@ async function testNotification() {
     });
 
     console.log("Notification created:", res);
-    
+
     // Wait a moment for async email
     await new Promise(resolve => setTimeout(resolve, 2000));
     console.log("Done.");

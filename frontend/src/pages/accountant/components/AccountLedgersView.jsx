@@ -291,15 +291,15 @@ const AccountLedgersView = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#faf7f2] p-4 sm:p-6 lg:p-8 text-slate-800">
+    <div className="min-h-screen bg-[#faf7f2] dark:bg-slate-900/50 p-4 sm:p-6 lg:p-8 text-slate-800 dark:text-slate-200">
       {/* HERO BANNER */}
-      <div className="mb-6 rounded-3xl border border-amber-200/60 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-600/10 p-6 backdrop-blur-md shadow-sm">
+      <div className="mb-6 rounded-3xl border border-amber-200 dark:border-amber-700/50/60 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-600/10 p-6 backdrop-blur-md shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#4a2b0f]">
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#4a2b0f] dark:text-amber-100">
               Account Ledgers & Expenses
             </h1>
-            <p className="mt-1 text-base font-medium text-[#7a4918]">
+            <p className="mt-1 text-base font-medium text-[#7a4918] dark:text-amber-200/80">
               Separate views for Credits and Debits, recent 5 vs full view controls, and complete PDF download reports.
             </p>
           </div>
@@ -314,7 +314,7 @@ const AccountLedgersView = () => {
             <button
               type="button"
               onClick={loadLedgers}
-              className="rounded-2xl border border-amber-300 bg-temple-100 px-5 py-3 text-sm font-bold text-amber-900 shadow-sm hover:bg-amber-50 transition"
+              className="rounded-2xl border border-amber-300 bg-temple-100 dark:bg-slate-800 px-5 py-3 text-sm font-bold text-amber-900 dark:text-amber-300 shadow-sm hover:bg-amber-50 dark:bg-amber-900/40 dark:border-amber-800/50 transition"
             >
               🔄 Refresh
             </button>
@@ -325,22 +325,22 @@ const AccountLedgersView = () => {
       {/* METRICS CARDS */}
       {activeTab === "Credit" && (
         <div className="grid gap-5 md:grid-cols-2 mb-6">
-          <div className="rounded-3xl border border-emerald-100 bg-temple-100 p-6 shadow-sm flex items-center justify-between">
+          <div className="rounded-3xl border border-emerald-100 bg-temple-100 dark:bg-slate-800 p-6 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">Today's Credits (Income)</p>
-              <p className="mt-2 text-3xl font-black text-emerald-950">Rs {todayCredits.toLocaleString()}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Today's Credits (Income)</p>
+              <p className="mt-2 text-3xl font-black text-emerald-950 dark:text-emerald-300">Rs {todayCredits.toLocaleString()}</p>
             </div>
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 text-xl">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 text-xl">
               <FaArrowUp />
             </span>
           </div>
 
-          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm flex items-center justify-between">
+          <div className="rounded-3xl border border-emerald-200 dark:border-emerald-700/50 bg-emerald-50 dark:bg-emerald-900/40 dark:border-emerald-800/50 p-6 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">Total Credits (Income)</p>
-              <p className="mt-2 text-3xl font-black text-emerald-950">Rs {totalCredits.toLocaleString()}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">Total Credits (Income)</p>
+              <p className="mt-2 text-3xl font-black text-emerald-950 dark:text-emerald-300">Rs {totalCredits.toLocaleString()}</p>
             </div>
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-200 text-emerald-800 text-xl">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-200 text-emerald-800 dark:text-emerald-400 text-xl">
               <FaWallet />
             </span>
           </div>
@@ -349,23 +349,23 @@ const AccountLedgersView = () => {
 
       {activeTab === "Debit" && (
         <div className="grid gap-5 md:grid-cols-2 mb-6">
-          <div className="rounded-3xl border border-red-100 bg-temple-100 p-6 shadow-sm flex items-center justify-between">
+          <div className="rounded-3xl border border-red-100 bg-temple-100 dark:bg-slate-800 p-6 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-red-700">Today's Debits (Expenses)</p>
-              <p className="mt-2 text-3xl font-black text-red-950">Rs {todayDebits.toLocaleString()}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-red-700 dark:text-red-400">Today's Debits (Expenses)</p>
+              <p className="mt-2 text-3xl font-black text-red-950 dark:text-red-300">Rs {todayDebits.toLocaleString()}</p>
             </div>
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100 text-red-700 text-xl">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100 dark:bg-red-900/40 dark:border-red-800/50 text-red-700 dark:text-red-400 text-xl">
               <FaArrowDown />
             </span>
           </div>
 
-          <div className="rounded-3xl border border-red-200 bg-red-50 p-6 shadow-sm flex items-center justify-between">
+          <div className="rounded-3xl border border-red-200 dark:border-red-700/50 bg-red-50 dark:bg-red-900/40 dark:border-red-800/50 p-6 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-red-800">Total Debits (Expenses)</p>
-              <p className="mt-2 text-3xl font-black text-red-950">Rs {totalDebits.toLocaleString()}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-red-800 dark:text-red-400">Total Debits (Expenses)</p>
+              <p className="mt-2 text-3xl font-black text-red-950 dark:text-red-300">Rs {totalDebits.toLocaleString()}</p>
               <p className="mt-1 text-xs font-bold text-red-600">Reflects all manual expense vouchers</p>
             </div>
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-200 text-red-800 text-xl">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-200 text-red-800 dark:text-red-400 text-xl">
               <FaWallet />
             </span>
           </div>
@@ -374,54 +374,54 @@ const AccountLedgersView = () => {
 
       {activeTab === "All" && (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 mb-6">
-          <div className="rounded-3xl border border-emerald-100 bg-temple-100 p-6 shadow-sm flex items-center justify-between">
+          <div className="rounded-3xl border border-emerald-100 bg-temple-100 dark:bg-slate-800 p-6 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">Today's Credits</p>
-              <p className="mt-2 text-2xl font-black text-emerald-950">Rs {todayCredits.toLocaleString()}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Today's Credits</p>
+              <p className="mt-2 text-2xl font-black text-emerald-950 dark:text-emerald-300">Rs {todayCredits.toLocaleString()}</p>
             </div>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 text-lg">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 text-lg">
               <FaArrowUp />
             </span>
           </div>
 
-          <div className="rounded-3xl border border-red-100 bg-temple-100 p-6 shadow-sm flex items-center justify-between">
+          <div className="rounded-3xl border border-red-100 bg-temple-100 dark:bg-slate-800 p-6 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-red-700">Today's Debits</p>
-              <p className="mt-2 text-2xl font-black text-red-950">Rs {todayDebits.toLocaleString()}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-red-700 dark:text-red-400">Today's Debits</p>
+              <p className="mt-2 text-2xl font-black text-red-950 dark:text-red-300">Rs {todayDebits.toLocaleString()}</p>
             </div>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-100 text-red-700 text-lg">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-100 dark:bg-red-900/40 dark:border-red-800/50 text-red-700 dark:text-red-400 text-lg">
               <FaArrowDown />
             </span>
           </div>
 
-          <div className="rounded-3xl border border-emerald-100 bg-temple-100 p-6 shadow-sm flex items-center justify-between">
+          <div className="rounded-3xl border border-emerald-100 bg-temple-100 dark:bg-slate-800 p-6 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">Total Credits (Income)</p>
-              <p className="mt-2 text-2xl font-black text-emerald-950">Rs {totalCredits.toLocaleString()}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Total Credits (Income)</p>
+              <p className="mt-2 text-2xl font-black text-emerald-950 dark:text-emerald-300">Rs {totalCredits.toLocaleString()}</p>
             </div>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 text-lg">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 text-lg">
               <FaArrowUp />
             </span>
           </div>
 
-          <div className="rounded-3xl border border-red-100 bg-temple-100 p-6 shadow-sm flex items-center justify-between">
+          <div className="rounded-3xl border border-red-100 bg-temple-100 dark:bg-slate-800 p-6 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-red-700">Total Debits (Expenses)</p>
-              <p className="mt-2 text-2xl font-black text-red-950">Rs {totalDebits.toLocaleString()}</p>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-red-700 dark:text-red-400">Total Debits (Expenses)</p>
+              <p className="mt-2 text-2xl font-black text-red-950 dark:text-red-300">Rs {totalDebits.toLocaleString()}</p>
             </div>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-100 text-red-700 text-lg">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-100 dark:bg-red-900/40 dark:border-red-800/50 text-red-700 dark:text-red-400 text-lg">
               <FaArrowDown />
             </span>
           </div>
 
-          <div className="rounded-3xl border border-amber-100 bg-temple-100 p-6 shadow-sm flex items-center justify-between sm:col-span-2 lg:col-span-1">
+          <div className="rounded-3xl border border-amber-100 bg-temple-100 dark:bg-slate-800 p-6 shadow-sm flex items-center justify-between sm:col-span-2 lg:col-span-1">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-amber-700">Net Ledger Balance</p>
-              <p className={`mt-2 text-2xl font-black ${netBalance >= 0 ? "text-emerald-800" : "text-red-800"}`}>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-400">Net Ledger Balance</p>
+              <p className={`mt-2 text-2xl font-black ${netBalance >= 0 ? "text-emerald-800 dark:text-emerald-400" : "text-red-800 dark:text-red-400"}`}>
                 Rs {netBalance.toLocaleString()}
               </p>
             </div>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 text-lg">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-900/40 dark:border-amber-800/50 text-amber-700 dark:text-amber-400 text-lg">
               <FaWallet />
             </span>
           </div>
@@ -429,7 +429,7 @@ const AccountLedgersView = () => {
       )}
 
       {/* SEPARATE TABS VIEW FOR CREDITS AND DEBITS */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-temple-100 p-3 shadow-md border border-slate-200">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-temple-100 dark:bg-slate-800 p-3 shadow-md border border-slate-200 dark:border-slate-700">
         <div className="flex gap-2">
           <button
             type="button"
@@ -439,7 +439,7 @@ const AccountLedgersView = () => {
             }}
             className={`px-5 py-3 rounded-2xl text-sm font-extrabold transition-all ${activeTab === "All"
               ? "bg-amber-600 text-white shadow-md shadow-amber-600/30 scale-[1.02]"
-              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200"
               }`}
           >
             All Ledger Entries ({transactions.length})
@@ -453,7 +453,7 @@ const AccountLedgersView = () => {
             }}
             className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-extrabold transition-all ${activeTab === "Debit"
               ? "bg-red-600 text-white shadow-md shadow-red-600/30 scale-[1.02]"
-              : "bg-red-50 text-red-700 hover:bg-red-100"
+              : "bg-red-50 dark:bg-red-900/40 dark:border-red-800/50 text-red-700 dark:text-red-400 hover:bg-red-100"
               }`}
           >
             <FaArrowDown /> Debits Only (Expenses)
@@ -467,7 +467,7 @@ const AccountLedgersView = () => {
             }}
             className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-extrabold transition-all ${activeTab === "Credit"
               ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 scale-[1.02]"
-              : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              : "bg-emerald-50 dark:bg-emerald-900/40 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100"
               }`}
           >
             <FaArrowUp /> Credits Only (Income)
@@ -478,16 +478,16 @@ const AccountLedgersView = () => {
         <button
           type="button"
           onClick={() => setShowAllRows(!showAllRows)}
-          className="flex items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm font-extrabold text-amber-900 shadow-sm hover:bg-amber-100 transition"
+          className="flex items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-900/40 dark:border-amber-800/50 px-5 py-3 text-sm font-extrabold text-amber-900 dark:text-amber-300 shadow-sm hover:bg-amber-100 transition"
         >
           <FaListOl /> {showAllRows ? "Showing All Records (Click for Recent 5)" : `Show Recent 5 (View All ${filteredTransactions.length})`}
         </button>
       </div>
 
       {/* FILTER TOOLBAR */}
-      <div className="mb-6 rounded-3xl border border-white/80 bg-temple-100 p-6 shadow-md backdrop-blur-lg">
+      <div className="mb-6 rounded-3xl border border-white/80 bg-temple-100 dark:bg-slate-800 p-6 shadow-md backdrop-blur-lg">
         <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-slate-700">
+          <div className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
             <FaFilter className="text-amber-600" /> Advanced Filter Options
           </div>
           <button
@@ -497,7 +497,7 @@ const AccountLedgersView = () => {
               setSearchQuery("");
               setActiveTab("All");
             }}
-            className="text-xs font-bold text-amber-700 hover:underline"
+            className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline"
           >
             Reset Filters
           </button>
@@ -506,14 +506,14 @@ const AccountLedgersView = () => {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {/* SEARCH BAR */}
           <div>
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Search Purpose / ID</label>
+            <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Search Purpose / ID</label>
             <div className="relative">
               <input
                 type="text"
                 placeholder="Search purpose, ref..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none focus:border-amber-500 focus:bg-temple-100"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2.5 pl-9 pr-3 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-amber-500 focus:bg-temple-100"
               />
               <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             </div>
@@ -521,36 +521,36 @@ const AccountLedgersView = () => {
 
           {/* FROM DATE */}
           <div>
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">From Date</label>
+            <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">From Date</label>
             <input
               type="date"
               name="startDate"
               value={filters.startDate}
               onChange={handleFilterChange}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none focus:border-amber-500 focus:bg-temple-100"
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-amber-500 focus:bg-temple-100"
             />
           </div>
 
           {/* TO DATE */}
           <div>
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">To Date</label>
+            <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">To Date</label>
             <input
               type="date"
               name="endDate"
               value={filters.endDate}
               onChange={handleFilterChange}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none focus:border-amber-500 focus:bg-temple-100"
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-amber-500 focus:bg-temple-100"
             />
           </div>
 
           {/* MODULE SOURCE */}
           <div>
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Module Source</label>
+            <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Module Source</label>
             <select
               name="source"
               value={filters.source}
               onChange={handleFilterChange}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none focus:border-amber-500 focus:bg-temple-100"
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-amber-500 focus:bg-temple-100"
             >
               <option value="">All Sources</option>
               <option value="Manual Entry">Manual Entry (Debits)</option>
@@ -564,17 +564,17 @@ const AccountLedgersView = () => {
       </div>
 
       {/* GENERAL LEDGER TABLE SECTION */}
-      <section className="rounded-3xl border border-white/80 bg-temple-100 p-6 sm:p-8 shadow-xl backdrop-blur-xl">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+      <section className="rounded-3xl border border-white/80 bg-temple-100 dark:bg-slate-800 p-6 sm:p-8 shadow-xl backdrop-blur-xl">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700 pb-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700 font-bold">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/40 dark:border-amber-800/50 text-amber-700 dark:text-amber-400 font-bold">
               <FaFileInvoiceDollar />
             </span>
             <div>
-              <h2 className="text-2xl font-black text-slate-900">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100">
                 {activeTab === "Debit" ? "Debits & Expense Ledger" : activeTab === "Credit" ? "Credits & Income Ledger" : "General Ledger"}
               </h2>
-              <p className="text-xs font-bold text-slate-500">
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
                 {!showAllRows ? `Showing recent 5 entries (Out of ${filteredTransactions.length} total)` : `Showing all ${filteredTransactions.length} entries`}
               </p>
             </div>
@@ -584,7 +584,7 @@ const AccountLedgersView = () => {
             <button
               type="button"
               onClick={() => setShowAllRows(!showAllRows)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 transition"
             >
               {showAllRows ? "Show Recent 5 Only" : `View All ${filteredTransactions.length}`}
             </button>
@@ -599,14 +599,14 @@ const AccountLedgersView = () => {
         </div>
 
         {loading ? (
-          <div className="py-12 text-center text-base font-bold text-slate-500">
+          <div className="py-12 text-center text-base font-bold text-slate-500 dark:text-slate-400">
             Loading ledger entries...
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[850px] text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/80 text-xs font-extrabold uppercase tracking-wider text-slate-600">
+                <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800 text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                   <th className="py-4 px-4">Date</th>
                   <th className="py-4 px-4">Reference / ID</th>
                   <th className="py-4 px-4">Description / Purpose</th>
@@ -620,7 +620,7 @@ const AccountLedgersView = () => {
               <tbody className="divide-y divide-slate-100">
                 {displayedTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="py-10 text-center text-slate-500 font-semibold">
+                    <td colSpan="8" className="py-10 text-center text-slate-500 dark:text-slate-400 font-semibold">
                       No ledger transactions found for current tab/filters.
                     </td>
                   </tr>
@@ -628,46 +628,46 @@ const AccountLedgersView = () => {
                   displayedTransactions.map((t) => (
                     <tr
                       key={t._id || t.referenceId}
-                      className={`transition-colors ${t.isManual ? "bg-amber-50/30 hover:bg-amber-50/60" : "hover:bg-slate-50"
+                      className={`transition-colors ${t.isManual ? "bg-amber-50/30 dark:bg-amber-900/40 hover:bg-amber-50/60 dark:hover:bg-amber-900/40" : "hover:bg-slate-50 dark:bg-slate-800"
                         }`}
                     >
-                      <td className="py-4 px-4 text-xs font-semibold text-slate-600">
+                      <td className="py-4 px-4 text-xs font-semibold text-slate-600 dark:text-slate-400">
                         {t.displayDate || new Date(t.date).toLocaleDateString()}
                       </td>
-                      <td className="py-4 px-4 font-mono text-xs font-bold text-amber-800">
+                      <td className="py-4 px-4 font-mono text-xs font-bold text-amber-800 dark:text-amber-400">
                         {t.referenceId || "N/A"}
                         {t.isManual && (
                           <span className="block text-[10px] font-extrabold text-amber-600 uppercase">Manual Voucher</span>
                         )}
                       </td>
                       <td className="py-4 px-4">
-                        <p className="text-sm font-bold text-slate-900">{t.description}</p>
+                        <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{t.description}</p>
                         {t.receiptName && (
-                          <span className="inline-flex items-center gap-1 mt-0.5 text-xs text-amber-700 font-semibold">
+                          <span className="inline-flex items-center gap-1 mt-0.5 text-xs text-amber-700 dark:text-amber-400 font-semibold">
                             <FaReceipt /> Receipt Attached ({t.receiptName})
                           </span>
                         )}
                       </td>
                       <td className="py-4 px-4">
-                        <p className="text-sm font-extrabold text-slate-800">{t.source}</p>
-                        <p className="text-xs font-semibold text-slate-500">{t.category}</p>
+                        <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{t.source}</p>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t.category}</p>
                       </td>
-                      <td className="py-4 px-4 text-sm font-bold text-slate-700">{t.paymentMethod}</td>
+                      <td className="py-4 px-4 text-sm font-bold text-slate-700 dark:text-slate-300">{t.paymentMethod}</td>
                       <td className="py-4 px-4">
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-extrabold border ${t.transactionType === "Credit"
-                            ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                            : "bg-red-100 text-red-800 border-red-200"
+                            ? "bg-emerald-100 dark:bg-emerald-900/40 dark:border-emerald-800/50 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700/50"
+                            : "bg-red-100 dark:bg-red-900/40 dark:border-red-800/50 text-red-800 dark:text-red-400 border-red-200 dark:border-red-700/50"
                             }`}
                         >
                           {t.transactionType === "Credit" ? <FaArrowUp /> : <FaArrowDown />} {t.transactionType}
                         </span>
                       </td>
-                      <td className={`py-4 px-4 text-base font-black ${t.transactionType === "Credit" ? "text-emerald-700" : "text-red-700"}`}>
+                      <td className={`py-4 px-4 text-base font-black ${t.transactionType === "Credit" ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                         Rs {Number(t.amount || 0).toLocaleString()}
                       </td>
                       <td className="py-4 px-4 text-center">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/40 dark:border-emerald-800/50 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700/50">
                           <FaCheckCircle className="text-emerald-500" /> {t.status || "Completed"}
                         </span>
                       </td>
@@ -681,8 +681,8 @@ const AccountLedgersView = () => {
 
         {/* BOTTOM PAGINATION/TOGGLE BANNER */}
         {!showAllRows && filteredTransactions.length > 5 && (
-          <div className="mt-6 flex flex-wrap items-center justify-between rounded-2xl bg-amber-50 p-4 border border-amber-200">
-            <p className="text-sm font-bold text-amber-900">
+          <div className="mt-6 flex flex-wrap items-center justify-between rounded-2xl bg-amber-50 dark:bg-amber-900/40 dark:border-amber-800/50 p-4 border border-amber-200 dark:border-amber-700/50">
+            <p className="text-sm font-bold text-amber-900 dark:text-amber-300">
               Currently showing 5 recent entries out of {filteredTransactions.length} total records.
             </p>
             <button

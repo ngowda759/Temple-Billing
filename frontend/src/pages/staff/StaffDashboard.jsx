@@ -24,6 +24,7 @@ import { MdLightMode, MdDarkMode } from "react-icons/md";
 import { FaSignOutAlt } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
+import EmployeeProfileView from "../../components/shared/EmployeeProfileView";
 import {
   changeEmployeePassword,
   getEmployeeProfile,
@@ -567,7 +568,7 @@ const StaffDashboard = () => {
             className={activeSection === "dashboard" ? "nav-item active" : "nav-item"}
             onClick={() => setActiveSection("dashboard")}
           >
-            <FiHome /> Overview
+            <FiHome /> Dashboard
           </button>
           <button
             type="button"
@@ -854,20 +855,20 @@ const StaffDashboard = () => {
 
                 {/* Default Duty Section */}
                 {(profileForm.defaultDuty || profileForm.defaultShift) && (
-                  <div className="mb-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
-                    <h3 className="font-bold text-amber-800 mb-2">Default Duty (Permanent)</h3>
+                  <div className={`mb-4 p-4 rounded-xl border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-amber-50 border-amber-200'}`}>
+                    <h3 className={`font-bold mb-2 ${darkMode ? 'text-amber-500' : 'text-amber-800'}`}>Default Duty (Permanent)</h3>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div>
-                        <span className="text-slate-600">Default Shift:</span>
-                        <span className="ml-2 font-semibold">{profileForm.defaultShift || profileForm.shift || "Not assigned"}</span>
+                        <span className={darkMode ? 'text-slate-400' : 'text-slate-600'}>Default Shift:</span>
+                        <span className={`ml-2 font-semibold ${darkMode ? 'text-slate-200' : ''}`}>{profileForm.defaultShift || profileForm.shift || "Not assigned"}</span>
                       </div>
                       <div>
-                        <span className="text-slate-600">Default Duty:</span>
-                        <span className="ml-2 font-semibold">{profileForm.defaultDuty || "Not assigned"}</span>
+                        <span className={darkMode ? 'text-slate-400' : 'text-slate-600'}>Default Duty:</span>
+                        <span className={`ml-2 font-semibold ${darkMode ? 'text-slate-200' : ''}`}>{profileForm.defaultDuty || "Not assigned"}</span>
                       </div>
                       <div className="col-span-2">
-                        <span className="text-slate-600">Duty Location:</span>
-                        <span className="ml-2 font-semibold">{profileForm.dutyLocation || "Not assigned"}</span>
+                        <span className={darkMode ? 'text-slate-400' : 'text-slate-600'}>Duty Location:</span>
+                        <span className={`ml-2 font-semibold ${darkMode ? 'text-slate-200' : ''}`}>{profileForm.dutyLocation || "Not assigned"}</span>
                       </div>
                     </div>
                   </div>

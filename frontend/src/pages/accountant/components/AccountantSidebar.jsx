@@ -51,7 +51,7 @@ const AccountantSidebar = ({ activeItem = "Dashboard", onSelectItem = () => {}, 
             })}
           </div>
 
-          <div className="accountant-sidebar__divider" />
+
 
           <div className="accountant-sidebar__group">
             {accountantSidebarUtility.map((item) => {
@@ -62,7 +62,7 @@ const AccountantSidebar = ({ activeItem = "Dashboard", onSelectItem = () => {}, 
                 <button
                   key={item.label}
                   type="button"
-                  className={`accountant-sidebar__item accountant-sidebar__item--utility ${isActive ? "is-active" : ""}`}
+                  className={`accountant-sidebar__item ${isActive ? "is-active" : ""}`}
                   onClick={() => onSelectItem(item.label)}
                 >
                   <span className="accountant-sidebar__icon">

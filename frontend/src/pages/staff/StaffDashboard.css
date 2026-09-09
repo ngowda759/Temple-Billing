@@ -1,8 +1,8 @@
-﻿@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
 
 .staff-dashboard-page {
   --bg: #f6f2ea;
-  --panel: #fffefb;
+  --panel: #f2ebd9;
   --line: #ece3d8;
   --text: #1f1d19;
   --muted: #71695e;
@@ -293,7 +293,6 @@
 }
 
 .table-card,
-.profile-card,
 .leave-summary-card,
 .quick-actions-card,
 .apply-leave-page,
@@ -303,6 +302,20 @@
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 18px;
+}
+
+.profile-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  color: var(--text);
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-card::before {
+  display: none;
 }
 
 .notifications-head {
@@ -826,7 +839,7 @@
   list-style: none;
   display: grid;
   gap: 10px;
-  color: #35363b;
+  color: var(--text);
 }
 
 .profile-card li {
@@ -834,6 +847,7 @@
   align-items: center;
   gap: 8px;
   font-weight: 600;
+  color: var(--text);
 }
 
 .profile-card button,
@@ -1591,3 +1605,74 @@
 .dark .secondary-btn { background: var(--panel) !important; color: var(--text) !important; border-color: var(--line) !important; }
 .dark .notifications-empty, .dark .notification-card { background: var(--panel); border-color: var(--line); }
 .dark .view-action-btn { background: var(--panel); border-color: var(--line); color: var(--text); }
+
+/* Comprehensive Dark Mode Overrides for Staff */
+.dark .nav-item { color: var(--text); }
+.dark .nav-item:hover { background: rgba(255, 255, 255, 0.05); }
+.dark .staff-brand h2 { color: var(--text); }
+.dark .staff-brand p { color: var(--muted); }
+.dark .brand-icon { background: rgba(255, 255, 255, 0.1); color: var(--orange); }
+.dark .staff-header p { color: var(--muted); }
+.dark .header-date { color: var(--text); }
+.dark .notif-button { color: var(--text); }
+
+.dark .info-card h3 { color: var(--text); }
+.dark .info-card p { color: var(--muted); }
+.dark .info-card strong { color: var(--text); }
+
+.dark .duty-title { color: var(--text); }
+.dark .duty-meta { color: var(--muted); }
+.dark .duty-time { color: var(--text); }
+.dark .duty-item { border-color: var(--line); }
+
+.dark .card-heading p { color: var(--muted); }
+.dark .empty-cell { color: var(--muted); }
+.dark .details-content p { color: var(--text); }
+.dark .detail-row span { color: var(--muted); }
+.dark .detail-row p { color: var(--text); }
+
+.dark .timeline-item { border-color: var(--line); }
+.dark .selected-row { background: rgba(255, 255, 255, 0.05); }
+.dark .task-table th { color: var(--muted); }
+.dark .task-table td { color: var(--text); }
+
+.dark .leave-stat-grid article { border-color: var(--line); background: var(--panel); }
+.dark .leave-stat-grid p { color: var(--muted); }
+.dark .inventory-form-card label { color: var(--text); }
+.dark .inventory-status-item p { color: var(--muted); }
+.dark .inventory-status-item h3 { color: var(--text); }
+
+.dark .staff-error { background: rgba(220, 38, 38, 0.1); color: #fca5a5; border-color: rgba(220, 38, 38, 0.2); }
+.dark .staff-loading { background: rgba(234, 179, 8, 0.1); color: #fde047; border-color: rgba(234, 179, 8, 0.2); }
+.dark .quick-actions button { background: var(--panel); border-color: var(--line); color: var(--text); }
+.dark .quick-actions button:hover { background: rgba(255, 255, 255, 0.05); }
+
+/* Dark Mode for Profile Card specifically */
+.dark .profile-card {
+  background: linear-gradient(145deg, #1f2937 0%, #111827 100%);
+  border: 1px solid #374151;
+  color: #f3f4f6;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+}
+.dark .profile-card::before {
+  display: block;
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 150px;
+  height: 150px;
+  background: radial-gradient(circle, rgba(255,126,0,0.15) 0%, rgba(0,0,0,0) 70%);
+  border-radius: 50%;
+  transform: translate(30%, -30%);
+}
+.dark .profile-card ul { color: #d1d5db; }
+.dark .profile-card li { color: #e5e7eb; }
+.dark .profile-meta h3 { color: #ffffff; }
+
+/* Dark Mode Overrides for White Cards - HARDCODED */
+.dark .approved-box, .dark .pending-box, .dark .rejected-box { background: #1e293b !important; border-color: #334155 !important; }
+.dark .inventory-form-card, .dark .inventory-top-cards article, .dark .leave-form-card, .dark .inventory-status-card, .dark .info-card, .dark .table-card { background: #1e293b !important; border-color: #334155 !important; }
+.dark .inventory-top-cards h3, .dark .inventory-top-cards strong, .dark .inventory-status-card h2, .dark .inventory-status-card h3 { color: #f8fafc !important; }
+.dark .ghost-action { background: #1e293b !important; color: #f8fafc !important; border-color: #334155 !important; }
+.dark .inventory-status-item { background: #1e293b !important; border-color: #334155 !important; }

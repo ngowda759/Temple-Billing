@@ -64,7 +64,7 @@ const EmailNotificationsView = ({
           {onRefresh && (
             <button
               onClick={onRefresh}
-              className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800"
+              className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-[var(--panel,#fff)] dark:bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800"
             >
               Refresh
             </button>
@@ -72,7 +72,7 @@ const EmailNotificationsView = ({
           {unreadCount > 0 && onMarkAllRead && (
             <button
               onClick={onMarkAllRead}
-              className="flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-700"
+              className="flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-[#0f172a] px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-700"
             >
               <FiCheckCircle /> Mark all as read
             </button>
@@ -80,20 +80,20 @@ const EmailNotificationsView = ({
         </div>
       </div>
 
-      {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-700">{error}</div>}
+      {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 dark:bg-[#0f172a] p-4 text-sm font-medium text-rose-700">{error}</div>}
 
-      <div className="rounded-[24px] border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm overflow-hidden flex flex-col">
+      <div className="rounded-[24px] border border-slate-200 dark:border-slate-700 bg-[var(--panel,#fff)] dark:bg-slate-900 shadow-sm overflow-hidden flex flex-col">
         {/* Toolbar */}
-        <div className="border-b border-slate-100 dark:border-slate-800 p-2 flex items-center gap-2 bg-slate-50/50 dark:bg-slate-800/20">
+        <div className="border-b border-slate-100 dark:border-slate-800 p-2 flex items-center gap-2 bg-slate-50/50 dark:bg-[#0f172a]/20">
           <button
             onClick={() => setFilter("all")}
-            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${filter === "all" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${filter === "all" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:bg-slate-800"}`}
           >
             All
           </button>
           <button
             onClick={() => setFilter("unread")}
-            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${filter === "unread" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${filter === "unread" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:bg-slate-800"}`}
           >
             Unread
           </button>
@@ -136,9 +136,9 @@ const EmailNotificationsView = ({
                 <div 
                   key={id}
                   onClick={(e) => !isRead && handleRead(id, e)} 
-                  className={`relative flex items-start gap-4 p-5 transition-colors border-l-4 ${!isRead ? "cursor-pointer border-amber-500 bg-white dark:bg-slate-800/80 shadow-sm z-10" : "border-transparent bg-slate-50/30 dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                  className={`relative flex items-start gap-4 p-5 transition-colors border-l-4 ${!isRead ? "cursor-pointer border-amber-500 bg-[var(--panel,#fff)] dark:bg-[#0f172a]/80 shadow-sm z-10" : "border-transparent bg-slate-50/30 dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
                 >
-                  <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isRead ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400'}`}>
+                  <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isRead ? 'bg-slate-100 dark:bg-[#0f172a] text-slate-400 dark:text-slate-500' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400'}`}>
                     <FiBell />
                   </div>
                   <div className="flex-1">
@@ -155,15 +155,35 @@ const EmailNotificationsView = ({
                     <p className={`mt-1 text-sm ${isRead ? 'text-slate-500 dark:text-slate-400' : 'font-medium text-slate-800 dark:text-slate-200'}`}>
                       {notification.displayMessage || notification.message}
                     </p>
+                    {notification.attachment && (
+                      <div className="mt-3">
+                        {(notification.attachment.startsWith("data:image/") || (!notification.attachment.startsWith("data:application/pdf") && !notification.attachment.toLowerCase().endsWith(".pdf"))) ? (
+                          <img
+                            src={notification.attachment}
+                            alt="Event Banner"
+                            className="max-h-56 w-auto rounded-xl object-contain border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xs"
+                          />
+                        ) : (
+                          <a
+                            href={notification.attachment}
+                            download={`Attachment-${(notification.title || "Event").replace(/\s+/g, "_")}.pdf`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-2 rounded-xl bg-teal-600 hover:bg-teal-700 px-3.5 py-1.5 text-xs font-bold text-white transition shadow-xs"
+                          >
+                            📄 Download Attached Document
+                          </a>
+                        )}
+                      </div>
+                    )}
                     <div className="mt-3 flex items-center justify-between">
                       <div className="flex gap-2">
                         {(notification.category || notification.type) && (
-                          <span className="inline-block rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                          <span className="inline-block rounded-full bg-slate-100 dark:bg-[#0f172a] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                             {notification.category || notification.type}
                           </span>
                         )}
                         {notification.audienceRole && (
-                          <span className="inline-block rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                          <span className="inline-block rounded-full bg-slate-100 dark:bg-[#0f172a] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                             {notification.audienceRole}
                           </span>
                         )}

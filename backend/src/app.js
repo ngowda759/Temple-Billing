@@ -31,7 +31,8 @@ const Room = require("./models/Room");
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: "8mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use("/api/notifications", notificationRoutes);
 
 app.get("/api/health", (req, res) => {

@@ -19,8 +19,8 @@ const DonationFilters = ({ categories, onApplyFilters }) => {
   };
 
   return (
-    <div className="rounded-[32px] border border-amber-200/60 bg-temple-100 p-6 shadow-md backdrop-blur-lg">
-      <h2 className="text-2xl font-black text-slate-800">Donation Filters</h2>
+    <div className="rounded-[32px] border border-amber-200/60 bg-temple-100 dark:bg-[#0f172a] p-6 shadow-md backdrop-blur-lg">
+      <h2 className="text-2xl font-black text-slate-800 dark:text-slate-200">Donation Filters</h2>
       <p className="mt-1 text-sm font-semibold text-slate-500">Filter live donation data by donor, type and status.</p>
       <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <input
@@ -28,12 +28,12 @@ const DonationFilters = ({ categories, onApplyFilters }) => {
           onChange={(e) => setSearchTerm(e.target.value)}
           type="text"
           placeholder="Search donor / receipt / category..."
-          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-800 font-semibold placeholder:text-slate-400 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 shadow-xs"
+          className="rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0f172a] px-4 py-3 text-slate-800 dark:text-slate-200 font-semibold placeholder:text-slate-400 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 shadow-xs"
         />
         <select
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
-          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-800 font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 shadow-xs"
+          className="rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0f172a] px-4 py-3 text-slate-800 dark:text-slate-200 font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 shadow-xs"
         >
           {categoryOptions.map((option) => (
             <option key={option} value={option}>{option}</option>

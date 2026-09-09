@@ -10,7 +10,7 @@ export default function StatCard({ title, value, color = "slate" }) {
 	return (
 		<article className={`rounded-3xl border p-5 shadow-sm ${colorClasses[color] || colorClasses.slate}`}>
 			<p className="text-sm font-medium opacity-80">{title}</p>
-			<p className="mt-2 text-3xl font-semibold text-slate-900">{value}</p>
+			<p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-200">{value}</p>
 		</article>
 	);
 }

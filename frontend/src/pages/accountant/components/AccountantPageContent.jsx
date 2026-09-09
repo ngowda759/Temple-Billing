@@ -43,6 +43,8 @@ import LeaveRequest from "../../staff/LeaveRequest";
 import StaffInventory from "../../staff/StaffInventory";
 import AccountantInventory from "../AccountantInventory";
 import EmployeeProfileView from "../../../components/shared/EmployeeProfileView";
+import EmailNotificationsView from "../../../components/shared/EmailNotificationsView";
+import axios from "axios";
 import ManualEntriesView from "./ManualEntriesView";
 import ProfitLossView from "./ProfitLossView";
 import AccountLedgersView from "./AccountLedgersView";
@@ -456,7 +458,7 @@ const DashboardView = ({ user, currentDate, currentWeekday }) => {
   if (loading) {
     return (
       <div className="accountant-view flex items-center justify-center py-20">
-        <p className="text-slate-500 font-semibold">Loading ledger transactions...</p>
+        <p className="text-slate-500 dark:text-slate-400 font-semibold">Loading ledger transactions...</p>
       </div>
     );
   }
@@ -469,7 +471,7 @@ const DashboardView = ({ user, currentDate, currentWeekday }) => {
         description={`Overview of temple financial activities.`}
         right={
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-temple-100 border border-slate-200 px-3 py-1.5 rounded-xl">
+            <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 bg-temple-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl">
               <span className="font-bold">From:</span>
               <input
                 type="date"
@@ -478,7 +480,7 @@ const DashboardView = ({ user, currentDate, currentWeekday }) => {
                 className="outline-none"
               />
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-temple-100 border border-slate-200 px-3 py-1.5 rounded-xl">
+            <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 bg-temple-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl">
               <span className="font-bold">To:</span>
               <input
                 type="date"
@@ -528,11 +530,11 @@ const DashboardView = ({ user, currentDate, currentWeekday }) => {
                   filteredBills.slice(0, 10).map((bill, index) => (
                     <tr key={bill._id || index}>
                       <td>{new Date(bill.billDate || bill.createdAt).toLocaleDateString("en-IN")}</td>
-                      <td className="font-bold text-slate-900">{bill.referenceNo || `TXN-${String(index + 1).padStart(4, "0")}`}</td>
-                      <td className="font-semibold text-slate-800">{bill.devoteeName}</td>
+                      <td className="font-bold text-slate-900 dark:text-slate-100">{bill.referenceNo || `TXN-${String(index + 1).padStart(4, "0")}`}</td>
+                      <td className="font-semibold text-slate-800 dark:text-slate-200">{bill.devoteeName}</td>
                       <td>{bill.billType}</td>
                       <td>{bill.sevaType}</td>
-                      <td className="font-bold text-slate-900">Rs {Number(bill.amount || 0).toLocaleString("en-IN")}</td>
+                      <td className="font-bold text-slate-900 dark:text-slate-100">Rs {Number(bill.amount || 0).toLocaleString("en-IN")}</td>
                       <td>{bill.paymentMode}</td>
                       <td>
                         <StatusBadge value="Paid" />
@@ -541,7 +543,7 @@ const DashboardView = ({ user, currentDate, currentWeekday }) => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="8" className="accountant-emptyState text-center py-8 text-slate-500">
+                    <td colSpan="8" className="accountant-emptyState text-center py-8 text-slate-500 dark:text-slate-400">
                       No ledger transactions found in the selected range.
                     </td>
                   </tr>
@@ -585,15 +587,7 @@ const DashboardView = ({ user, currentDate, currentWeekday }) => {
         </article>
       </section>
 
-      <section className="accountant-banner">
-        <div className="accountant-banner__icon" aria-hidden="true">
-          <MdTempleBuddhist />
-        </div>
-        <div>
-          <p className="accountant-banner__copy">May this temple prosper and all devotees be blessed.</p>
-          <p className="accountant-banner__blessing">Om Namo Venkateshaya</p>
-        </div>
-      </section>
+
     </div>
   );
 };
@@ -619,7 +613,7 @@ const DonationsView = ({ bills, loading }) => {
   ];
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500">Loading donations ledger...</div>;
+    return <div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading donations ledger...</div>;
   }
 
   return (
@@ -661,9 +655,9 @@ const DonationsView = ({ bills, loading }) => {
             rows={donationBills}
             renderRow={(row, idx) => (
               <tr key={row._id || idx}>
-                <td className="font-bold text-slate-900">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
-                <td className="font-semibold text-slate-800">{row.devoteeName}</td>
-                <td className="font-bold text-slate-900">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
+                <td className="font-semibold text-slate-800 dark:text-slate-200">{row.devoteeName}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
                 <td>{row.paymentMode}</td>
                 <td>{new Date(row.billDate || row.createdAt).toLocaleDateString("en-IN")}</td>
                 <td>
@@ -709,7 +703,7 @@ const BillingView = ({ bills, loading }) => {
   ];
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500">Loading bills directory...</div>;
+    return <div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading bills directory...</div>;
   }
 
   const handleDownloadReport = () => {
@@ -796,10 +790,10 @@ const BillingView = ({ bills, loading }) => {
           rows={filtered}
           renderRow={(row, idx) => (
             <tr key={row._id || idx}>
-              <td className="font-bold text-slate-900">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
-              <td className="font-semibold text-slate-800">{row.devoteeName}</td>
+              <td className="font-bold text-slate-900 dark:text-slate-100">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
+              <td className="font-semibold text-slate-800 dark:text-slate-200">{row.devoteeName}</td>
               <td>{row.sevaType}</td>
-              <td className="font-bold text-slate-900">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
+              <td className="font-bold text-slate-900 dark:text-slate-100">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
               <td>
                 <StatusBadge value="Paid" />
               </td>
@@ -843,7 +837,7 @@ const PaymentsView = ({ bills, loading }) => {
   }, [filtered]);
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500">Loading payments...</div>;
+    return <div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading payments...</div>;
   }
 
   return (
@@ -887,9 +881,9 @@ const PaymentsView = ({ bills, loading }) => {
             rows={filtered}
             renderRow={(row, idx) => (
               <tr key={row._id || idx}>
-                <td className="font-bold text-slate-900">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
-                <td className="font-semibold text-slate-800">{row.devoteeName}</td>
-                <td className="font-bold text-slate-900">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
+                <td className="font-semibold text-slate-800 dark:text-slate-200">{row.devoteeName}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
                 <td>{row.paymentMode}</td>
                 <td>
                   <StatusBadge value={row.status || "Paid"} />
@@ -1002,7 +996,7 @@ const ReceiptsView = ({ bills, roomBookings = [], loading }) => {
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500">Loading receipts...</div>;
+    return <div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading receipts...</div>;
   }
 
   return (
@@ -1066,13 +1060,13 @@ const ReceiptsView = ({ bills, roomBookings = [], loading }) => {
               emptyText="No room bookings found."
               renderRow={(row, idx) => (
                 <tr key={row._id || idx}>
-                  <td className="font-bold text-slate-900">
+                  <td className="font-bold text-slate-900 dark:text-slate-100">
                     {row._id ? `RM-${String(row._id).slice(-6).toUpperCase()}` : `RM-${String(idx + 1).padStart(4, "0")}`}
                   </td>
-                  <td className="font-semibold text-slate-800">{row.devoteeName || row.devoteePhone || "-"}</td>
+                  <td className="font-semibold text-slate-800 dark:text-slate-200">{row.devoteeName || row.devoteePhone || "-"}</td>
                   <td>{String(row.service || "").replace("Room Allotment: ", "") || "-"}</td>
                   <td>{row.days || "-"}</td>
-                  <td className="font-bold text-slate-900">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
+                  <td className="font-bold text-slate-900 dark:text-slate-100">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
                   <td>{row.paymentMethod || row.payMode || "-"}</td>
                   <td>
                     {row.datetime
@@ -1097,10 +1091,10 @@ const ReceiptsView = ({ bills, roomBookings = [], loading }) => {
             rows={filtered}
             renderRow={(row, idx) => (
               <tr key={row._id || idx}>
-                <td className="font-bold text-slate-900">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
                 <td>{row.billType}</td>
-                <td className="font-semibold text-slate-800">{row.devoteeName}</td>
-                <td className="font-bold text-slate-900">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
+                <td className="font-semibold text-slate-800 dark:text-slate-200">{row.devoteeName}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
                 <td>{new Date(row.billDate || row.createdAt).toLocaleDateString("en-IN")}</td>
               </tr>
             )}
@@ -1136,7 +1130,7 @@ const PoojaRevenueView = ({ bills, loading }) => {
   }, [poojaBills]);
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500">Loading pooja ledger...</div>;
+    return <div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading pooja ledger...</div>;
   }
 
   return (
@@ -1164,10 +1158,10 @@ const PoojaRevenueView = ({ bills, loading }) => {
             rows={poojaBills}
             renderRow={(row, idx) => (
               <tr key={row._id || idx}>
-                <td className="font-bold text-slate-900">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
-                <td className="font-semibold text-slate-800">{row.devoteeName}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
+                <td className="font-semibold text-slate-800 dark:text-slate-200">{row.devoteeName}</td>
                 <td>{row.sevaType}</td>
-                <td className="font-bold text-slate-900">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
                 <td>{new Date(row.billDate || row.createdAt).toLocaleDateString("en-IN")}</td>
               </tr>
             )}
@@ -1213,7 +1207,7 @@ const PrasadamSalesView = ({ bills, loading }) => {
   }, [prasadamBills]);
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500">Loading prasadam sales...</div>;
+    return <div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading prasadam sales...</div>;
   }
 
   return (
@@ -1241,10 +1235,10 @@ const PrasadamSalesView = ({ bills, loading }) => {
             rows={prasadamBills}
             renderRow={(row, idx) => (
               <tr key={row._id || idx}>
-                <td className="font-bold text-slate-900">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
-                <td className="font-semibold text-slate-800">{row.devoteeName}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">{row.referenceNo || `TXN-${String(idx + 1).padStart(4, "0")}`}</td>
+                <td className="font-semibold text-slate-800 dark:text-slate-200">{row.devoteeName}</td>
                 <td>{row.sevaType}</td>
-                <td className="font-bold text-slate-900">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
+                <td className="font-bold text-slate-900 dark:text-slate-100">Rs {Number(row.amount || 0).toLocaleString("en-IN")}</td>
                 <td>{new Date(row.billDate || row.createdAt).toLocaleDateString("en-IN")}</td>
               </tr>
             )}
@@ -1388,43 +1382,49 @@ const ReportsAnalyticsView = () => (
   </div>
 );
 
-const NotificationsView = () => {
+const NotificationsView = ({ user }) => {
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadNotifications = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const userId = user?.id || user?._id || "accountant";
+      const { data } = await axios.get(`http://localhost:5000/api/notifications/accountant/${userId}`);
+      setNotifications(data?.notifications || data || []);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to load notifications");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+  }, [user]);
+
+  const handleRead = async (id) => {
+    try {
+      await axios.put(`http://localhost:5000/api/notifications/read/${id}`);
+      setNotifications(notifications.map(n => n._id === id || n.id === id ? { ...n, read: true, isRead: true } : n));
+    } catch (err) {
+      alert("Failed to mark as read");
+    }
+  };
+
   return (
     <div className="accountant-view">
-      <ViewHero
-        eyebrow="Notification Center"
+      <EmailNotificationsView
         title="Notifications"
-        description="View all recent system alerts and notifications."
+        subtitle="View all recent system alerts and notifications."
+        notifications={notifications}
+        loading={loading}
+        error={error}
+        onMarkRead={handleRead}
+        onRefresh={loadNotifications}
       />
-
-      <section className="accountant-panel" style={{ marginTop: "1rem" }}>
-        <div className="accountant-panel__header">
-          <div>
-            <p className="accountant-panel__eyebrow">All Notifications</p>
-            <h3 className="accountant-panel__title">Recent Alerts</h3>
-          </div>
-        </div>
-
-        <div className="accountant-notificationList">
-          {notificationRows.map((row) => (
-            <article className="accountant-notificationItem" key={`${row.title}-${row.date}`}>
-              <div className="accountant-notificationItem__meta">
-                <div className="accountant-notificationItem__icon" aria-hidden="true">
-                  <FaBell />
-                </div>
-                <div>
-                  <h4>{row.title}</h4>
-                  <p>{row.message}</p>
-                </div>
-              </div>
-              <div className="accountant-notificationItem__side">
-                <StatusBadge value={row.status} />
-                <span>{row.date}</span>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
     </div>
   );
 };
@@ -1563,7 +1563,7 @@ const ProfileView = ({ user }) => {
   if (loading) {
     return (
       <div className="accountant-view flex items-center justify-center py-20">
-        <p className="text-slate-500 font-semibold">Loading profile...</p>
+        <p className="text-slate-500 dark:text-slate-400 font-semibold">Loading profile...</p>
       </div>
     );
   }
@@ -1593,7 +1593,7 @@ const ProfileView = ({ user }) => {
   );
 };
 
-const AccountantPageContent = ({ activeItem, setActiveItem, user, currentDate, currentWeekday }) => {
+const AccountantPageContent = ({ activeItem, setActiveItem, user, currentDate, currentWeekday, darkMode }) => {
   const [bills, setBills] = useState([]);
   const [roomBookings, setRoomBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1644,33 +1644,33 @@ const AccountantPageContent = ({ activeItem, setActiveItem, user, currentDate, c
     case "Reports & Analytics":
       return <ReportsAnalyticsView />;
     case "Notifications":
-      return <NotificationsView />;
+      return <NotificationsView user={user} />;
     case "Attendance":
       return (
         <div style={{ padding: "2rem" }}>
-          <Attendance />
+          <Attendance darkMode={darkMode} />
         </div>
       );
     case "Apply Leave":
       return (
         <div style={{ padding: "2rem" }}>
-          <LeaveRequest onBack={() => setActiveItem("Leave Requests")} />
+          <LeaveRequest onBack={() => setActiveItem("Leave Requests")} darkMode={darkMode} />
         </div>
       );
     case "Leave Requests":
       return (
         <div style={{ padding: "2rem" }}>
-          <LeaveHistory onApply={() => setActiveItem("Apply Leave")} />
+          <LeaveHistory onApply={() => setActiveItem("Apply Leave")} darkMode={darkMode} />
         </div>
       );
     case "Inventory Requests":
       return (
         <div style={{ padding: "2rem" }}>
-          <StaffInventory />
+          <StaffInventory darkMode={darkMode} />
         </div>
       );
     case "Profile":
-      return <ProfileView user={user} />;
+      return <ProfileView user={user} darkMode={darkMode} />;
     case "Dashboard":
     default:
       return <DashboardView user={user} currentDate={currentDate} currentWeekday={currentWeekday} bills={bills} loading={loading} />;

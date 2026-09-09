@@ -46,17 +46,17 @@ const DonationTable = ({ donations = [], onRefresh }) => {
   );
 
   return (
-    <div className="rounded-[32px] border border-amber-200/60 bg-temple-100 p-6 shadow-md backdrop-blur-lg">
+    <div className="rounded-[32px] border border-amber-200/60 bg-temple-100 dark:bg-[#0f172a] p-6 shadow-md backdrop-blur-lg">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-black text-slate-800">Donation Activity Log</h2>
+          <h2 className="text-2xl font-black text-slate-800 dark:text-slate-200">Donation Activity Log</h2>
           <p className="mt-1 text-sm font-semibold text-slate-500">Live donation entries and verification status from the temple backend.</p>
         </div>
         <div className="flex gap-3">
           {donations.length > 8 && (
             <button
               onClick={() => navigate("/admin/donations/all")}
-              className="inline-flex items-center justify-center rounded-2xl bg-white border border-slate-300 px-5 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 shadow-xs"
+              className="inline-flex items-center justify-center rounded-2xl bg-white dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 px-5 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 shadow-xs"
             >
               View All
             </button>
@@ -70,9 +70,9 @@ const DonationTable = ({ donations = [], onRefresh }) => {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-amber-200/60 bg-white">
-        <table className="min-w-full text-left text-sm text-slate-700">
-          <thead className="bg-amber-50/70 border-b border-amber-200/80 text-amber-950 font-black">
+      <div className="overflow-x-auto rounded-2xl border border-amber-200/60 bg-white dark:bg-[#0f172a]">
+        <table className="min-w-full text-left text-sm text-slate-700 dark:text-slate-200">
+          <thead className="bg-amber-50/70 dark:bg-[#0f172a] border-b border-amber-200/80 text-amber-950 font-black">
             <tr>
               <th className="py-3.5 px-4">Receipt ID</th>
               <th className="py-3.5 px-4">Donor</th>
@@ -85,7 +85,7 @@ const DonationTable = ({ donations = [], onRefresh }) => {
           <tbody className="divide-y divide-amber-100">
             {rows.map((row) => (
               <tr key={row.id} className="hover:bg-amber-50/40 transition">
-                <td className="py-3.5 px-4 font-bold text-slate-900">{row.id}</td>
+                <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-slate-200">{row.id}</td>
                 <td className="py-3.5 px-4 font-semibold">{row.donor}</td>
                 <td className="py-3.5 px-4">{row.category}</td>
                 <td className="py-3.5 px-4 text-amber-700 font-extrabold">{row.amount}</td>

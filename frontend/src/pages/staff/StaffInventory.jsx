@@ -224,12 +224,7 @@ const StaffInventory = () => {
   };
 
   return (
-    <div style={{ 
-      width: "100%", 
-      "--panel": "#ffffff",
-      "--line": "#e3d2c1",
-      "--text": "#1f1d19"
-    }}>
+    <div style={{ width: "100%" }}>
       <section className="inventory-page">
         <div className="leave-head">
           <div>

@@ -43,7 +43,7 @@ const getCategoryIcon = (category) => {
   if (c.includes("maint") || c.includes("temple")) return <FaBuilding className="text-indigo-600 text-lg" />;
   if (c.includes("annadan") || c.includes("food")) return <FaUtensils className="text-orange-600 text-lg" />;
   if (c.includes("suppl")) return <FaPrescriptionBottle className="text-purple-600 text-lg" />;
-  return <FaReceipt className="text-slate-600 text-lg" />;
+  return <FaReceipt className="text-slate-600 dark:text-slate-400 text-lg" />;
 };
 
 const ProfitLossView = ({ hideHeader = false }) => {
@@ -315,7 +315,7 @@ const ProfitLossView = ({ hideHeader = false }) => {
   if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
-        <div className="flex items-center gap-3 text-amber-800 font-bold text-lg">
+        <div className="flex items-center gap-3 text-amber-800 dark:text-amber-400 font-bold text-lg">
           <FaSyncAlt className="animate-spin text-amber-600" /> Calculating Period Metrics...
         </div>
       </div>
@@ -323,15 +323,15 @@ const ProfitLossView = ({ hideHeader = false }) => {
   }
 
   return (
-    <div className={hideHeader ? "" : "min-h-screen bg-[#faf7f2] p-4 sm:p-6 lg:p-8 text-slate-800"}>
+    <div className={hideHeader ? "" : "min-h-screen bg-[#faf7f2] dark:bg-slate-900/50 p-4 sm:p-6 lg:p-8 text-slate-800 dark:text-slate-200"}>
       {!hideHeader && (
-        <div className="mb-6 rounded-3xl border border-amber-200/60 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-600/10 p-6 backdrop-blur-md shadow-sm">
+        <div className="mb-6 rounded-3xl border border-amber-200 dark:border-amber-700/50/60 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-600/10 p-6 backdrop-blur-md shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#4a2b0f]">
+              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#4a2b0f] dark:text-amber-100">
                 Profit & Loss
               </h1>
-              <p className="mt-1 text-base font-medium text-[#7a4918]">
+              <p className="mt-1 text-base font-medium text-[#7a4918] dark:text-amber-200/80">
                 Live financial overview of Income vs Expenses with date filtering and interactive analytics.
               </p>
             </div>
@@ -346,7 +346,7 @@ const ProfitLossView = ({ hideHeader = false }) => {
               <button
                 type="button"
                 onClick={loadPL}
-                className="flex items-center gap-2 rounded-2xl border border-amber-300 bg-temple-100 px-5 py-3 text-sm font-bold text-amber-900 shadow-sm hover:bg-amber-50 transition"
+                className="flex items-center gap-2 rounded-2xl border border-amber-300 bg-temple-100 dark:bg-slate-800 px-5 py-3 text-sm font-bold text-amber-900 dark:text-amber-300 shadow-sm hover:bg-amber-50 dark:bg-amber-900/40 dark:border-amber-800/50 transition"
               >
                 <FaSyncAlt /> Refresh Data
               </button>
@@ -356,9 +356,9 @@ const ProfitLossView = ({ hideHeader = false }) => {
       )}
 
       {/* FILTER TOOLBAR */}
-      <div className="mb-6 rounded-3xl border border-white/80 bg-temple-100 p-6 shadow-md backdrop-blur-lg">
+      <div className="mb-6 rounded-3xl border border-white/80 bg-temple-100 dark:bg-slate-800 p-6 shadow-md backdrop-blur-lg">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-slate-700">
+          <div className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
             <FaFilter className="text-amber-600" /> Filter Financial Period
           </div>
 
@@ -377,7 +377,7 @@ const ProfitLossView = ({ hideHeader = false }) => {
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
                   selectedPreset === preset.id
                     ? "bg-amber-600 text-white shadow-sm shadow-amber-600/30 scale-105"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200"
                 }`}
               >
                 {preset.label}
@@ -388,33 +388,33 @@ const ProfitLossView = ({ hideHeader = false }) => {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">From Date</label>
+            <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">From Date</label>
             <input
               type="date"
               value={fromDate}
               onChange={(e) => handleFromDateChange(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-amber-500 focus:bg-white"
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2.5 px-3 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-amber-500 focus:bg-white"
             />
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">To Date</label>
+            <label className="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">To Date</label>
             <input
               type="date"
               value={toDate}
               onChange={(e) => handleToDateChange(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-amber-500 focus:bg-white"
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2.5 px-3 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-amber-500 focus:bg-white"
             />
           </div>
         </div>
 
         {(fromDate || toDate) && (
-          <div className="mt-3 flex items-center justify-between text-xs font-semibold text-amber-900 bg-amber-50 rounded-xl px-3.5 py-2 border border-amber-200">
+          <div className="mt-3 flex items-center justify-between text-xs font-semibold text-amber-900 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/40 dark:border-amber-800/50 rounded-xl px-3.5 py-2 border border-amber-200 dark:border-amber-700/50">
             <span>
-              Showing metrics for period: <strong className="text-amber-950">{fromDate || "Start"}</strong> to <strong className="text-amber-950">{toDate || "Today"}</strong>
+              Showing metrics for period: <strong className="text-amber-950 dark:text-amber-300">{fromDate || "Start"}</strong> to <strong className="text-amber-950">{toDate || "Today"}</strong>
             </span>
             <button
               onClick={() => handlePresetChange("all")}
-              className="text-amber-700 underline font-bold hover:text-amber-900"
+              className="text-amber-700 dark:text-amber-400 underline font-bold hover:text-amber-900 dark:text-amber-300"
             >
               Clear Filter
             </button>
@@ -424,39 +424,39 @@ const ProfitLossView = ({ hideHeader = false }) => {
 
       {/* SUMMARY CARDS */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <div className="bg-emerald-50/90 border border-emerald-200/80 p-6 rounded-3xl shadow-sm flex items-center justify-between">
+        <div className="bg-emerald-50/90 dark:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-700/50/80 p-6 rounded-3xl shadow-sm flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl text-lg">
+              <span className="p-2.5 bg-emerald-100 dark:bg-emerald-900/40 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 rounded-xl text-lg">
                 <FaArrowUp />
               </span>
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">Total Income</h4>
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">Total Income</h4>
             </div>
-            <p className="text-3xl font-black text-emerald-950">Rs {data.totalIncome?.toLocaleString("en-IN")}</p>
+            <p className="text-3xl font-black text-emerald-950 dark:text-emerald-300">Rs {data.totalIncome?.toLocaleString("en-IN")}</p>
           </div>
         </div>
 
-        <div className="bg-red-50/90 border border-red-200/80 p-6 rounded-3xl shadow-sm flex items-center justify-between">
+        <div className="bg-red-50/90 dark:bg-red-900/40 border border-red-200 dark:border-red-700/50/80 p-6 rounded-3xl shadow-sm flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="p-2.5 bg-red-100 text-red-700 rounded-xl text-lg">
+              <span className="p-2.5 bg-red-100 dark:bg-red-900/40 dark:border-red-800/50 text-red-700 dark:text-red-400 rounded-xl text-lg">
                 <FaArrowDown />
               </span>
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-red-800">Total Expenses</h4>
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-red-800 dark:text-red-400">Total Expenses</h4>
             </div>
-            <p className="text-3xl font-black text-red-950">Rs {data.totalExpense?.toLocaleString("en-IN")}</p>
+            <p className="text-3xl font-black text-red-950 dark:text-red-300">Rs {data.totalExpense?.toLocaleString("en-IN")}</p>
           </div>
         </div>
 
-        <div className="bg-amber-50/90 border border-amber-200/80 p-6 rounded-3xl shadow-sm flex items-center justify-between">
+        <div className="bg-amber-50/90 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-700/50/80 p-6 rounded-3xl shadow-sm flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="p-2.5 bg-amber-100 text-amber-800 rounded-xl text-lg">
+              <span className="p-2.5 bg-amber-100 dark:bg-amber-900/40 dark:border-amber-800/50 text-amber-800 dark:text-amber-400 rounded-xl text-lg">
                 <FaWallet />
               </span>
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-amber-900">Net Profit / Loss</h4>
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-amber-900 dark:text-amber-300">Net Profit / Loss</h4>
             </div>
-            <p className={`text-3xl font-black ${data.netProfit >= 0 ? "text-emerald-900" : "text-red-900"}`}>
+            <p className={`text-3xl font-black ${data.netProfit >= 0 ? "text-emerald-900 dark:text-emerald-300" : "text-red-900 dark:text-red-300"}`}>
               Rs {data.netProfit?.toLocaleString("en-IN")}
             </p>
           </div>
@@ -466,12 +466,12 @@ const ProfitLossView = ({ hideHeader = false }) => {
       {/* ATTRACTIVE ANALYTICS SECTION */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* INCOME BY SOURCE CARD GRID & DONUT CHART */}
-        <section className="bg-temple-100 border border-emerald-200/60 p-6 rounded-3xl shadow-md">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-200/80 mb-5">
-            <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
+        <section className="bg-temple-100 dark:bg-slate-800 border border-emerald-200 dark:border-emerald-700/50/60 p-6 rounded-3xl shadow-md">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700/80 mb-5">
+            <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <FaMoneyBillWave className="text-emerald-600" /> Income by Source
             </h3>
-            <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">
+            <span className="text-xs font-bold bg-emerald-100 dark:bg-emerald-900/40 dark:border-emerald-800/50 text-emerald-800 dark:text-emerald-400 px-3 py-1 rounded-full">
               {incomePieData.length} Sources
             </span>
           </div>
@@ -479,7 +479,7 @@ const ProfitLossView = ({ hideHeader = false }) => {
           {incomePieData.length > 0 ? (
             <div className="space-y-6">
               {/* Interactive Donut Chart */}
-              <div className="relative h-56 w-full flex items-center justify-center bg-emerald-50/40 rounded-2xl p-2 border border-emerald-100">
+              <div className="relative h-56 w-full flex items-center justify-center bg-emerald-50/40 dark:bg-emerald-900/40 rounded-2xl p-2 border border-emerald-100">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -514,10 +514,10 @@ const ProfitLossView = ({ hideHeader = false }) => {
                 <div className="absolute flex flex-col items-center justify-center text-center pointer-events-none px-4">
                   {hoveredIncomeSource ? (
                     <>
-                      <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider">
+                      <span className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400 tracking-wider">
                         {hoveredIncomeSource.name}
                       </span>
-                      <span className="text-sm font-black text-slate-900 mt-0.5">
+                      <span className="text-sm font-black text-slate-900 dark:text-slate-100 mt-0.5">
                         Rs {hoveredIncomeSource.value?.toLocaleString("en-IN")}
                       </span>
                       <span className="text-[10px] font-bold text-emerald-600">
@@ -526,8 +526,8 @@ const ProfitLossView = ({ hideHeader = false }) => {
                     </>
                   ) : (
                     <>
-                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Total Income</span>
-                      <span className="text-sm font-black text-emerald-950 mt-0.5">
+                      <span className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider">Total Income</span>
+                      <span className="text-sm font-black text-emerald-950 dark:text-emerald-300 mt-0.5">
                         Rs {data.totalIncome?.toLocaleString("en-IN")}
                       </span>
                     </>
@@ -549,10 +549,10 @@ const ProfitLossView = ({ hideHeader = false }) => {
                         key={source}
                         onMouseEnter={() => setHoveredIncomeSource({ name: source, value: amt })}
                         onMouseLeave={() => setHoveredIncomeSource(null)}
-                        className={`flex items-center justify-between p-3.5 rounded-2xl bg-white border cursor-pointer transition-all ${
+                        className={`flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-slate-800 border cursor-pointer transition-all ${
                           isHovered
                             ? "border-emerald-500 shadow-md ring-2 ring-emerald-500/20 scale-[1.02]"
-                            : "border-slate-200/70 shadow-sm hover:border-emerald-300"
+                            : "border-slate-200 dark:border-slate-700/70 shadow-sm hover:border-emerald-300"
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -560,12 +560,12 @@ const ProfitLossView = ({ hideHeader = false }) => {
                             className="w-3.5 h-3.5 rounded-full flex-shrink-0 shadow-sm"
                             style={{ backgroundColor: color }}
                           />
-                          <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                          <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
                             {getSourceIcon(source)}
                           </div>
                           <div>
-                            <p className="text-xs font-extrabold text-slate-800">{source}</p>
-                            <p className="text-sm font-black text-slate-900 mt-0.5">Rs {amt?.toLocaleString("en-IN")}</p>
+                            <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">{source}</p>
+                            <p className="text-sm font-black text-slate-900 dark:text-slate-100 mt-0.5">Rs {amt?.toLocaleString("en-IN")}</p>
                           </div>
                         </div>
                         <span
@@ -588,12 +588,12 @@ const ProfitLossView = ({ hideHeader = false }) => {
         </section>
 
         {/* EXPENSES BY CATEGORY CARD GRID & DONUT CHART */}
-        <section className="bg-temple-100 border border-red-200/60 p-6 rounded-3xl shadow-md">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-200/80 mb-5">
-            <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
+        <section className="bg-temple-100 dark:bg-slate-800 border border-red-200 dark:border-red-700/50/60 p-6 rounded-3xl shadow-md">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700/80 mb-5">
+            <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <FaReceipt className="text-red-600" /> Expenses by Category
             </h3>
-            <span className="text-xs font-bold bg-red-100 text-red-800 px-3 py-1 rounded-full">
+            <span className="text-xs font-bold bg-red-100 dark:bg-red-900/40 dark:border-red-800/50 text-red-800 dark:text-red-400 px-3 py-1 rounded-full">
               {expensePieData.length} Categories
             </span>
           </div>
@@ -601,7 +601,7 @@ const ProfitLossView = ({ hideHeader = false }) => {
           {expensePieData.length > 0 ? (
             <div className="space-y-6">
               {/* Interactive Donut Chart */}
-              <div className="relative h-56 w-full flex items-center justify-center bg-red-50/40 rounded-2xl p-2 border border-red-100">
+              <div className="relative h-56 w-full flex items-center justify-center bg-red-50/40 dark:bg-red-900/40 rounded-2xl p-2 border border-red-100">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -636,10 +636,10 @@ const ProfitLossView = ({ hideHeader = false }) => {
                 <div className="absolute flex flex-col items-center justify-center text-center pointer-events-none px-4">
                   {hoveredExpenseCategory ? (
                     <>
-                      <span className="text-[10px] font-black uppercase text-red-700 tracking-wider">
+                      <span className="text-[10px] font-black uppercase text-red-700 dark:text-red-400 tracking-wider">
                         {hoveredExpenseCategory.name}
                       </span>
-                      <span className="text-sm font-black text-slate-900 mt-0.5">
+                      <span className="text-sm font-black text-slate-900 dark:text-slate-100 mt-0.5">
                         Rs {hoveredExpenseCategory.value?.toLocaleString("en-IN")}
                       </span>
                       <span className="text-[10px] font-bold text-red-600">
@@ -648,8 +648,8 @@ const ProfitLossView = ({ hideHeader = false }) => {
                     </>
                   ) : (
                     <>
-                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Total Expenses</span>
-                      <span className="text-sm font-black text-red-950 mt-0.5">
+                      <span className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider">Total Expenses</span>
+                      <span className="text-sm font-black text-red-950 dark:text-red-300 mt-0.5">
                         Rs {data.totalExpense?.toLocaleString("en-IN")}
                       </span>
                     </>
@@ -671,10 +671,10 @@ const ProfitLossView = ({ hideHeader = false }) => {
                         key={category}
                         onMouseEnter={() => setHoveredExpenseCategory({ name: category, value: amt })}
                         onMouseLeave={() => setHoveredExpenseCategory(null)}
-                        className={`flex items-center justify-between p-3.5 rounded-2xl bg-white border cursor-pointer transition-all ${
+                        className={`flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-slate-800 border cursor-pointer transition-all ${
                           isHovered
                             ? "border-red-500 shadow-md ring-2 ring-red-500/20 scale-[1.02]"
-                            : "border-slate-200/70 shadow-sm hover:border-red-300"
+                            : "border-slate-200 dark:border-slate-700/70 shadow-sm hover:border-red-300"
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -682,12 +682,12 @@ const ProfitLossView = ({ hideHeader = false }) => {
                             className="w-3.5 h-3.5 rounded-full flex-shrink-0 shadow-sm"
                             style={{ backgroundColor: color }}
                           />
-                          <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                          <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
                             {getCategoryIcon(category)}
                           </div>
                           <div>
-                            <p className="text-xs font-extrabold text-slate-800">{category}</p>
-                            <p className="text-sm font-black text-slate-900 mt-0.5">Rs {amt?.toLocaleString("en-IN")}</p>
+                            <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">{category}</p>
+                            <p className="text-sm font-black text-slate-900 dark:text-slate-100 mt-0.5">Rs {amt?.toLocaleString("en-IN")}</p>
                           </div>
                         </div>
                         <span

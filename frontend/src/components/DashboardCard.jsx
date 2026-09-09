@@ -12,7 +12,7 @@ const DashboardCard = ({
   const trendPrefix = trendUp ? "↑" : "↓";
 
   return (
-    <div className="group relative overflow-hidden rounded-[24px] border border-amber-200/60 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 p-6 backdrop-blur-xl shadow-lg shadow-amber-950/5 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-amber-600/15 hover:border-amber-400/80">
+    <div className="group relative overflow-hidden rounded-[24px] border border-amber-200/60 dark:border-slate-700 bg-white/80 dark:bg-slate-800/95 p-6 backdrop-blur-xl shadow-lg shadow-amber-950/5 dark:shadow-slate-950/40 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-amber-600/15 hover:border-amber-400/80">
       {/* Decorative ambient corner glow */}
       <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gradient-to-br from-amber-400/15 to-orange-500/0 blur-2xl transition-opacity duration-500 group-hover:opacity-100 opacity-50" />
       
@@ -30,7 +30,7 @@ const DashboardCard = ({
         </div>
 
         <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-amber-900/60 dark:text-slate-400 mb-1">{title}</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-amber-900/60 dark:text-slate-300 mb-1">{title}</h3>
           <h1 className="text-[28px] md:text-[34px] font-black leading-tight text-slate-900 dark:text-slate-100 tracking-tight">{amount}</h1>
         </div>
       </div>

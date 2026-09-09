@@ -51,10 +51,10 @@ const DonationCharts = ({ donations = [] }) => {
 
   return (
     <div className="grid grid-cols-1 gap-6">
-      <div className="rounded-[32px] border border-amber-200/60 bg-temple-100 p-6 shadow-md backdrop-blur-lg">
+      <div className="rounded-[32px] border border-amber-200/60 bg-temple-100 dark:bg-[#0f172a] p-6 shadow-md backdrop-blur-lg">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-extrabold text-slate-800">Monthly Donation Progress</h2>
+            <h2 className="text-2xl font-extrabold text-slate-800 dark:text-slate-200">Monthly Donation Progress</h2>
             <p className="mt-1 text-sm font-semibold text-slate-500">Live donation collection trends from the temple database.</p>
           </div>
         </div>
@@ -86,10 +86,10 @@ const DonationCharts = ({ donations = [] }) => {
         </div>
       </div>
 
-      <div className="rounded-[32px] border border-amber-200/60 bg-temple-100 p-6 shadow-md backdrop-blur-lg">
+      <div className="rounded-[32px] border border-amber-200/60 bg-temple-100 dark:bg-[#0f172a] p-6 shadow-md backdrop-blur-lg">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-extrabold text-slate-800">Category Share</h2>
+            <h2 className="text-2xl font-extrabold text-slate-800 dark:text-slate-200">Category Share</h2>
             <p className="mt-1 text-sm font-semibold text-slate-500">Current donation category breakdown by total amount.</p>
           </div>
         </div>

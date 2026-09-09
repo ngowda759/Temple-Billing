@@ -84,7 +84,7 @@ const ShiftVerificationView = () => {
                       Rs {c.discrepancy?.toFixed(2)}
                     </td>
                     <td>
-                      <span className={`px-2 py-1 rounded text-xs ${c.status === 'Verified' ? 'bg-green-100 text-green-800' : c.status === 'Disputed' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                      <span className={`px-2 py-1 rounded text-xs ${c.status === 'Verified' ? 'bg-green-100 text-green-800' : c.status === 'Disputed' ? 'bg-red-100 dark:bg-red-900/40 dark:border-red-800/50 text-red-800 dark:text-red-400' : 'bg-yellow-100 text-yellow-800'}`}>
                         {c.status}
                       </span>
                     </td>
@@ -94,7 +94,7 @@ const ShiftVerificationView = () => {
                           <button onClick={() => handleVerify(c._id, "Verified")} className="text-green-600 hover:text-green-800" title="Verify">
                             <FaCheckCircle size={18} />
                           </button>
-                          <button onClick={() => handleVerify(c._id, "Disputed")} className="text-red-600 hover:text-red-800" title="Dispute">
+                          <button onClick={() => handleVerify(c._id, "Disputed")} className="text-red-600 hover:text-red-800 dark:text-red-400" title="Dispute">
                             <FaTimesCircle size={18} />
                           </button>
                         </div>
