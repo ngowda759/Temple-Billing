@@ -164,12 +164,14 @@
   letter-spacing: 1px;
 }
 
+.receipt-wrapper .receipt-details-panel,
+.receipt-container .receipt-details-panel,
 .details-panel {
-  display: flex;
-  border: 1px solid var(--theme-light);
-  border-radius: 8px;
-  margin-bottom: 20px;
-  overflow: hidden;
+  display: flex !important;
+  border: 1px solid var(--theme-light) !important;
+  border-radius: 8px !important;
+  margin-bottom: 20px !important;
+  overflow: hidden !important;
 }
 
 .details-col {
@@ -179,48 +181,75 @@
 }
 
 .details-col-left {
-  border-right: 1px solid var(--theme-light);
+  border-right: 1px solid var(--theme-light) !important;
 }
 
+.receipt-wrapper .receipt-detail-row,
+.receipt-container .receipt-detail-row,
+.receipt-wrapper .detail-row,
+.receipt-container .detail-row,
+.receipt-detail-row,
 .detail-row {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: flex-start;
-  margin-bottom: 8px;
-  font-size: 13px;
-  line-height: 1.4;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: baseline !important;
+  margin-bottom: 8px !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  gap: 0 !important;
 }
 
+.receipt-wrapper .receipt-detail-label,
+.receipt-container .receipt-detail-label,
+.receipt-wrapper .detail-label,
+.receipt-container .detail-label,
+.receipt-detail-label,
 .detail-label {
-  width: 105px;
-  min-width: 105px;
-  flex-shrink: 0;
-  color: #555;
-  font-weight: 500;
-  white-space: nowrap;
+  width: 115px !important;
+  min-width: 115px !important;
+  flex-shrink: 0 !important;
+  color: #555 !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  text-align: left !important;
 }
 
+.receipt-wrapper .receipt-detail-colon,
+.receipt-container .receipt-detail-colon,
+.receipt-wrapper .detail-colon,
+.receipt-container .detail-colon,
+.receipt-detail-colon,
 .detail-colon {
-  width: 14px;
-  min-width: 14px;
-  flex-shrink: 0;
-  color: #555;
-  font-weight: 500;
-  text-align: center;
-  white-space: nowrap;
+  width: 16px !important;
+  min-width: 16px !important;
+  flex-shrink: 0 !important;
+  color: #555 !important;
+  font-weight: 600 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  margin-right: 6px !important;
 }
 
+.receipt-wrapper .receipt-detail-value,
+.receipt-container .receipt-detail-value,
+.receipt-wrapper .detail-value,
+.receipt-container .detail-value,
+.receipt-detail-value,
 .detail-value {
-  flex: 1;
-  font-weight: 600;
-  color: #222;
-  word-break: break-word;
+  flex: 1 !important;
+  font-weight: 600 !important;
+  color: #222 !important;
+  word-break: break-word !important;
+  text-align: left !important;
 }
 
-.detail-value.devotee-name {
-  color: #111;
-  font-size: 14px;
+.receipt-wrapper .detail-value.devotee-name,
+.receipt-container .detail-value.devotee-name,
+.receipt-wrapper .receipt-detail-value.devotee-name,
+.receipt-container .receipt-detail-value.devotee-name {
+  color: #111 !important;
+  font-size: 14px !important;
 }
 
 .col-header {
@@ -342,22 +371,28 @@ table.receipt-table td:last-child {
   justify-content: center;
 }
 
+.receipt-wrapper .total-row,
+.receipt-container .total-row,
 .total-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  margin-bottom: 8px;
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  font-size: 13px !important;
+  margin-bottom: 8px !important;
 }
 
+.receipt-wrapper .grand-total-row,
+.receipt-container .grand-total-row,
 .grand-total-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--theme-color);
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--theme-light);
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  color: var(--theme-color) !important;
+  margin-top: 8px !important;
+  padding-top: 8px !important;
+  border-top: 1px dashed var(--theme-light) !important;
 }
 
 .amount-words {

@@ -130,61 +130,61 @@ const BookingReceipt = ({
  </div>
  
  {/* Details Panel */}
- <div className="details-panel">
+ <div className="receipt-details-panel details-panel">
  <div className="details-col details-col-left">
  <div className="col-header">Receipt Details</div>
- <div className="detail-row">
- <span className="detail-label">Receipt No.</span>
- <span className="detail-colon">:</span>
- <span className="detail-value">{receiptNo}</span>
+ <div className="receipt-detail-row detail-row" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+ <span className="receipt-detail-label detail-label">Receipt No.</span>
+ <span className="receipt-detail-colon detail-colon">:</span>
+ <span className="receipt-detail-value detail-value">{receiptNo}</span>
  </div>
- <div className="detail-row">
- <span className="detail-label">Booking Date</span>
- <span className="detail-colon">:</span>
- <span className="detail-value">{bookingDate}</span>
+ <div className="receipt-detail-row detail-row" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+ <span className="receipt-detail-label detail-label">Booking Date</span>
+ <span className="receipt-detail-colon detail-colon">:</span>
+ <span className="receipt-detail-value detail-value">{bookingDate}</span>
  </div>
- <div className="detail-row">
- <span className="detail-label">Payment Mode</span>
- <span className="detail-colon">:</span>
- <span className="detail-value">{paymentMode}</span>
+ <div className="receipt-detail-row detail-row" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+ <span className="receipt-detail-label detail-label">Payment Mode</span>
+ <span className="receipt-detail-colon detail-colon">:</span>
+ <span className="receipt-detail-value detail-value">{paymentMode}</span>
  </div>
- <div className="detail-row">
- <span className="detail-label">Transaction ID</span>
- <span className="detail-colon">:</span>
- <span className="detail-value">
+ <div className="receipt-detail-row detail-row" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+ <span className="receipt-detail-label detail-label">Transaction ID</span>
+ <span className="receipt-detail-colon detail-colon">:</span>
+ <span className="receipt-detail-value detail-value">
  {paymentMode === "Cash" || paymentMode === "Offline" ? "Offline Payment" : (transactionId || "-")}
  </span>
  </div>
  {!isOnline && (
- <div className="detail-row">
- <span className="detail-label">Cashier Name</span>
- <span className="detail-colon">:</span>
- <span className="detail-value">{cashierName}</span>
+ <div className="receipt-detail-row detail-row" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+ <span className="receipt-detail-label detail-label">Cashier Name</span>
+ <span className="receipt-detail-colon detail-colon">:</span>
+ <span className="receipt-detail-value detail-value">{cashierName}</span>
  </div>
  )}
  </div>
  
  <div className="details-col">
  <div className="col-header">Devotee Details</div>
- <div className="detail-row">
- <span className="detail-label">Name</span>
- <span className="detail-colon">:</span>
- <span className="detail-value devotee-name">{devoteeName}</span>
+ <div className="receipt-detail-row detail-row" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+ <span className="receipt-detail-label detail-label">Name</span>
+ <span className="receipt-detail-colon detail-colon">:</span>
+ <span className="receipt-detail-value detail-value devotee-name">{devoteeName}</span>
  </div>
- <div className="detail-row">
- <span className="detail-label">Mobile</span>
- <span className="detail-colon">:</span>
- <span className="detail-value">{mobile}</span>
+ <div className="receipt-detail-row detail-row" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+ <span className="receipt-detail-label detail-label">Phone Number</span>
+ <span className="receipt-detail-colon detail-colon">:</span>
+ <span className="receipt-detail-value detail-value">{mobile}</span>
  </div>
- <div className="detail-row">
- <span className="detail-label">Email</span>
- <span className="detail-colon">:</span>
- <span className="detail-value" style={{wordBreak: 'break-all'}}>{email}</span>
+ <div className="receipt-detail-row detail-row" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+ <span className="receipt-detail-label detail-label">Email</span>
+ <span className="receipt-detail-colon detail-colon">:</span>
+ <span className="receipt-detail-value detail-value" style={{wordBreak: 'break-all'}}>{email}</span>
  </div>
- <div className="detail-row">
- <span className="detail-label">Address</span>
- <span className="detail-colon">:</span>
- <span className="detail-value">{address}</span>
+ <div className="receipt-detail-row detail-row" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+ <span className="receipt-detail-label detail-label">Address</span>
+ <span className="receipt-detail-colon detail-colon">:</span>
+ <span className="receipt-detail-value detail-value">{address}</span>
  </div>
  </div>
  </div>

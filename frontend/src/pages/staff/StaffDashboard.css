@@ -651,32 +651,32 @@
   gap: 16px;
 }
 
-.details-panel {
+.duties-grid .details-panel {
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 18px;
 }
 
-.details-content {
+.duties-grid .details-content {
   display: grid;
   gap: 14px;
 }
 
-.detail-row {
+.duties-grid .detail-row {
   display: grid;
   gap: 6px;
 }
 
-.detail-row span {
+.duties-grid .detail-row span {
   color: #5f5f5f;
   font-weight: 700;
 }
 
-.detail-row strong {
+.duties-grid .detail-row strong {
   font-size: 16px;
 }
 
-.detail-row p {
+.duties-grid .detail-row p {
   margin: 0;
   color: #4f4a44;
   line-height: 1.6;
@@ -1627,9 +1627,9 @@
 
 .dark .card-heading p { color: var(--muted); }
 .dark .empty-cell { color: var(--muted); }
-.dark .details-content p { color: var(--text); }
-.dark .detail-row span { color: var(--muted); }
-.dark .detail-row p { color: var(--text); }
+.dark .duties-grid .details-content p { color: var(--text); }
+.dark .duties-grid .detail-row span { color: var(--muted); }
+.dark .duties-grid .detail-row p { color: var(--text); }
 
 .dark .timeline-item { border-color: var(--line); }
 .dark .selected-row { background: rgba(255, 255, 255, 0.05); }
