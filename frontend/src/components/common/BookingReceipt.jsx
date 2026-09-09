@@ -132,6 +132,7 @@ const BookingReceipt = ({
  {/* Details Panel */}
  <div className="details-panel">
  <div className="details-col details-col-left">
+ <div className="col-header">Receipt Details</div>
  <div className="detail-row">
  <span className="detail-label">Receipt No.</span>
  <span className="detail-colon">:</span>
@@ -166,24 +167,24 @@ const BookingReceipt = ({
  <div className="details-col">
  <div className="col-header">Devotee Details</div>
  <div className="detail-row">
- <span className="detail-label" style={{width: '70px'}}>Name</span>
+ <span className="detail-label">Name</span>
  <span className="detail-colon">:</span>
  <span className="detail-value devotee-name">{devoteeName}</span>
  </div>
  <div className="detail-row">
- <span className="detail-label" style={{width: '70px'}}>Mobile</span>
+ <span className="detail-label">Mobile</span>
  <span className="detail-colon">:</span>
  <span className="detail-value">{mobile}</span>
  </div>
  <div className="detail-row">
- <span className="detail-label" style={{width: '70px'}}>Email</span>
+ <span className="detail-label">Email</span>
  <span className="detail-colon">:</span>
- <span className="detail-value" style={{maxWidth: '180px', wordBreak: 'break-all'}}>{email}</span>
+ <span className="detail-value" style={{wordBreak: 'break-all'}}>{email}</span>
  </div>
  <div className="detail-row">
- <span className="detail-label" style={{width: '70px'}}>Address</span>
+ <span className="detail-label">Address</span>
  <span className="detail-colon">:</span>
- <span className="detail-value" style={{maxWidth: '180px'}}>{address}</span>
+ <span className="detail-value">{address}</span>
  </div>
  </div>
  </div>

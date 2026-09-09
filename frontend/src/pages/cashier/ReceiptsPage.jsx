@@ -90,11 +90,13 @@ const ReceiptsPage = () => {
  // Ledger state
  const [query, setQuery] = useState("");
  const [tab, setTab] = useState("All");
+ const [fromDate, setFromDate] = useState("");
+ const [toDate, setToDate] = useState("");
  const [showAllReceipts, setShowAllReceipts] = useState(false);
 
  useEffect(() => {
- setShowAllReceipts(false);
- }, [tab, query]);
+   setShowAllReceipts(false);
+ }, [tab, query, fromDate, toDate]);
 
  // Reports state
  const [range, setRange] = useState("monthly");
@@ -134,20 +136,39 @@ const ReceiptsPage = () => {
  }, [bills]);
 
  const filteredBills = useMemo(() => {
- const q = query.trim().toLowerCase();
- return [...bills]
- .filter((bill) => {
- const type = inferBillType(bill);
- const matchesType = tab === "All" || type === tab;
- const matchesQuery =
- !q ||
- [bill.referenceNo, bill.devoteeName, bill.sevaType, bill.paymentMode, bill.billType, bill.status]
- .filter(Boolean)
- .some((value) => String(value).toLowerCase().includes(q));
- return matchesType && matchesQuery;
- })
- .sort((a, b) => new Date(b.billDate || b.createdAt || 0) - new Date(a.billDate || a.createdAt || 0));
- }, [bills, query, tab]);
+   const q = query.trim().toLowerCase();
+   return [...bills]
+     .filter((bill) => {
+       const type = inferBillType(bill);
+       const matchesType = tab === "All" || type === tab;
+
+       const rawDate = bill.billDate || bill.createdAt;
+       const billDate = rawDate ? new Date(rawDate) : null;
+
+       let matchesFromDate = true;
+       if (fromDate && billDate) {
+         const from = new Date(fromDate);
+         from.setHours(0, 0, 0, 0);
+         matchesFromDate = billDate >= from;
+       }
+
+       let matchesToDate = true;
+       if (toDate && billDate) {
+         const to = new Date(toDate);
+         to.setHours(23, 59, 59, 999);
+         matchesToDate = billDate <= to;
+       }
+
+       const matchesQuery =
+         !q ||
+         [bill.referenceNo, bill.devoteeName, bill.sevaType, bill.paymentMode, bill.billType, bill.status]
+           .filter(Boolean)
+           .some((value) => String(value).toLowerCase().includes(q));
+
+       return matchesType && matchesFromDate && matchesToDate && matchesQuery;
+     })
+     .sort((a, b) => new Date(b.billDate || b.createdAt || 0) - new Date(a.billDate || a.createdAt || 0));
+ }, [bills, query, tab, fromDate, toDate]);
 
  // Payments overview logic
  const paymentSummary = useMemo(() => {
@@ -580,13 +601,46 @@ const ReceiptsPage = () => {
  value={query}
  onChange={(e) => setQuery(e.target.value)}
  placeholder="Search receipt"
- className="w-[180px] bg-transparent outline-none"
+ className="w-[150px] bg-transparent outline-none"
  />
  </div>
+
+ <div className="flex items-center gap-2 rounded-2xl border border-[#ead7bb] bg-[#fffaf4] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 px-3 py-2.5 text-xs text-slate-700">
+ <span className="font-bold text-slate-600">From:</span>
+ <input
+ type="date"
+ value={fromDate}
+ onChange={(e) => setFromDate(e.target.value)}
+ className="bg-transparent outline-none font-medium text-slate-900 dark:text-slate-200"
+ />
+ </div>
+
+ <div className="flex items-center gap-2 rounded-2xl border border-[#ead7bb] bg-[#fffaf4] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 px-3 py-2.5 text-xs text-slate-700">
+ <span className="font-bold text-slate-600">To:</span>
+ <input
+ type="date"
+ value={toDate}
+ onChange={(e) => setToDate(e.target.value)}
+ className="bg-transparent outline-none font-medium text-slate-900 dark:text-slate-200"
+ />
+ </div>
+
+ {(fromDate || toDate) && (
+ <button
+ type="button"
+ onClick={() => { setFromDate(""); setToDate(""); }}
+ className="px-3 py-2 text-xs font-bold text-amber-800 bg-amber-200 rounded-full hover:bg-amber-300 transition"
+ title="Clear Date Filters"
+ >
+ Clear Dates
+ </button>
+ )}
+
  <button
  type="button"
  onClick={handleDownloadLedgerCsv}
  className="inline-flex items-center gap-2 rounded-2xl border border-[#ead7bb] bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-[#fff8ef] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 "
+ title="Download Filtered CSV"
  >
  <FaDownload /> CSV
  </button>
@@ -594,6 +648,7 @@ const ReceiptsPage = () => {
  type="button"
  onClick={handleDownloadLedgerPdf}
  className="inline-flex items-center gap-2 rounded-2xl border border-[#ead7bb] bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-[#fff8ef] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 "
+ title="Download Filtered PDF"
  >
  <FaDownload /> PDF
  </button>
