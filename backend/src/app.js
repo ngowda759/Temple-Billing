@@ -46,6 +46,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/donations", donationRoutes);
 app.use("/api/devotee", devoteeRoutes);
+app.use("/api/devotees", devoteeRoutes);
 app.use("/api/staff", staffRoutes);
 app.use("/api/staff/attendance", attendanceRoutes);
 app.use("/api/leaves", leaveRoutes);

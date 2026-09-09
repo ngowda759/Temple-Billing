@@ -89,6 +89,11 @@ export const replySupportRequest = async (id, payload) => {
   return response.data;
 };
 
+export const markSupportRequestAsRead = async (id) => {
+  const response = await axios.patch(`${API_BASE}/support/${id}/read`);
+  return response.data;
+};
+
 export const createNotification = async (payload) => {
   const response = await axios.post(`${API_BASE}/notifications`, payload);
   return response.data;

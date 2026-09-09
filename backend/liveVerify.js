@@ -21,7 +21,7 @@ async function runTests() {
 
   // Create Users
   await User.deleteMany({ name: /VerifyTestUser/ });
-  
+
   const createTestUser = async (role) => {
     return await User.create({
       name: `VerifyTestUser ${role}`,
@@ -62,10 +62,10 @@ async function runTests() {
 
   const addResult = (testName, role, action, before, after, accTx, expected, actual, pass) => {
     table.push({
-      Test: testName, Role: role, Action: action, 
-      "Before Value": before, "After Value": after, 
-      "Acc Tx Created?": accTx, 
-      "Expected Result": expected, "Actual Result": actual, 
+      Test: testName, Role: role, Action: action,
+      "Before Value": before, "After Value": after,
+      "Acc Tx Created?": accTx,
+      "Expected Result": expected, "Actual Result": actual,
       "PASS/FAIL": pass ? "PASS" : "FAIL"
     });
   };
@@ -83,13 +83,13 @@ async function runTests() {
       });
       itemId = res.data.item._id;
       addResult("1. Add Item", "Admin", "Create Item", "N/A", "Stock 0", "No", "Stock 0, no tx", `Stock ${res.data.item.availableStock}`, res.data.item.availableStock === 0);
-    } catch(e) { console.error("Add item failed:", e.message, e.response?.data); }
+    } catch (e) { console.error("Add item failed:", e.message, e.response?.data); }
 
     // 2. Unauthorized Restock (Cashier)
     try {
       await cashierApi.post(`/admin/inventory-items/${itemId}/restock`, { quantityAdded: 10, supplier: "S", cost: 500 });
       addResult("2. Unauth Restock", "Cashier", "Attempt Restock", "0", "0", "No", "Forbidden", "Allowed", false);
-    } catch(e) {
+    } catch (e) {
       addResult("2. Unauth Restock", "Cashier", "Attempt Restock", "0", "0", "No", "Forbidden", e.response?.status, e.response?.status === 401 || e.response?.status === 403);
     }
 
@@ -98,12 +98,12 @@ async function runTests() {
       const beforeTxCount = await AccountTransaction.countDocuments();
       await adminApi.post(`/admin/inventory-items/${itemId}/restock`, { quantityAdded: 10, supplier: "Vendor A", cost: 500, paymentMethod: "Cash" });
       const item = await InventoryItem.findById(itemId);
-      const txs = await AccountTransaction.find({ referenceModel: "InventoryPurchase" }).sort({_id:-1}).limit(1);
+      const txs = await AccountTransaction.find({ referenceModel: "InventoryPurchase" }).sort({ _id: -1 }).limit(1);
       const afterTxCount = await AccountTransaction.countDocuments();
-      
+
       const pass = item.availableStock === 10 && (afterTxCount - beforeTxCount === 1) && txs[0].amount === 500;
-      addResult("3. Restock", "Admin", "Restock +10", "0", "10", `Yes (₹${txs[0]?.amount})`, "Stock 10, 1 Debit", `Stock ${item.availableStock}, ${afterTxCount-beforeTxCount} Tx`, pass);
-    } catch(e) { console.error("Restock failed:", e.message, e.response?.data); }
+      addResult("3. Restock", "Admin", "Restock +10", "0", "10", `Yes (₹${txs[0]?.amount})`, "Stock 10, 1 Debit", `Stock ${item.availableStock}, ${afterTxCount - beforeTxCount} Tx`, pass);
+    } catch (e) { console.error("Restock failed:", e.message, e.response?.data); }
 
     // 4. Request (Staff)
     let reqId;
@@ -115,7 +115,7 @@ async function runTests() {
       });
       reqId = reqData._id;
       addResult("4. Request", "Staff", "Create Request", "N/A", "Pending", "No", "Created", "Created", !!reqId);
-    } catch(e) { console.error("Request failed:", e.message); }
+    } catch (e) { console.error("Request failed:", e.message); }
 
     // 5. Approve (Admin)
     try {
@@ -123,7 +123,7 @@ async function runTests() {
       const r = await InventoryRequest.findById(reqId);
       const item = await InventoryItem.findById(itemId);
       addResult("5. Approve", "Admin", "Approve Request", "Pending", r.status, "No", "Approved, Stock 10", `${r.status}, Stock ${item.availableStock}`, r.status === "Approved" && item.availableStock === 10);
-    } catch(e) { console.error("Approve failed:", e.message, e.response?.data); }
+    } catch (e) { console.error("Approve failed:", e.message, e.response?.data); }
 
     // 6. Issue (Admin)
     try {
@@ -132,27 +132,27 @@ async function runTests() {
       const item = await InventoryItem.findById(itemId);
       const afterTxCount = await AccountTransaction.countDocuments();
       const pass = item.availableStock === 1 && (afterTxCount === beforeTxCount);
-      addResult("6. Issue", "Admin", "Issue Material", "10", "1", "No", "Stock 1, 0 Tx", `Stock ${item.availableStock}, ${afterTxCount-beforeTxCount} Tx`, pass);
-    } catch(e) { console.error("Issue failed:", e.message, e.response?.data); }
+      addResult("6. Issue", "Admin", "Issue Material", "10", "1", "No", "Stock 1, 0 Tx", `Stock ${item.availableStock}, ${afterTxCount - beforeTxCount} Tx`, pass);
+    } catch (e) { console.error("Issue failed:", e.message, e.response?.data); }
 
     // 7. Repair Asset (Admin)
     try {
       const asset = await Asset.create({ assetId: "VERIFY-AST", name: "Verify Fan", category: "Electrical" });
       const repair = await RepairRequest.create({ asset: asset._id, description: "Test", vendor: "V", status: "Pending" });
-      
+
       const beforeTxCount = await AccountTransaction.countDocuments();
       await adminApi.put(`/admin/inventory-repairs/${repair._id}/complete`, { cost: 150, paymentMethod: "Cash", completionDate: new Date() });
       const afterTxCount = await AccountTransaction.countDocuments();
       const tx = await AccountTransaction.findOne({ referenceId: repair._id });
 
       const pass = tx && tx.amount === 150 && (afterTxCount - beforeTxCount === 1);
-      addResult("7. Complete Repair", "Admin", "Complete Repair", "Pending", "Completed", `Yes (₹${tx?.amount})`, "1 Debit Tx", `${afterTxCount-beforeTxCount} Tx`, pass);
-    } catch(e) { console.error("Repair failed:", e.message, e.response?.data); }
+      addResult("7. Complete Repair", "Admin", "Complete Repair", "Pending", "Completed", `Yes (₹${tx?.amount})`, "1 Debit Tx", `${afterTxCount - beforeTxCount} Tx`, pass);
+    } catch (e) { console.error("Repair failed:", e.message, e.response?.data); }
 
     // Print table
     console.table(table);
 
-  } catch(e) {
+  } catch (e) {
     console.error("Test execution failed:", e);
   } finally {
     mongoose.connection.close();

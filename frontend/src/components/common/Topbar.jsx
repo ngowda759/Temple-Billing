@@ -30,12 +30,12 @@ const Topbar = ({ darkMode, toggleDarkMode, onOpenMobileSidebar, onLogoutClick }
       }
 
       try {
-        const [nRes, sRes] = await Promise.all([
+        const [nRes, sRes] = await Promise.allSettled([
           axios.get(`http://localhost:5000/api/notifications/admin/${adminId}`),
-          axios.get(`http://localhost:5000/api/devotees/support`)
+          axios.get(`http://localhost:5000/api/devotee/support`)
         ]);
-        const notifications = Array.isArray(nRes.data) ? nRes.data : [];
-        const supportReqs = sRes.data?.requests || [];
+        const notifications = nRes.status === "fulfilled" && Array.isArray(nRes.value?.data) ? nRes.value.data : [];
+        const supportReqs = sRes.status === "fulfilled" && Array.isArray(sRes.value?.data?.requests) ? sRes.value.data.requests : [];
         setNotificationCount(
           notifications.filter((item) => !item.read && !item.viewed).length +
           supportReqs.filter((item) => !item.read).length

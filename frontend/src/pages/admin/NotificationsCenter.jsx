@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
-import { getSupportRequests } from "../../services/devoteeService";
+import { getSupportRequests, markSupportRequestAsRead } from "../../services/devoteeService";
 import EmailNotificationsView from "../../components/shared/EmailNotificationsView";
 
 const API_BASE = "http://localhost:5000/api";
@@ -64,7 +64,7 @@ const NotificationsCenter = ({ darkMode }) => {
 
  try {
  if (item.category === "Support Requests") {
- await axios.patch(`${API_BASE}/devotees/support/${id}/read`);
+ await markSupportRequestAsRead(id);
  setSupportRequests(prev => prev.map(req => req._id === id ? { ...req, read: true } : req));
  } else {
  await axios.put(`${API_BASE}/notifications/read/${id}`);
