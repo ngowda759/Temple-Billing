@@ -1344,3 +1344,56 @@ Thank you for your donation!
 To: 9945650664
 Message: Donation received! Amount: ₹5098. Transaction ID: pay_TT6xnJoN8ctwBi. Thank you! -Temple
 
+[2026-09-09T06:42:25.289Z] EMAIL
+To: reena@gmail.com
+Subject: Booking Confirmed
+Your Combined Order: Satyanarayana Pooja (x1) booking has been confirmed successfully.
+
+[2026-09-09T06:42:25.829Z] EMAIL
+To: reena@gmail.com
+Subject: Pooja Booking Confirmation
+Pooja Booking Confirmation
+Service: Combined Order: Satyanarayana Pooja (x1)
+Date & Time: 2026-09-09T07:41:54.030Z
+Amount: ₹2180
+
+Please bring the receipt at the time of visiting the temple to perform the pooja.
+Thank you!
+
+[2026-09-09T06:42:25.860Z] SMS
+To: 9945650664
+Message: Pooja booking confirmed! Service: Combined Order: Satyanarayana Pooja (x1) on 2026-09-09T07:41:54.030Z. Amount: ₹2180. Please bring receipt at temple. -Temple
+
+[2026-09-09T06:43:46.551Z] EMAIL
+To: reena@gmail.com
+Subject: Pooja Booking Confirmation
+Pooja Booking Confirmation
+Service: Combined Order: Pulihora Prasadam (x1)
+Date & Time: 2026-09-09T07:43:13.452Z
+Amount: ₹121
+
+Please bring the receipt at the time of visiting the temple to perform the pooja.
+Thank you!
+
+[2026-09-09T06:43:46.574Z] SMS
+To: 9945650664
+Message: Pooja booking confirmed! Service: Combined Order: Pulihora Prasadam (x1) on 2026-09-09T07:43:13.452Z. Amount: ₹121. Please bring receipt at temple. -Temple
+
+[2026-09-09T06:43:46.881Z] EMAIL
+To: reena@gmail.com
+Subject: Booking Confirmed
+Your Combined Order: Pulihora Prasadam (x1) booking has been confirmed successfully.
+
+[2026-09-09T06:44:43.332Z] EMAIL
+To: reena@gmail.com
+Subject: Donation Receipt
+Donation Receipt
+Amount: ₹501
+Category: Festival Donation
+Transaction ID: pay_TZqNHsBsNFvLqL
+Thank you for your donation!
+
+[2026-09-09T06:44:43.335Z] SMS
+To: 9945650664
+Message: Donation received! Amount: ₹501. Transaction ID: pay_TZqNHsBsNFvLqL. Thank you! -Temple
+
