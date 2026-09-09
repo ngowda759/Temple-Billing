@@ -136,16 +136,47 @@ const FestivalsEventsManagement = () => {
  }
  };
 
- const handleImageChange = (e) => {
- const file = e.target.files && e.target.files[0];
- if (!file) return;
- const reader = new FileReader();
- reader.onload = () => {
- setImagePreview(reader.result);
- setImageUrl(reader.result);
- };
- reader.readAsDataURL(file);
- };
+  const handleImageChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 1280;
+        const maxHeight = 1280;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressed = canvas.toDataURL("image/jpeg", 0.85);
+        setImagePreview(compressed);
+        setImageUrl(compressed);
+      };
+      img.onerror = () => {
+        setImagePreview(reader.result);
+        setImageUrl(reader.result);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
  const handleQuickAction = async (action) => {
  if (action === "Add Event") return setShowModal(true);
@@ -232,16 +263,55 @@ const FestivalsEventsManagement = () => {
  }
  };
 
- const handleInvitationFileChange = (e) => {
- const file = e.target.files && e.target.files[0];
- if (!file) return;
- setInvitationFileName(file.name);
- const reader = new FileReader();
- reader.onload = () => {
- setInvitationFile(reader.result);
- };
- reader.readAsDataURL(file);
- };
+  const handleInvitationFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setInvitationFileName(file.name);
+
+    if (file.type === "application/pdf") {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setInvitationFile(reader.result);
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 1280;
+        const maxHeight = 1280;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressed = canvas.toDataURL("image/jpeg", 0.85);
+        setInvitationFile(compressed);
+      };
+      img.onerror = () => {
+        setInvitationFile(reader.result);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
  const todayStart = new Date();
  todayStart.setHours(0, 0, 0, 0);

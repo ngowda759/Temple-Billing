@@ -15,6 +15,7 @@ const createNotification = async ({
   audienceEmail,
   audienceRole,
   category,
+  attachment,
 }) => {
   if (!title || !message) return null;
 
@@ -25,10 +26,15 @@ const createNotification = async ({
     audienceEmail: audienceEmail ? normalizeEmail(audienceEmail) : undefined,
     audienceRole: audienceRole ? String(audienceRole).trim().toLowerCase() : undefined,
     category: category ? String(category).trim() : undefined,
+    attachment: attachment || undefined,
     read: false,
   };
 
-  // If an email is provided, send an email alert
+  if (isDbConnected()) {
+    return Notification.create(data);
+  }
+
+  // Fallback for file store when DB is disconnected
   if (data.audienceEmail) {
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -39,17 +45,12 @@ const createNotification = async ({
         <p>Best regards,<br>Temple Management</p>
       </div>
     `;
-    // We send it asynchronously so we don't block the notification creation
     sendEmail({
       to: data.audienceEmail,
       subject: data.title,
       html: emailHtml,
       text: data.message,
-    }).catch(err => console.error("Failed to send notification email:", err));
-  }
-
-  if (isDbConnected()) {
-    return Notification.create(data);
+    }).catch((err) => console.error("Failed to send notification email:", err));
   }
 
   return fileNotificationStore.createNotification(data);
@@ -61,30 +62,43 @@ const createStaffNotification = (payload) =>
     audienceRole: payload.audienceRole,
   });
 
-const createStaffBroadcastNotifications = async ({ title, message, category }) => {
+/**
+ * Broadcast notification to all temple employees (admin, priest, accountant, cashier, staff)
+ */
+const createEmployeeBroadcastNotifications = async ({ title, message, category, attachment }) => {
   if (!title || !message) return [];
 
+  const employeeRoles = ["admin", "priest", "accountant", "cashier", "staff"];
   const [users, employees] = await Promise.all([
-    User.find({ role: "staff" }).select("_id email name"),
-    Employee.find({ role: "staff" }).select("_id email name"),
+    User.find({ role: { $in: employeeRoles } }).select("_id email name role"),
+    Employee.find({ status: { $ne: "Inactive" } }).select("_id email name role"),
   ]);
 
   const recipients = new Map();
 
   users.forEach((user) => {
-    const key = normalizeEmail(user.email) || user._id.toString();
+    const email = normalizeEmail(user.email);
+    const key = email || user._id.toString();
     recipients.set(key, {
       audienceId: user._id.toString(),
-      audienceEmail: normalizeEmail(user.email),
+      audienceEmail: email || undefined,
+      audienceRole: user.role || "staff",
     });
   });
 
   employees.forEach((employee) => {
-    const key = normalizeEmail(employee.email) || employee._id.toString();
-    if (!recipients.has(key)) {
+    const email = normalizeEmail(employee.email);
+    const key = email || employee._id.toString();
+    if (recipients.has(key)) {
+      const existing = recipients.get(key);
+      if (!existing.audienceRole && employee.role) {
+        existing.audienceRole = employee.role;
+      }
+    } else {
       recipients.set(key, {
         audienceId: employee._id.toString(),
-        audienceEmail: normalizeEmail(employee.email),
+        audienceEmail: email || undefined,
+        audienceRole: employee.role || "staff",
       });
     }
   });
@@ -94,7 +108,9 @@ const createStaffBroadcastNotifications = async ({ title, message, category }) =
     message: String(message).trim(),
     audienceId: recipient.audienceId,
     audienceEmail: recipient.audienceEmail || undefined,
-    category: category ? String(category).trim() : undefined,
+    audienceRole: recipient.audienceRole || "staff",
+    category: category ? String(category).trim() : "event",
+    attachment: attachment || undefined,
     read: false,
   }));
 
@@ -103,27 +119,35 @@ const createStaffBroadcastNotifications = async ({ title, message, category }) =
       title: String(title).trim(),
       message: String(message).trim(),
       audienceRole: "staff",
-      category: category ? String(category).trim() : undefined,
+      category: category ? String(category).trim() : "event",
+      attachment: attachment || undefined,
       read: false,
     });
   }
 
-  return Notification.insertMany(docs);
+  // Notification.create with array executes save hooks so automated emails are sent!
+  return Notification.create(docs);
 };
 
-const createBroadcastNotifications = async ({ title, message, category, role }) => {
+const createStaffBroadcastNotifications = createEmployeeBroadcastNotifications;
+
+/**
+ * Broadcast notification to all registered devotees (or specified role)
+ */
+const createBroadcastNotifications = async ({ title, message, category, role = "devotee", attachment }) => {
   if (!title || !message) return [];
 
-  // target users by role or all users if no role provided
-  const filter = role ? { role: String(role).trim().toLowerCase() } : {};
-  const users = await User.find(filter).select("_id email name");
+  const filter = role ? { role: String(role).trim().toLowerCase() } : { role: "devotee" };
+  const users = await User.find(filter).select("_id email name role");
 
   const recipients = new Map();
   users.forEach((user) => {
-    const key = normalizeEmail(user.email) || user._id.toString();
+    const email = normalizeEmail(user.email);
+    const key = email || user._id.toString();
     recipients.set(key, {
       audienceId: user._id.toString(),
-      audienceEmail: normalizeEmail(user.email),
+      audienceEmail: email || undefined,
+      audienceRole: user.role || "devotee",
     });
   });
 
@@ -132,7 +156,9 @@ const createBroadcastNotifications = async ({ title, message, category, role }) 
     message: String(message).trim(),
     audienceId: recipient.audienceId,
     audienceEmail: recipient.audienceEmail || undefined,
-    category: category ? String(category).trim() : undefined,
+    audienceRole: recipient.audienceRole || "devotee",
+    category: category ? String(category).trim() : "event",
+    attachment: attachment || undefined,
     read: false,
   }));
 
@@ -140,8 +166,9 @@ const createBroadcastNotifications = async ({ title, message, category, role }) 
     return Notification.create({
       title: String(title).trim(),
       message: String(message).trim(),
-      audienceRole: role ? String(role).trim().toLowerCase() : undefined,
-      category: category ? String(category).trim() : undefined,
+      audienceRole: role ? String(role).trim().toLowerCase() : "devotee",
+      category: category ? String(category).trim() : "event",
+      attachment: attachment || undefined,
       read: false,
     });
   }
@@ -153,5 +180,6 @@ module.exports = {
   createNotification,
   createStaffNotification,
   createStaffBroadcastNotifications,
+  createEmployeeBroadcastNotifications,
   createBroadcastNotifications,
 };

@@ -22,7 +22,14 @@ const notificationSchema = new mongoose.Schema(
 );
 
 // Helper to generate a temple-branded email HTML
-const buildTempleNotificationEmail = (title, message, category, date) => {
+const buildTempleNotificationEmail = (
+  title,
+  message,
+  category,
+  date,
+  attachmentDetails = null,
+  isEmployee = false
+) => {
   const formattedDate = date
     ? new Date(date).toLocaleString("en-IN", {
         day: "2-digit",
@@ -34,6 +41,10 @@ const buildTempleNotificationEmail = (title, message, category, date) => {
     : new Date().toLocaleString("en-IN");
 
   const catBadge = category ? category.toUpperCase() : "NOTIFICATION";
+
+  const portalLinkHtml = isEmployee
+    ? `You are receiving this notification as an employee / staff member of Sri Shanti Mahadev Mandir. You can also view all temple announcements in your <a href="http://localhost:5173" style="color: #ea580c; font-weight: 600; text-decoration: none;">Temple Portal</a>.`
+    : `You are receiving this email because you are a registered devotee of Sri Shanti Mahadev Mandir. You can also view this notification and invitations in your <a href="http://localhost:5173/devotee" style="color: #ea580c; font-weight: 600; text-decoration: none;">Devotee Portal</a>.`;
 
   return `
     <!DOCTYPE html>
@@ -63,9 +74,35 @@ const buildTempleNotificationEmail = (title, message, category, date) => {
                       ${catBadge}
                     </div>
 
-                    <h2 style="color: #2d1b08; margin: 0 0 15px 0; font-size: 20px; font-weight: 700; line-height: 1.4;">
+                    <h2 style="color: #2d1b08; margin: 0 0 15px 0; font-size: 22px; font-weight: 700; line-height: 1.4;">
                       ${title}
                     </h2>
+
+                    ${
+                      attachmentDetails?.hasImage
+                        ? `
+                    <!-- Event Banner / Invitation Card Image -->
+                    <div style="margin: 18px 0 24px 0; text-align: center; border-radius: 12px; overflow: hidden; border: 1px solid #ebd8c3; box-shadow: 0 6px 18px rgba(184, 94, 0, 0.1); background-color: #fdfaf6;">
+                      <img src="${attachmentDetails.imageSrc}" alt="${title} Invitation Banner" style="max-width: 100%; width: 100%; height: auto; display: block; border: 0; object-fit: contain; margin: 0 auto;" />
+                    </div>
+                    `
+                        : ""
+                    }
+
+                    ${
+                      attachmentDetails?.isPdf
+                        ? `
+                    <!-- PDF Invitation Attachment Box -->
+                    <div style="background-color: #fff9f2; border: 1.5px dashed #ea580c; border-radius: 12px; padding: 18px 20px; margin: 18px 0 22px 0; text-align: center;">
+                      <div style="font-size: 32px; margin-bottom: 6px;">📄</div>
+                      <h3 style="margin: 0 0 6px 0; color: #9a3412; font-size: 16px; font-weight: 700;">Official Event Invitation (PDF Attached)</h3>
+                      <p style="margin: 0; color: #7c2d12; font-size: 13px; line-height: 1.5;">
+                        Please find the complete invitation card and program schedule attached to this email (${attachmentDetails.filename || "Invitation.pdf"}).
+                      </p>
+                    </div>
+                    `
+                        : ""
+                    }
 
                     <div style="background-color: #fbf8f5; border-left: 4px solid #ea580c; border-radius: 8px; padding: 18px 20px; margin: 15px 0 25px 0;">
                       <p style="margin: 0; color: #4a3828; font-size: 15px; line-height: 1.6; white-space: pre-line;">
@@ -74,12 +111,12 @@ const buildTempleNotificationEmail = (title, message, category, date) => {
                     </div>
 
                     <p style="color: #8c7b6c; font-size: 13px; margin: 0 0 25px 0;">
-                      📅 Date & Time: <strong>${formattedDate}</strong>
+                      📅 Date &amp; Time: <strong>${formattedDate}</strong>
                     </p>
 
                     <div style="border-top: 1px dashed #e8ded3; padding-top: 20px;">
                       <p style="margin: 0; color: #5a4b3d; font-size: 14px; line-height: 1.5;">
-                        You are receiving this email because you are a registered devotee of Sri Shanti Mahadev Mandir. You can also view this notification and receipts in your <a href="http://localhost:5173/devotee" style="color: #ea580c; font-weight: 600; text-decoration: none;">Devotee Portal</a>.
+                        ${portalLinkHtml}
                       </p>
                     </div>
                   </td>
@@ -112,24 +149,109 @@ notificationSchema.post("save", async function (doc) {
   try {
     const { sendEmail } = require("../utils/communicationService");
     const User = require("./User");
+    const Employee = require("./Employee");
 
     let recipientEmail = doc.audienceEmail;
+    let recipientRole = doc.audienceRole;
 
     // If audienceEmail not directly provided, check audienceId
     if (!recipientEmail && doc.audienceId) {
-      const user = await User.findById(doc.audienceId).select("email").lean();
+      const user = await User.findById(doc.audienceId).select("email role").lean();
       if (user?.email) {
         recipientEmail = String(user.email).trim().toLowerCase();
+        if (!recipientRole) recipientRole = user.role;
+      } else {
+        const emp = await Employee.findById(doc.audienceId).select("email role").lean();
+        if (emp?.email) {
+          recipientEmail = String(emp.email).trim().toLowerCase();
+          if (!recipientRole) recipientRole = emp.role;
+        }
       }
     }
 
     if (recipientEmail) {
-      const emailHtml = buildTempleNotificationEmail(doc.title, doc.message, doc.category, doc.date || doc.createdAt);
+      const attachments = [];
+      const attachmentDetails = {
+        hasImage: false,
+        imageSrc: "",
+        isPdf: false,
+        filename: "",
+      };
+
+      if (doc.attachment && typeof doc.attachment === "string") {
+        const trimmedAtt = doc.attachment.trim();
+        if (trimmedAtt.startsWith("data:image/")) {
+          const match = trimmedAtt.match(/^data:(image\/([a-zA-Z0-9+]+));base64,(.+)$/);
+          if (match) {
+            const contentType = match[1];
+            const rawExt = match[2].toLowerCase();
+            const ext = rawExt === "jpeg" ? "jpg" : rawExt;
+            const buffer = Buffer.from(match[3], "base64");
+            const cid = "temple_invitation_banner";
+            const filename = `invitation_banner.${ext}`;
+
+            attachments.push({
+              filename,
+              content: buffer,
+              contentType,
+              cid,
+            });
+
+            attachmentDetails.hasImage = true;
+            attachmentDetails.imageSrc = `cid:${cid}`;
+            attachmentDetails.filename = filename;
+          }
+        } else if (trimmedAtt.startsWith("data:application/pdf")) {
+          const match = trimmedAtt.match(/^data:application\/pdf;base64,(.+)$/);
+          if (match) {
+            const buffer = Buffer.from(match[1], "base64");
+            const safeTitle = (doc.title || "Event").replace(/[^a-zA-Z0-9_-]/g, "_");
+            const filename = `Invitation_${safeTitle}.pdf`;
+
+            attachments.push({
+              filename,
+              content: buffer,
+              contentType: "application/pdf",
+            });
+
+            attachmentDetails.isPdf = true;
+            attachmentDetails.filename = filename;
+          }
+        } else if (trimmedAtt.startsWith("http://") || trimmedAtt.startsWith("https://")) {
+          if (/\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(trimmedAtt) || trimmedAtt.includes("/image/")) {
+            attachmentDetails.hasImage = true;
+            attachmentDetails.imageSrc = trimmedAtt;
+          } else if (/\.pdf($|\?)/i.test(trimmedAtt)) {
+            attachmentDetails.isPdf = true;
+            attachmentDetails.filename = "Invitation.pdf";
+          }
+        }
+      }
+
+      const isEmployee = recipientRole && recipientRole !== "devotee";
+      const emailHtml = buildTempleNotificationEmail(
+        doc.title,
+        doc.message,
+        doc.category,
+        doc.date || doc.createdAt,
+        attachmentDetails,
+        isEmployee
+      );
+
+      const textSummary = `${doc.title}\n\n${doc.message}${
+        attachmentDetails.hasImage
+          ? "\n\n[Invitation Banner Image Included]"
+          : attachmentDetails.isPdf
+          ? "\n\n[Invitation PDF Document Attached]"
+          : ""
+      }\n\nSri Shanti Mahadev Mandir`;
+
       sendEmail({
         to: recipientEmail,
         subject: `[Sri Shanti Mahadev Mandir] ${doc.title}`,
         html: emailHtml,
-        text: `${doc.title}\n\n${doc.message}\n\nSri Shanti Mahadev Mandir`,
+        text: textSummary,
+        attachments: attachments.length > 0 ? attachments : undefined,
       })
         .then(async (res) => {
           if (res?.success) {

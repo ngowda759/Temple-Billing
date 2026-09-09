@@ -155,6 +155,26 @@ const EmailNotificationsView = ({
                     <p className={`mt-1 text-sm ${isRead ? 'text-slate-500 dark:text-slate-400' : 'font-medium text-slate-800 dark:text-slate-200'}`}>
                       {notification.displayMessage || notification.message}
                     </p>
+                    {notification.attachment && (
+                      <div className="mt-3">
+                        {(notification.attachment.startsWith("data:image/") || (!notification.attachment.startsWith("data:application/pdf") && !notification.attachment.toLowerCase().endsWith(".pdf"))) ? (
+                          <img
+                            src={notification.attachment}
+                            alt="Event Banner"
+                            className="max-h-56 w-auto rounded-xl object-contain border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xs"
+                          />
+                        ) : (
+                          <a
+                            href={notification.attachment}
+                            download={`Attachment-${(notification.title || "Event").replace(/\s+/g, "_")}.pdf`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-2 rounded-xl bg-teal-600 hover:bg-teal-700 px-3.5 py-1.5 text-xs font-bold text-white transition shadow-xs"
+                          >
+                            📄 Download Attached Document
+                          </a>
+                        )}
+                      </div>
+                    )}
                     <div className="mt-3 flex items-center justify-between">
                       <div className="flex gap-2">
                         {(notification.category || notification.type) && (

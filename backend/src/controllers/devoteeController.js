@@ -14,7 +14,12 @@ const fileDonationStore = require("../store/fileDonationStore");
 const fileNotificationStore = require("../store/fileNotificationStore");
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
-const { createStaffBroadcastNotifications, createBroadcastNotifications, createStaffNotification } = require("../utils/notificationService");
+const {
+  createStaffBroadcastNotifications,
+  createEmployeeBroadcastNotifications,
+  createBroadcastNotifications,
+  createStaffNotification,
+} = require("../utils/notificationService");
 const { sendBookingConfirmation, sendDonationReceipt, sendPrasadamOrderConfirmation } = require("../utils/communicationService");
 const { buildEmailLookup, normalizeEmail } = require("../utils/email");
 const { recordTransaction } = require("../services/accountingService");
@@ -954,18 +959,32 @@ const createEvent = async (req, res) => {
 
     const event = await Event.create(eventData);
 
-    await createStaffBroadcastNotifications({
-      title: "Festival Announcement",
-      message: `${title} has been scheduled at ${location}.`,
-      category: "festival",
+    const formattedEventDate = new Date(date).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
     });
 
+    const eventAnnouncementMsg = description
+      ? `A new temple event "${title}" has been scheduled on ${formattedEventDate} at ${location}.\n\n${description}`
+      : `A new temple event "${title}" has been scheduled on ${formattedEventDate} at ${location}.`;
+
+    // Send notifications along with banner to all employees
+    await createEmployeeBroadcastNotifications({
+      title: `New Event: ${title}`,
+      message: eventAnnouncementMsg,
+      category: "event",
+      attachment: imageUrl || undefined,
+    }).catch((err) => console.error("Employee event broadcast error:", err.message));
+
+    // Send notifications along with banner to all registered devotees
     await createBroadcastNotifications({
       title: `New Event: ${title}`,
-      message: `A new temple event "${title}" has been scheduled on ${new Date(date).toLocaleDateString()} at ${location}.`,
-      category: "festival",
+      message: eventAnnouncementMsg,
+      category: "event",
       role: "devotee",
-    });
+      attachment: imageUrl || undefined,
+    }).catch((err) => console.error("Devotee event broadcast error:", err.message));
 
     return res.status(201).json({ event });
   } catch (error) {
@@ -1300,19 +1319,31 @@ const replySupportRequest = async (req, res) => {
 
 const createNotification = async (req, res) => {
   try {
-    const { title, message, audienceRole, broadcast, category } = req.body;
+    const { title, message, audienceRole, broadcast, category, attachment } = req.body;
     if (!title || !message) return res.status(400).json({ error: "title and message are required." });
 
     // If admin wants to broadcast to a role or all, create per-user notifications
     if (broadcast || audienceRole) {
       try {
-        if (String(audienceRole || "").toLowerCase() === "staff") {
-          const docs = await createStaffBroadcastNotifications({ title, message, category });
+        const lowerRole = String(audienceRole || "").toLowerCase();
+        if (lowerRole === "staff" || lowerRole === "employee" || lowerRole === "employees") {
+          const docs = await createEmployeeBroadcastNotifications({
+            title,
+            message,
+            category: category || "event",
+            attachment: attachment || undefined,
+          });
           return res.status(201).json({ notifications: docs });
         }
 
-        // default: broadcast to devotees or to specified role
-        const docs = await createBroadcastNotifications({ title, message, category, role: audienceRole });
+        // default: broadcast to registered devotees or to specified role
+        const docs = await createBroadcastNotifications({
+          title,
+          message,
+          category: category || "event",
+          role: audienceRole || "devotee",
+          attachment: attachment || undefined,
+        });
         return res.status(201).json({ notifications: docs });
       } catch (err) {
         console.error("broadcast create error:", err);
@@ -1320,7 +1351,12 @@ const createNotification = async (req, res) => {
       }
     }
 
-    const notification = await Notification.create({ title, message });
+    const notification = await Notification.create({
+      title,
+      message,
+      category: category || "event",
+      attachment: attachment || undefined,
+    });
     return res.status(201).json({ notification });
   } catch (error) {
     return res.status(500).json({ error: "Failed to create notification." });
