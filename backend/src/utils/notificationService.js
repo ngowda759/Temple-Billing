@@ -214,15 +214,16 @@ const sendBroadcastEmail = async ({ title, message, category, attachment, bccEma
 };
 
 /**
- * Broadcast notification to all temple employees (admin, priest, accountant, cashier, staff)
+ * Broadcast notification to all temple employees (priest, accountant, cashier, staff).
+ * Note: Admin is excluded from added event notifications/invitations, as admin only receives notifications from other roles.
  */
 const createEmployeeBroadcastNotifications = async ({ title, message, category, attachment }) => {
   if (!title || !message) return [];
 
-  const employeeRoles = ["admin", "priest", "accountant", "cashier", "staff"];
+  const employeeRoles = ["priest", "accountant", "cashier", "staff"];
   const [users, employees] = await Promise.all([
     User.find({ role: { $in: employeeRoles } }).select("_id email name role"),
-    Employee.find({ status: { $ne: "Inactive" } }).select("_id email name role"),
+    Employee.find({ role: { $ne: "admin" }, status: { $ne: "Inactive" } }).select("_id email name role"),
   ]);
 
   const recipients = new Map();

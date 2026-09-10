@@ -4,12 +4,19 @@ const getNotifications = async (req, res) => {
   try {
     const { role, userId } = req.params;
 
-    const notifications = await Notification.find({
+    const query = {
       $or: [
         { audienceRole: role.toLowerCase() },
         { audienceId: userId }
       ]
-    }).sort({ createdAt: -1 });
+    };
+
+    // Admin only receives notifications from other roles (devotees, staff, etc.), not event announcements
+    if (role.toLowerCase() === "admin") {
+      query.category = { $nin: ["event", "events", "festival", "festivals"] };
+    }
+
+    const notifications = await Notification.find(query).sort({ createdAt: -1 });
 
     res.status(200).json(notifications);
   } catch (error) {
