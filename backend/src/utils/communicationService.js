@@ -8,14 +8,20 @@
 // In production, replace with actual provider integrations
 
 let transporter = null;
+let currentEmailUser = null;
+let currentEmailPass = null;
+
 const initTransporter = () => {
-  if (transporter) return transporter;
+  const emailUser = process.env.EMAIL_USER || "ganga.mca2002@gmail.com";
+  const emailPass = process.env.EMAIL_PASS || "qawd ofst qnve vhjj";
+  const emailService = process.env.EMAIL_SERVICE || "gmail";
+
+  if (transporter && currentEmailUser === emailUser && currentEmailPass === emailPass) {
+    return transporter;
+  }
+
   try {
     const nodemailer = require("nodemailer");
-    const emailUser = process.env.EMAIL_USER || "ganga.mca2002@gmail.com";
-    const emailPass = process.env.EMAIL_PASS || "qawd ofst qnve vhjj";
-    const emailService = process.env.EMAIL_SERVICE || "gmail";
-
     if (emailUser && emailPass) {
       transporter = nodemailer.createTransport({
         service: emailService,
@@ -27,7 +33,9 @@ const initTransporter = () => {
           rejectUnauthorized: false,
         },
       });
-      console.log("Real NodeMailer SMTP transporter initialized successfully.");
+      currentEmailUser = emailUser;
+      currentEmailPass = emailPass;
+      console.log(`Real NodeMailer SMTP transporter initialized for ${emailUser}`);
     }
   } catch (error) {
     console.error("Failed to initialize real email transporter:", error.message);
@@ -35,22 +43,23 @@ const initTransporter = () => {
   return transporter;
 };
 
-const sendEmail = async ({ to, subject, html, text, attachments }) => {
+const sendEmail = async ({ to, bcc, subject, html, text, attachments }) => {
   try {
     const mailTransporter = initTransporter();
     if (mailTransporter) {
       const fromEmail = process.env.EMAIL_USER || "ganga.mca2002@gmail.com";
       await mailTransporter.sendMail({
-        from: fromEmail,
-        to,
+        from: `"Sri Shanti Mahadev Mandir" <${fromEmail}>`,
+        to: to || fromEmail,
+        bcc: bcc && bcc.length ? bcc : undefined,
         subject,
         html,
         text,
         attachments,
       });
-      console.log(`📧 Real Email sent to ${to}`);
+      console.log(`📧 Real Email sent to ${to || "BCC list"}${bcc ? ` (${bcc.length} BCC recipients)` : ""}`);
     } else {
-      console.log(`📧 (Mock) Email sent to ${to}`);
+      console.log(`📧 (Mock) Email sent to ${to || "BCC recipients"}`);
       console.log(`Subject: ${subject}`);
       console.log(`Message: ${text || html}`);
     }
@@ -366,15 +375,28 @@ const sendFestivalNotification = async (event, devotees) => {
     </div>
   `;
 
-  const textMessage = `Upcoming Festival: ${event.title} on ${new Date(event.date).toLocaleDateString()} at ${event.location}. ${event.description}`;
-  const smsMessage = `Join us for ${event.title} on ${new Date(event.date).toLocaleDateString()}! - Temple`;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const validDevoteeEmails = [
+    ...new Set(
+      (devotees || [])
+        .map((d) => String(d?.email || "").trim().toLowerCase())
+        .filter((em) => emailRegex.test(em))
+    ),
+  ];
 
-  for (const devotee of devotees) {
-    if (devotee.email) {
-      await sendEmail({ to: devotee.email, subject, html: emailHtml, text: textMessage });
-    }
-    if (devotee.phone) {
-      await sendSMS({ to: devotee.phone, message: smsMessage });
+  if (validDevoteeEmails.length > 0) {
+    await sendEmail({
+      to: process.env.EMAIL_USER || "ganga.mca2002@gmail.com",
+      bcc: validDevoteeEmails,
+      subject,
+      html: emailHtml,
+      text: textMessage,
+    }).catch((err) => console.warn("sendFestivalNotification BCC error:", err.message));
+  }
+
+  for (const devotee of devotees || []) {
+    if (devotee?.phone) {
+      await sendSMS({ to: devotee.phone, message: smsMessage }).catch(() => {});
     }
   }
 };

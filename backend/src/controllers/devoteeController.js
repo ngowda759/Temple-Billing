@@ -823,16 +823,23 @@ const getNotifications = async (req, res) => {
     const email = normalizeEmail(req.query.email);
     
     if (isDbConnected()) {
-      const filters = [{ audienceRole: "devotee" }];
-      
-      // If email is provided, return only this devotee's notifications plus explicit devotee broadcasts.
       if (email) {
-        let user = await User.findOne(buildEmailLookup("email", email)).select("_id role");
-        const emailFilter = buildEmailLookup("audienceEmail", email);
-        if (emailFilter) filters.push(emailFilter);
-
+        let user = await User.findOne(buildEmailLookup("email", email)).select("_id role").lean();
         const userId = user?._id?.toString?.() || user?.id;
-        if (userId) filters.push({ audienceId: userId });
+
+        const filters = [
+          buildEmailLookup("audienceEmail", email),
+          // General broadcast announcements that are not addressed to an individual devotee
+          {
+            audienceRole: { $in: ["devotee", "all"] },
+            audienceEmail: { $in: [null, "", undefined] },
+            audienceId: { $in: [null, "", undefined] },
+          },
+        ];
+
+        if (userId) {
+          filters.push({ audienceId: userId });
+        }
 
         const notifications = await Notification.find({
           $or: filters,
@@ -840,9 +847,11 @@ const getNotifications = async (req, res) => {
         return res.status(200).json({ notifications });
       }
 
-      // No email: return public devotee broadcasts
+      // No email provided: return only general broadcasts
       const notifications = await Notification.find({
-        audienceRole: "devotee",
+        audienceRole: { $in: ["devotee", "all"] },
+        audienceEmail: { $in: [null, "", undefined] },
+        audienceId: { $in: [null, "", undefined] },
       }).sort({ createdAt: -1 });
       return res.status(200).json({ notifications });
     } else {
@@ -908,6 +917,19 @@ const getEvents = async (req, res) => {
       console.warn("getEvents: DB not connected, returning empty list");
       return res.status(200).json({ events: [] });
     }
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Automatically mark past events as Completed if they were marked Upcoming or Active
+    await Event.updateMany(
+      {
+        date: { $lt: todayStart },
+        status: { $in: ["Upcoming", "Active"] },
+      },
+      { $set: { status: "Completed" } }
+    );
+
     const events = await Event.find().sort({ date: 1 });
     return res.status(200).json({ events });
   } catch (error) {
@@ -922,21 +944,22 @@ const validateFestivalDate = (dateValue) => {
   if (Number.isNaN(parsedDate.getTime())) {
     return "Invalid festival date.";
   }
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const tomorrowStart = new Date();
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  tomorrowStart.setHours(0, 0, 0, 0);
   parsedDate.setHours(0, 0, 0, 0);
-  if (parsedDate < todayStart) {
-    return "Festival date must be today or a future date.";
+  if (parsedDate < tomorrowStart) {
+    return "Event date must be in the future (previous dates and today cannot be selected).";
   }
   return null;
 };
 
 const createEvent = async (req, res) => {
   try {
-    const { title, date, location, description, imageUrl, slots, registrations, collection, status } = req.body;
+    const { title, date, endDate, location, description, imageUrl, slots, registrations, collection, status } = req.body;
 
     if (!title || !date || !location) {
-      return res.status(400).json({ error: "title, date and location are required." });
+      return res.status(400).json({ error: "title, date (From Date) and location are required." });
     }
 
     const dateError = validateFestivalDate(date);
@@ -944,9 +967,20 @@ const createEvent = async (req, res) => {
       return res.status(400).json({ error: dateError });
     }
 
+    if (endDate) {
+      const parsedStartDate = new Date(date);
+      const parsedEndDate = new Date(endDate);
+      parsedStartDate.setHours(0, 0, 0, 0);
+      parsedEndDate.setHours(0, 0, 0, 0);
+      if (parsedEndDate < parsedStartDate) {
+        return res.status(400).json({ error: "To Date cannot be before From Date." });
+      }
+    }
+
     const eventData = {
       title,
       date,
+      endDate: endDate || date,
       location,
       description,
       image: imageUrl || undefined,
@@ -1010,6 +1044,16 @@ const getFestivalOverview = async (req, res) => {
     }
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+
+    // Automatically mark past events as Completed
+    await Event.updateMany(
+      {
+        date: { $lt: todayStart },
+        status: { $in: ["Upcoming", "Active"] },
+      },
+      { $set: { status: "Completed" } }
+    );
+
     const tomorrowStart = new Date(todayStart);
     tomorrowStart.setDate(tomorrowStart.getDate() + 1);
     const upcomingFestivals = await Event.countDocuments({
@@ -1105,6 +1149,7 @@ const updateEvent = async (req, res) => {
     const {
       title,
       date,
+      endDate,
       location,
       description,
       imageUrl,
@@ -1125,6 +1170,20 @@ const updateEvent = async (req, res) => {
       }
       event.date = new Date(date);
     }
+    if (endDate !== undefined) {
+      if (endDate) {
+        const parsedStartDate = new Date(date || event.date);
+        const parsedEndDate = new Date(endDate);
+        parsedStartDate.setHours(0, 0, 0, 0);
+        parsedEndDate.setHours(0, 0, 0, 0);
+        if (parsedEndDate < parsedStartDate) {
+          return res.status(400).json({ error: "To Date cannot be before From Date." });
+        }
+        event.endDate = parsedEndDate;
+      } else {
+        event.endDate = event.date;
+      }
+    }
     if (location && String(location).trim()) event.location = String(location).trim();
     if (description != null) event.description = String(description || "").trim();
     if (imageUrl != null) event.image = imageUrl || undefined;
@@ -1144,6 +1203,33 @@ const updateEvent = async (req, res) => {
   } catch (error) {
     console.error("updateEvent error:", error);
     return res.status(500).json({ error: "Failed to update event." });
+  }
+};
+
+const deleteEvent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const event = await Event.findByIdAndDelete(id);
+    if (!event) {
+      return res.status(404).json({ error: "Event not found." });
+    }
+
+    try {
+      await Notification.create({
+        title: "Event Deleted",
+        message: `The event "${event.title}" has been deleted.`,
+        category: "event",
+        audienceRole: "devotee",
+        broadcast: true,
+      });
+    } catch (notifErr) {
+      console.warn("Failed to create deletion notification:", notifErr.message);
+    }
+
+    return res.status(200).json({ message: "Event deleted successfully.", event });
+  } catch (error) {
+    console.error("deleteEvent error:", error);
+    return res.status(500).json({ error: "Failed to delete event." });
   }
 };
 
@@ -1970,6 +2056,184 @@ const markSupportRequestAsRead = async (req, res) => {
   }
 };
 
+const sendNotificationEmail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const targetEmail = normalizeEmail(req.body.email || req.query.email);
+
+    if (!id) {
+      return res.status(400).json({ error: "Notification ID is required." });
+    }
+
+    const notification = await Notification.findById(id);
+    if (!notification) {
+      return res.status(404).json({ error: "Notification not found." });
+    }
+
+    const recipient = targetEmail || notification.audienceEmail;
+    if (!recipient) {
+      return res.status(400).json({ error: "Recipient email is required." });
+    }
+
+    const { sendEmail } = require("../utils/communicationService");
+
+    const attachments = [];
+    const attachmentDetails = {
+      hasImage: false,
+      imageSrc: "",
+      isPdf: false,
+      filename: "",
+    };
+
+    if (notification.attachment && typeof notification.attachment === "string") {
+      const trimmedAtt = notification.attachment.trim();
+      if (trimmedAtt.startsWith("data:image/")) {
+        const match = trimmedAtt.match(/^data:(image\/([a-zA-Z0-9+]+));base64,(.+)$/);
+        if (match) {
+          const contentType = match[1];
+          const rawExt = match[2].toLowerCase();
+          const ext = rawExt === "jpeg" ? "jpg" : rawExt;
+          const buffer = Buffer.from(match[3], "base64");
+          const cid = "temple_invitation_banner";
+          const filename = `invitation_banner.${ext}`;
+
+          attachments.push({
+            filename,
+            content: buffer,
+            contentType,
+            cid,
+          });
+
+          attachmentDetails.hasImage = true;
+          attachmentDetails.imageSrc = `cid:${cid}`;
+          attachmentDetails.filename = filename;
+        }
+      } else if (trimmedAtt.startsWith("data:application/pdf")) {
+        const match = trimmedAtt.match(/^data:application\/pdf;base64,(.+)$/);
+        if (match) {
+          const buffer = Buffer.from(match[1], "base64");
+          const safeTitle = (notification.title || "Event").replace(/[^a-zA-Z0-9_-]/g, "_");
+          const filename = `Invitation_${safeTitle}.pdf`;
+
+          attachments.push({
+            filename,
+            content: buffer,
+            contentType: "application/pdf",
+          });
+
+          attachmentDetails.isPdf = true;
+          attachmentDetails.filename = filename;
+        }
+      } else if (trimmedAtt.startsWith("http://") || trimmedAtt.startsWith("https://")) {
+        if (/\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(trimmedAtt) || trimmedAtt.includes("/image/")) {
+          attachmentDetails.hasImage = true;
+          attachmentDetails.imageSrc = trimmedAtt;
+        } else if (/\.pdf($|\?)/i.test(trimmedAtt)) {
+          attachmentDetails.isPdf = true;
+          attachmentDetails.filename = "Invitation.pdf";
+        }
+      }
+    }
+
+    const emailDateStr = notification.date
+      ? new Date(notification.date).toLocaleString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : new Date().toLocaleString("en-IN");
+
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head><meta charset="utf-8"></head>
+        <body style="margin: 0; padding: 0; background-color: #faf6f0; font-family: 'Segoe UI', Arial, sans-serif; color: #2d1b08;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #faf6f0; padding: 30px 15px;">
+            <tr>
+              <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(184, 94, 0, 0.08); border: 1px solid #f4e4d0;">
+                  <tr>
+                    <td style="background: linear-gradient(135deg, #b46a13 0%, #ea580c 100%); padding: 28px 30px; text-align: center;">
+                      <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800;">Sri Shanti Mahadev Mandir</h1>
+                      <p style="color: #fde8cc; margin: 6px 0 0 0; font-size: 13px; font-weight: 600; text-transform: uppercase;">Temple Official Notification</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 35px 35px 25px 35px;">
+                      <div style="display: inline-block; background-color: #fcf0e4; color: #b46a13; font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: 20px; text-transform: uppercase; margin-bottom: 15px;">
+                        ${(notification.category || "NOTIFICATION").toUpperCase()}
+                      </div>
+                      <h2 style="color: #2d1b08; margin: 0 0 15px 0; font-size: 22px; font-weight: 700;">
+                        ${notification.title}
+                      </h2>
+                      ${attachmentDetails.hasImage ? `
+                        <div style="margin: 18px 0 24px 0; text-align: center; border-radius: 12px; overflow: hidden; border: 1px solid #ebd8c3;">
+                          <img src="${attachmentDetails.imageSrc}" alt="${notification.title}" style="max-width: 100%; width: 100%; height: auto; display: block;" />
+                        </div>
+                      ` : ""}
+                      ${attachmentDetails.isPdf ? `
+                        <div style="background-color: #fff9f2; border: 1.5px dashed #ea580c; border-radius: 12px; padding: 18px 20px; margin: 18px 0 22px 0; text-align: center;">
+                          <h3 style="margin: 0; color: #9a3412; font-size: 16px;">📄 Official Invitation (PDF Document Attached)</h3>
+                        </div>
+                      ` : ""}
+                      <div style="background-color: #fbf8f5; border-left: 4px solid #ea580c; border-radius: 8px; padding: 18px 20px; margin: 15px 0 25px 0;">
+                        <p style="margin: 0; color: #4a3828; font-size: 15px; line-height: 1.6; white-space: pre-line;">
+                          ${notification.message}
+                        </p>
+                      </div>
+                      <p style="color: #8c7b6c; font-size: 13px; margin: 0 0 25px 0;">
+                        📅 Date: <strong>${emailDateStr}</strong>
+                      </p>
+                      <p style="margin: 0; color: #5a4b3d; font-size: 13px;">
+                        You can also view this notification and all temple events directly in your <a href="http://localhost:5173/devotee" style="color: #ea580c; font-weight: 600;">Devotee Portal</a>.
+                      </p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="background-color: #f7efe6; padding: 20px 30px; text-align: center;">
+                      <p style="margin: 0; color: #7f6e5e; font-size: 12px;">
+                        With divine blessings,<br>
+                        <strong>Sri Shanti Mahadev Mandir Administration</strong>
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const emailRes = await sendEmail({
+      to: recipient,
+      subject: `[Sri Shanti Mahadev Mandir] ${notification.title}`,
+      html: emailHtml,
+      text: `${notification.title}\n\n${notification.message}\n\nSri Shanti Mahadev Mandir`,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    });
+
+    if (emailRes.success) {
+      notification.emailSent = true;
+      notification.emailSentAt = new Date();
+      notification.emailRecipient = recipient;
+      await notification.save();
+      return res.status(200).json({ success: true, message: `Notification email dispatched successfully to ${recipient}` });
+    } else {
+      return res.status(200).json({
+        success: false,
+        warning: true,
+        message: `Email dispatch attempted: ${emailRes.error || "SMTP service unavailable"}`,
+      });
+    }
+  } catch (error) {
+    console.error("sendNotificationEmail error:", error);
+    return res.status(500).json({ error: "Failed to send notification email: " + error.message });
+  }
+};
+
 module.exports = {
   getBookings,
   createBooking,
@@ -1982,6 +2246,7 @@ module.exports = {
   getFestivalOverview,
   updateEventStatus,
   updateEvent,
+  deleteEvent,
   submitSupportRequest,
   updateProfile,
   getSupportRequests,
@@ -1998,4 +2263,5 @@ module.exports = {
   updateBookingStatus,
   markNotificationAsRead,
   markSupportRequestAsRead,
+  sendNotificationEmail,
 };

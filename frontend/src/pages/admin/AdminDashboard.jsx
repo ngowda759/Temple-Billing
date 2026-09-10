@@ -87,14 +87,14 @@ const AdminDashboard = () => {
  getAdminAllBookings().catch(() => ({ bookings: [] })),
  axios.get("http://localhost:5000/api/staff/inventory-requests", { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: [] })),
  ]);
- setUsers(usersRes.users || []);
- setBookings(bookingsRes.bookings || []);
- setDonations(donationsRes.donations || []);
- setInventoryItems(inventoryRes.data?.items || []);
- setInventoryRequests(Array.isArray(requestsRes.data) ? requestsRes.data : (requestsRes.data?.requests || []));
- setPrasadamOrders(prasadamRes.orders || []);
- setRooms(Array.isArray(roomsRes) ? roomsRes : []);
- setAllBookings(allBookingsRes.bookings || []);
+    setUsers(Array.isArray(usersRes) ? usersRes : (usersRes?.users || []));
+    setBookings(bookingsRes.bookings || []);
+    setDonations(donationsRes.donations || []);
+    setInventoryItems(inventoryRes.data?.items || []);
+    setInventoryRequests(Array.isArray(requestsRes.data) ? requestsRes.data : (requestsRes.data?.requests || []));
+    setPrasadamOrders(prasadamRes.orders || []);
+    setRooms(Array.isArray(roomsRes) ? roomsRes : []);
+    setAllBookings(allBookingsRes.bookings || []);
  } catch (error) {
  console.warn("Unable to load admin data . please try again", error);
  }
@@ -102,30 +102,65 @@ const AdminDashboard = () => {
  if (token) load();
  }, [token]);
 
- const devoteeUsers = useMemo(() => {
- const fromUsers = users.filter((u) => (u.role || "").toLowerCase() === "devotee");
- const map = new Map(fromUsers.map((u) => [normalizeEmail(u.email), { ...u, email: normalizeEmail(u.email) }]));
+  const devoteeUsers = useMemo(() => {
+    const list = Array.isArray(users) ? users : (users?.users || []);
+    const fromUsers = list.filter((u) => (u.role || "").toLowerCase() === "devotee");
 
- bookings.forEach((b) => {
- const name = String(b.devoteeName || "").trim();
- if (!name) return;
- const pseudoEmail = `${name.toLowerCase().replace(/\s+/g, ".")}@gmail.com`;
- if (!map.has(pseudoEmail)) {
- map.set(pseudoEmail, { name, email: pseudoEmail, role: "devotee", _id: `booking-${name}` });
- }
- });
+    const map = new Map();
+    const registeredNames = new Set();
 
- donations.forEach((d) => {
- const name = String(d.donorName || "").trim();
- if (!name) return;
- const pseudoEmail = `${name.toLowerCase().replace(/\s+/g, ".")}@gmail.com`;
- if (!map.has(pseudoEmail)) {
- map.set(pseudoEmail, { name, email: pseudoEmail, role: "devotee", _id: `donation-${name}` });
- }
- });
+    fromUsers.forEach((u) => {
+      const email = normalizeEmail(u.email);
+      if (email) {
+        map.set(email, {
+          ...u,
+          name: u.name || "Devotee",
+          email,
+          phone: u.phone || "",
+          address: u.address || "",
+          place: u.place || "",
+          role: "devotee",
+          _id: u._id || u.id,
+        });
+      }
+      if (u.name) {
+        registeredNames.add(String(u.name).trim().toLowerCase());
+      }
+    });
 
- return Array.from(map.values());
- }, [users, bookings, donations]);
+    // Only include guests who made bookings/donations using their actual email, never fabricate fake emails!
+    bookings.forEach((b) => {
+      const email = normalizeEmail(b.devoteeEmail || b.email);
+      const name = String(b.devoteeName || "").trim();
+      if (email && !map.has(email) && (!name || !registeredNames.has(name.toLowerCase()))) {
+        map.set(email, {
+          name: name || "Guest Devotee",
+          email,
+          phone: b.devoteePhone || b.contactNumber || "",
+          role: "devotee",
+          _id: b._id || `booking-${email}`,
+          isGuest: true,
+        });
+      }
+    });
+
+    donations.forEach((d) => {
+      const email = normalizeEmail(d.donorEmail || d.email);
+      const name = String(d.donorName || "").trim();
+      if (email && !map.has(email) && (!name || !registeredNames.has(name.toLowerCase()))) {
+        map.set(email, {
+          name: name || "Guest Donor",
+          email,
+          phone: d.donorPhone || "",
+          role: "devotee",
+          _id: d._id || `donation-${email}`,
+          isGuest: true,
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [users, bookings, donations]);
 
  const handleLogout = () => {
  logoutUser();

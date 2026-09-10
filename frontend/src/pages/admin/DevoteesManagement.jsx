@@ -144,9 +144,12 @@ const DevoteesManagement = ({ darkMode, devotees = [], bookings = [], donations 
  const bookingCount = (bookingsByName.get((devotee.name || "").toLowerCase()) || 0) || (bookingsByName.get((devotee.email || "").toLowerCase()) || 0);
  const donationSum = (donationsByName.get((devotee.name || "").toLowerCase()) || 0) || (donationsByName.get((devotee.email || "").toLowerCase()) || 0);
  return (
- <tr key={devotee._id || devotee.email} className={`border-t ${darkMode ? "border-[#334155]" : "border-[#f1ede6]"} ${idx % 2 === 0 ? (darkMode ? "bg-[#1f2937]" : "bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] ") : (darkMode ? "bg-[#111827]" : "bg-[#fdfcfa] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 ")}`}>
- <td className="px-3 py-3 font-semibold">{devotee.name}</td>
- <td className="px-3 py-3">{devotee.email}</td>
+ <tr key={devotee._id || devotee.email} className={`border-t ${darkMode ? "border-[#334155]" : "border-[#f1ede6]"} ${idx % 2 === 0 ? (darkMode ? "bg-[#1f2937]" : "bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700") : (darkMode ? "bg-[#111827]" : "bg-[#fdfcfa] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700")}`}>
+ <td className="px-3 py-3 font-semibold">
+   <div>{devotee.name}</div>
+   {devotee.phone ? <div className="text-xs font-normal text-slate-500 dark:text-slate-400">{devotee.phone}</div> : null}
+ </td>
+ <td className="px-3 py-3 font-medium text-slate-800 dark:text-slate-200">{devotee.email}</td>
  <td className="px-3 py-3">{bookingCount}</td>
  <td className="px-3 py-3">{formatCurrency(donationSum)}</td>
  <td className="px-3 py-3">

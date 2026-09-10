@@ -2272,7 +2272,7 @@ const DevoteeDashboard = () => {
  <div>
  <div className="mb-5 flex items-center justify-between">
  <div className="flex items-center gap-2.5">
- <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+ <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:emerald-300">
  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-2"><path d="M12 20s-6.5-4.2-8.5-8.2a5 5 0 0 1 8.1-5.6l.4.4.4-.4a5 5 0 0 1 8.1 5.6C18.5 15.8 12 20 12 20z" /></svg>
  </span>
  <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">Recent Donations</h2>
@@ -2313,7 +2313,7 @@ const DevoteeDashboard = () => {
  <div>
  <div className="mb-5 flex items-center justify-between">
  <div className="flex items-center gap-2.5">
- <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
+ <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:amber-300">
  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-2"><path d="M15 18h5l-1.3-1.3a1 1 0 0 1-.3-.7V11a6.4 6.4 0 1 0-12.8 0v5a1 1 0 0 1-.3.7L4 18h5" /><path d="M10 18a2 2 0 1 0 4 0" /></svg>
  </span>
  <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">Notifications</h2>
@@ -3168,7 +3168,7 @@ const DevoteeDashboard = () => {
  bookingNumber: o.orderNumber || buildReceiptId("PO", o),
  service: `Prasada Order: ${o.itemName} (x${o.quantity || 1})`,
  datetime: o.createdAt || o.date,
- datetimeForSort: o.createdAt ? new Date(o.createdAt).getTime() : (o.date ? new Date(o.date).getTime() : 0),
+ datetimeForSort: o.createdAt ? new Date(o.createdAt).getTime() : (o.date ? new Date(o.date).toLocaleDateString() : 0),
  amount: o.amount,
  status: o.status || "Placed",
  isPrasadam: true,
@@ -3947,23 +3947,28 @@ try {
  prev.map((n) => ({ ...n, read: true, readAt: new Date() }))
  );
  } catch (err) {
- console.error("Failed to mark all notifications as read:", err);
+ console.error("Error marking all as read", err);
  }
- };
+};
 
- const renderNotifications = () => {
- const unread = notificationsData.filter((n) => !n.read);
- const userEmail = user?.email || profileData?.email || "devotee";
+    const renderNotifications = () => {
+    const unread = notificationsData.filter((n) => !n.read);
+    const userEmail = user?.email || profileData?.email || "devotee";
 
- const getNotificationCategory = (title, category) => {
- if (category) return String(category).toLowerCase();
- const t = String(title || "").toLowerCase();
- if (t.includes("booking") || t.includes("pooja")) return "bookings";
- if (t.includes("donation") || t.includes("received") || t.includes("payment")) return "donations";
- if (t.includes("event") || t.includes("festival") || t.includes("utsav")) return "events";
- if (t.includes("feedback") || t.includes("reply") || t.includes("support")) return "support";
- return "announcements";
- };
+    const getNotificationCategory = (title, category) => {
+      const cat = String(category || "").toLowerCase().trim();
+      if (cat === "event" || cat === "events" || cat === "festival" || cat === "festivals") return "events";
+      if (cat === "booking" || cat === "bookings") return "bookings";
+      if (cat === "donation" || cat === "donations") return "donations";
+      if (cat === "support" || cat === "feedback" || cat === "query" || cat === "queries") return "support";
+
+      const t = String(title || "").toLowerCase();
+      if (t.includes("event") || t.includes("festival") || t.includes("utsav") || t.includes("invitation") || t.includes("gowri") || t.includes("ganesha") || t.includes("chathurthi")) return "events";
+      if (t.includes("booking") || t.includes("pooja")) return "bookings";
+      if (t.includes("donation") || t.includes("received") || t.includes("payment")) return "donations";
+      if (t.includes("feedback") || t.includes("reply") || t.includes("support")) return "support";
+      return "announcements";
+    };
 
  const getNotificationStyle = (title, category) => {
  const cat = getNotificationCategory(title, category);
@@ -4175,9 +4180,6 @@ try {
  <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${style.badgeColor}`}>
  {style.badge}
  </span>
- <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
- ✉️ Sent to Email
- </span>
  </div>
  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
  {item.date || "Recent"}
@@ -4326,14 +4328,14 @@ try {
  )}
  </div>
 
- <div className="flex justify-end pt-2">
- <button
- onClick={() => setSelectedNotificationDetail(null)}
- className="rounded-xl bg-slate-900 dark:bg-slate-100 px-5 py-2 text-sm font-bold text-white dark:text-slate-900 hover:opacity-90 transition"
- >
- Close
- </button>
- </div>
+ <div className="flex items-center justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
+  <button
+  onClick={() => setSelectedNotificationDetail(null)}
+  className="rounded-xl bg-slate-900 dark:bg-slate-100 px-5 py-2 text-sm font-bold text-white dark:text-slate-900 hover:opacity-90 transition"
+  >
+  Close
+  </button>
+  </div>
  </div>
  </div>
  )}

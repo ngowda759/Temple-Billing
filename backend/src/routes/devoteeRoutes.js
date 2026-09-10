@@ -11,6 +11,7 @@ const {
   getFestivalOverview,
   updateEventStatus,
   updateEvent,
+  deleteEvent,
   submitSupportRequest,
   updateProfile,
   getSupportRequests,
@@ -27,6 +28,7 @@ const {
   updateBookingStatus,
   markNotificationAsRead,
   markSupportRequestAsRead,
+  sendNotificationEmail,
 } = require("../controllers/devoteeController");
 
 const router = express.Router();
@@ -38,6 +40,7 @@ router.patch("/bookings/:id/status", updateBookingStatus);
 router.get("/donations", getDonations);
 router.post("/donations", createDonation);
 router.get("/notifications", getNotifications);
+router.post("/notifications/:id/send-email", sendNotificationEmail);
 router.patch("/notifications/:id/read", markNotificationAsRead);
 router.get("/profile", getProfile);
 router.put("/profile", updateProfile);
@@ -46,6 +49,7 @@ router.post("/events", createEvent);
 router.get("/events/overview", getFestivalOverview);
 router.patch("/events/:id/status", updateEventStatus);
 router.patch("/events/:id", updateEvent);
+router.delete("/events/:id", deleteEvent);
 // Razorpay endpoints for order creation, verification and webhook
 router.post("/razorpay/order", createRazorpayOrder);
 router.post("/razorpay/verify", verifyRazorpayPayment);

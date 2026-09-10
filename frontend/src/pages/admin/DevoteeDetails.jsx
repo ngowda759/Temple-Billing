@@ -6,9 +6,17 @@ const DevoteeDetails = ({ darkMode, devotee, bookings = [], donations = [], onBa
  const devoteeName = devotee?.name || "Unknown Devotee";
  const devoteeEmail = devotee?.email || "-";
 
- const devoteeBookings = bookings.filter((b) => (b.devoteeName || "").toLowerCase() === devoteeName.toLowerCase());
- const devoteeDonations = donations.filter((d) => (d.donorName || "").toLowerCase() === devoteeName.toLowerCase());
- const totalDonation = devoteeDonations.reduce((sum, d) => sum + Number(d.amount || 0), 0);
+  const devoteeBookings = bookings.filter((b) => {
+    const nameMatch = (b.devoteeName || "").toLowerCase() === devoteeName.toLowerCase();
+    const emailMatch = devoteeEmail && devoteeEmail !== "-" && (b.devoteeEmail || b.email || "").toLowerCase() === devoteeEmail.toLowerCase();
+    return nameMatch || emailMatch;
+  });
+  const devoteeDonations = donations.filter((d) => {
+    const nameMatch = (d.donorName || "").toLowerCase() === devoteeName.toLowerCase();
+    const emailMatch = devoteeEmail && devoteeEmail !== "-" && (d.donorEmail || "").toLowerCase() === devoteeEmail.toLowerCase();
+    return nameMatch || emailMatch;
+  });
+  const totalDonation = devoteeDonations.reduce((sum, d) => sum + Number(d.amount || 0), 0);
 
  return (
  <div className="mt-5 space-y-4">
@@ -24,10 +32,14 @@ const DevoteeDetails = ({ darkMode, devotee, bookings = [], donations = [], onBa
  </div>
 
  <div className="grid grid-cols-1 gap-3 xl:grid-cols-4">
- <div className={`rounded-2xl border p-4 xl:col-span-2 ${darkMode ? "bg-[#1f2937] border-[#334155]" : "bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] border-[#ece8e1] dark:border-slate-700 "}`}>
+ <div className={`rounded-2xl border p-4 xl:col-span-2 ${darkMode ? "bg-[#1f2937] border-[#334155]" : "bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 border-[#ece8e1] dark:border-slate-700"}`}>
  <h2 className={`text-[28px] font-bold ${darkMode ? "text-slate-100" : "text-[#17151f]"}`}>{devoteeName}</h2>
- <p className={`${darkMode ? "text-slate-300" : "text-gray-700 dark:text-slate-200 "}`}>{devoteeEmail}</p>
- <p className={`mt-2 text-sm ${darkMode ? "text-slate-300" : "text-gray-600 dark:text-slate-200 "}`}>Role: {devotee?.role || "devotee"}</p>
+ <p className={`${darkMode ? "text-slate-300" : "text-gray-700 dark:text-slate-200"}`}>{devoteeEmail}</p>
+ {devotee?.phone ? <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">📞 {devotee.phone}</p> : null}
+ {devotee?.address || devotee?.place ? (
+   <p className="text-sm text-slate-500 dark:text-slate-400">🏠 {devotee.address || ""}{devotee.place ? ` (${devotee.place})` : ""}</p>
+ ) : null}
+ <p className={`mt-2 text-sm ${darkMode ? "text-slate-300" : "text-gray-600 dark:text-slate-200"}`}>Role: {devotee?.role || "devotee"}</p>
  </div>
 
  <div className={`rounded-2xl border p-4 ${darkMode ? "bg-[#1f2937] border-[#334155]" : "bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] border-[#ece8e1] dark:border-slate-700 "}`}>

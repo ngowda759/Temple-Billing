@@ -17,6 +17,7 @@ import {
  MdAssessment,
  MdGroups,
  MdClose,
+ MdOutlineDelete,
 } from "react-icons/md";
 import { FaRegCalendarAlt } from "react-icons/fa";
 
@@ -33,9 +34,52 @@ const quickActions = [
 ];
 
 const statusClass = {
- Active: "bg-[#e8f6e8] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#2e8e2e]",
- Upcoming: "bg-[#e8f0ff] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#3573cb]",
- Completed: "bg-[#efefef] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#555]",
+  Active: "bg-[#e8f6e8] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#2e8e2e]",
+  Upcoming: "bg-[#e8f0ff] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#3573cb]",
+  Completed: "bg-[#f3f4f6] dark:bg-slate-800 text-[#6b7280] dark:text-slate-400 border border-gray-200 dark:border-slate-700",
+  Cancelled: "bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50",
+};
+
+const formatEventDates = (startDate, endDate) => {
+  if (!startDate) return "-";
+  const start = new Date(startDate);
+  if (Number.isNaN(start.getTime())) return "-";
+  const startStr = start.toLocaleDateString();
+
+  if (!endDate) return startStr;
+  const end = new Date(endDate);
+  if (Number.isNaN(end.getTime()) || end.toISOString().slice(0, 10) === start.toISOString().slice(0, 10)) {
+    return startStr;
+  }
+  return `${startStr} - ${end.toLocaleDateString()}`;
+};
+
+const getResolvedStatus = (event) => {
+  if (!event) return "Upcoming";
+  if (event.status === "Cancelled") return "Cancelled";
+  if (!event.date) return event.status || "Upcoming";
+
+  const eventStartDate = new Date(event.date);
+  if (Number.isNaN(eventStartDate.getTime())) return event.status || "Upcoming";
+  eventStartDate.setHours(0, 0, 0, 0);
+
+  const eventEndDate = event.endDate ? new Date(event.endDate) : new Date(event.date);
+  if (!Number.isNaN(eventEndDate.getTime())) {
+    eventEndDate.setHours(23, 59, 59, 999);
+  } else {
+    eventEndDate.setTime(eventStartDate.getTime());
+    eventEndDate.setHours(23, 59, 59, 999);
+  }
+
+  const now = new Date();
+
+  if (now > eventEndDate) {
+    return "Completed";
+  }
+  if (now >= eventStartDate && now <= eventEndDate) {
+    return "Active";
+  }
+  return event.status || "Upcoming";
 };
 
 const FestivalsEventsManagement = () => {
@@ -46,95 +90,161 @@ const FestivalsEventsManagement = () => {
  const [editingId, setEditingId] = useState(null);
  const [viewEvent, setViewEvent] = useState(null);
 
+ const [searchQuery, setSearchQuery] = useState("");
+ const [statusFilter, setStatusFilter] = useState("All");
+ const [showFilterPanel, setShowFilterPanel] = useState(false);
+
  const [overview, setOverview] = useState({ upcomingFestivals: 0, todaysEvents: 0, currentMonthFestivals: 0, monthlyRevenue: 0, festivalRevenue: 0 });
 
- const [title, setTitle] = useState("");
- const [date, setDate] = useState("");
- const [location, setLocation] = useState("");
- const [description, setDescription] = useState("");
- const [imageUrl, setImageUrl] = useState("");
- const [imagePreview, setImagePreview] = useState(null);
- const [isLoading, setIsLoading] = useState(false);
- const [showInvitationModal, setShowInvitationModal] = useState(false);
- const [invitationTitle, setInvitationTitle] = useState("");
- const [invitationMessage, setInvitationMessage] = useState("");
- const [invitationFile, setInvitationFile] = useState("");
- const [invitationFileName, setInvitationFileName] = useState("");
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [location, setLocation] = useState("");
+  const [description, setDescription] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [imagePreview, setImagePreview] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showInvitationModal, setShowInvitationModal] = useState(false);
+  const [invitationTitle, setInvitationTitle] = useState("");
+  const [invitationMessage, setInvitationMessage] = useState("");
+  const [invitationFile, setInvitationFile] = useState("");
+  const [invitationFileName, setInvitationFileName] = useState("");
 
- useEffect(() => {
- fetchEvents();
- fetchOverview();
- }, []);
+  const getTomorrowDateStr = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const year = tomorrow.getFullYear();
+    const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
+    const day = String(tomorrow.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  const minSelectableDate = getTomorrowDateStr();
 
- const fetchOverview = async () => {
- try {
- const res = await axios.get("http://localhost:5000/api/devotee/events/overview");
- setOverview(res.data || {});
- } catch (error) {
- console.error("Failed to fetch overview:", error);
- }
- };
+  const handleDeleteEvent = async (eventToDelete) => {
+    if (!eventToDelete) return;
+    const eventId = eventToDelete._id || eventToDelete.id;
+    if (!eventId) {
+      alert("Error: Missing event ID.");
+      return;
+    }
 
- const fetchEvents = async () => {
- try {
- const res = await axios.get("http://localhost:5000/api/devotee/events");
- setFestivalRows(res.data.events || res.data || []);
- } catch (error) {
- console.log(error);
- }
- };
+    const confirmed = window.confirm(`Are you sure you want to delete the event "${eventToDelete.title}"? This cannot be undone.`);
+    if (!confirmed) return;
 
- const handleAddFestival = async () => {
- if (!title.trim() || !date || !location.trim()) {
- alert("Please fill in all required fields");
- return;
- }
+    setIsLoading(true);
+    try {
+      await axios.delete(`http://localhost:5000/api/devotee/events/${eventId}`);
+      alert(`Event "${eventToDelete.title}" deleted successfully.`);
+      if (viewEvent && (viewEvent._id === eventId || viewEvent.id === eventId)) {
+        setViewEvent(null);
+      }
+      await fetchEvents();
+      await fetchOverview();
+    } catch (error) {
+      console.error("Failed to delete event:", error);
+      alert("Error deleting event: " + (error.response?.data?.error || error.message));
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
- const selectedDate = new Date(date);
- if (Number.isNaN(selectedDate.getTime())) {
- alert("Please enter a valid event date.");
- return;
- }
+  useEffect(() => {
+    fetchEvents();
+    fetchOverview();
+  }, []);
 
- const todayStart = new Date();
- todayStart.setHours(0, 0, 0, 0);
- selectedDate.setHours(0, 0, 0, 0);
+  const fetchOverview = async () => {
+    try {
+      const res = await axios.get("http://localhost:5000/api/devotee/events/overview");
+      setOverview(res.data || {});
+    } catch (error) {
+      console.error("Failed to fetch overview:", error);
+    }
+  };
 
- if (selectedDate < todayStart) {
- alert("Event date must be today or a future date.");
- return;
- }
+  const fetchEvents = async () => {
+    try {
+      const res = await axios.get("http://localhost:5000/api/devotee/events");
+      setFestivalRows(res.data.events || res.data || []);
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
- setIsLoading(true);
- try {
- const payload = { title, date, location, description, imageUrl: imageUrl || undefined };
- if (isEditing && editingId) {
- await axios.patch(`http://localhost:5000/api/devotee/events/${editingId}`, payload);
- alert("Event updated successfully.");
- } else {
- await axios.post("http://localhost:5000/api/devotee/events", payload);
- alert("Event Added Successfully!");
- }
+  const handleAddFestival = async () => {
+    if (!title.trim() || !date || !location.trim()) {
+      alert("Please fill in all required fields (Event Name, From Date, and Location).");
+      return;
+    }
 
- await fetchEvents();
- await fetchOverview();
+    const selectedFrom = new Date(date);
+    if (Number.isNaN(selectedFrom.getTime())) {
+      alert("Please enter a valid From Date.");
+      return;
+    }
 
- setTitle("");
- setDate("");
- setLocation("");
- setDescription("");
- setImageUrl("");
- setImagePreview(null);
- setShowModal(false);
- setIsEditing(false);
- setEditingId(null);
- } catch (error) {
- console.log(error);
- alert("Error saving event: " + (error.response?.data?.error || error.message));
- } finally {
- setIsLoading(false);
- }
- };
+    const tomorrowStart = new Date();
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    tomorrowStart.setHours(0, 0, 0, 0);
+    selectedFrom.setHours(0, 0, 0, 0);
+
+    if (selectedFrom < tomorrowStart) {
+      alert("Event date must be in the future (previous dates and today cannot be selected).");
+      return;
+    }
+
+    const finalEndDate = endDate || date;
+    const selectedTo = new Date(finalEndDate);
+    if (Number.isNaN(selectedTo.getTime())) {
+      alert("Please enter a valid To Date.");
+      return;
+    }
+    selectedTo.setHours(0, 0, 0, 0);
+
+    if (selectedTo < selectedFrom) {
+      alert("To Date cannot be earlier than From Date.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const payload = {
+        title: title.trim(),
+        date,
+        endDate: finalEndDate,
+        location: location.trim(),
+        description: description.trim(),
+        imageUrl: imageUrl || undefined,
+      };
+
+      if (isEditing && editingId) {
+        await axios.patch(`http://localhost:5000/api/devotee/events/${editingId}`, payload);
+        alert("Event updated successfully.");
+      } else {
+        await axios.post("http://localhost:5000/api/devotee/events", payload);
+        alert("Event Added Successfully!");
+      }
+
+      await fetchEvents();
+      await fetchOverview();
+
+      setTitle("");
+      setDate("");
+      setEndDate("");
+      setLocation("");
+      setDescription("");
+      setImageUrl("");
+      setImagePreview(null);
+      setShowModal(false);
+      setIsEditing(false);
+      setEditingId(null);
+    } catch (error) {
+      console.log(error);
+      alert("Error saving event: " + (error.response?.data?.error || error.message));
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleImageChange = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -178,8 +288,19 @@ const FestivalsEventsManagement = () => {
     reader.readAsDataURL(file);
   };
 
- const handleQuickAction = async (action) => {
- if (action === "Add Event") return setShowModal(true);
+  const handleQuickAction = async (action) => {
+    if (action === "Add Event") {
+      setIsEditing(false);
+      setEditingId(null);
+      setTitle("");
+      setDate("");
+      setEndDate("");
+      setLocation("");
+      setDescription("");
+      setImagePreview(null);
+      setImageUrl("");
+      return setShowModal(true);
+    }
 
  if (action === "Send Invitation") {
  setShowInvitationModal(true);
@@ -234,34 +355,46 @@ const FestivalsEventsManagement = () => {
  }
  };
 
- const handleSendInvitation = async () => {
- if (!invitationTitle.trim() || !invitationMessage.trim()) {
- alert("Please fill in the title and message fields.");
- return;
- }
- setIsLoading(true);
- try {
- await axios.post("http://localhost:5000/api/devotee/notifications", {
- title: invitationTitle,
- message: invitationMessage,
- category: "event",
- audienceRole: "devotee",
- broadcast: true,
- attachment: invitationFile || undefined
- });
- alert("Invitation sent successfully to all registered devotees!");
- setInvitationTitle("");
- setInvitationMessage("");
- setInvitationFile("");
- setInvitationFileName("");
- setShowInvitationModal(false);
- } catch (error) {
- console.error(error);
- alert("Error sending invitation: " + (error.response?.data?.error || error.message));
- } finally {
- setIsLoading(false);
- }
- };
+  const handleSendInvitation = async () => {
+    if (!invitationTitle.trim() || !invitationMessage.trim()) {
+      alert("Please fill in the title and message fields.");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      // Broadcast invitation to all registered devotees
+      await axios.post("http://localhost:5000/api/devotee/notifications", {
+        title: invitationTitle,
+        message: invitationMessage,
+        category: "event",
+        audienceRole: "devotee",
+        broadcast: true,
+        attachment: invitationFile || undefined
+      });
+
+      // Also broadcast invitation to all employees
+      await axios.post("http://localhost:5000/api/devotee/notifications", {
+        title: invitationTitle,
+        message: invitationMessage,
+        category: "event",
+        audienceRole: "staff",
+        broadcast: true,
+        attachment: invitationFile || undefined
+      }).catch(err => console.warn("Employee invitation broadcast error:", err.message));
+
+      alert("Invitation sent successfully to all registered devotees and employees!");
+      setInvitationTitle("");
+      setInvitationMessage("");
+      setInvitationFile("");
+      setInvitationFileName("");
+      setShowInvitationModal(false);
+    } catch (error) {
+      console.error(error);
+      alert("Error sending invitation: " + (error.response?.data?.error || error.message));
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleInvitationFileChange = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -313,26 +446,51 @@ const FestivalsEventsManagement = () => {
     reader.readAsDataURL(file);
   };
 
- const todayStart = new Date();
- todayStart.setHours(0, 0, 0, 0);
- const upcomingCount = (festivalRows || []).filter((event) => {
- if (!event?.date) return false;
- const eventDate = new Date(event.date);
- if (Number.isNaN(eventDate.getTime())) return false;
- eventDate.setHours(0, 0, 0, 0);
- return eventDate >= todayStart && !["Completed", "Cancelled"].includes(event.status);
- }).length;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const upcomingCount = (festivalRows || []).filter((event) => {
+    if (!event?.date) return false;
+    const eventDate = new Date(event.date);
+    if (Number.isNaN(eventDate.getTime())) return false;
+    eventDate.setHours(0, 0, 0, 0);
+    return eventDate >= todayStart && getResolvedStatus(event) === "Upcoming";
+  }).length;
 
- const eventsWithDate = (festivalRows || [])
- .filter((event) => event?.date)
- .map((event) => ({ ...event, date: new Date(event.date) }))
- .filter((event) => !Number.isNaN(event.date.getTime()))
- .sort((left, right) => left.date - right.date);
- const upcomingFestival =
- eventsWithDate.find(
- (event) =>
- event.date >= todayStart && !["Completed", "Cancelled"].includes(event.status)
- ) || null;
+  const eventsWithDate = (festivalRows || [])
+    .filter((event) => event?.date)
+    .map((event) => ({ ...event, parsedDate: new Date(event.date) }))
+    .filter((event) => !Number.isNaN(event.parsedDate.getTime()))
+    .sort((left, right) => left.parsedDate - right.parsedDate);
+  const upcomingFestival =
+    eventsWithDate.find(
+      (event) =>
+        event.parsedDate >= todayStart && getResolvedStatus(event) === "Upcoming"
+    ) || null;
+
+  const filteredEvents = (festivalRows || []).filter((event) => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchTitle = (event.title || "").toLowerCase().includes(q);
+      const matchLocation = (event.location || "").toLowerCase().includes(q);
+      const matchDesc = (event.description || "").toLowerCase().includes(q);
+      if (!matchTitle && !matchLocation && !matchDesc) return false;
+    }
+
+    const resolvedStatus = getResolvedStatus(event);
+
+    if (statusFilter !== "All") {
+      if (resolvedStatus.toLowerCase() !== statusFilter.toLowerCase()) return false;
+    }
+
+    return true;
+  });
+
+  const activeFiltersCount = (statusFilter !== "All" ? 1 : 0) + (searchQuery.trim() ? 1 : 0);
+
+  const handleClearFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("All");
+  };
 
  const stats = [
  {
@@ -365,9 +523,9 @@ const FestivalsEventsManagement = () => {
  <h1 className="text-[46px] leading-tight font-bold text-[#17151f] dark:text-slate-200 ">Temple Events</h1>
  <p className="mt-1 text-[20px] text-[#5c6675]">Manage temple events, schedules, cultural programs, and celebrations.</p>
  </div>
- <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] px-4 text-[20px] text-[#7b4a1f]">
+ <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 px-4 text-[18px] font-medium text-[#7b4a1f] dark:text-amber-300">
  <MdCalendarMonth size={21} />
- 21 May 2026, Thursday
+ {new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", weekday: "long" })}
  </div>
  </div>
 
@@ -391,129 +549,254 @@ const FestivalsEventsManagement = () => {
  })}
  </div>
 
- <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2.25fr_1.1fr]">
- <div className="rounded-2xl border border-[#ece8e1] dark:border-slate-700 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-4">
- <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
- <h2 className="text-[40px] font-bold text-[#17151f] dark:text-slate-200 ">Event Schedule</h2>
- <div className="flex items-center gap-2">
- <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#ece8e1] dark:border-slate-700 px-4 text-[18px] text-[#4f5866] dark:text-slate-200 ">
- <MdOutlineFilterAlt size={18} /> Filter
- </button>
- <button onClick={() => setShowModal(true)} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#ff8b00] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] px-4 text-[18px] font-semibold text-white hover:bg-[#ec7f00] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 " > + Add Event </button>
- </div>
- </div>
+  <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2.25fr_1.1fr]">
+    <div className="rounded-2xl border border-[#ece8e1] dark:border-slate-700 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="text-[32px] sm:text-[40px] font-bold text-[#17151f] dark:text-slate-200">Event Schedule</h2>
+          <span className="rounded-full bg-orange-100 dark:bg-orange-950/50 text-[#b45309] dark:text-orange-300 text-xs font-semibold px-2.5 py-1">
+            {filteredEvents.length} {filteredEvents.length === 1 ? "event" : "events"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowFilterPanel(!showFilterPanel)}
+            className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-[16px] font-medium transition-colors ${
+              showFilterPanel || activeFiltersCount > 0
+                ? "border-[#ff8b00] bg-[#fff5ea] dark:bg-orange-950/40 text-[#ff8b00]"
+                : "border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-slate-800 text-[#4f5866] dark:text-slate-200 hover:bg-[#f3efe8]"
+            }`}
+          >
+            <MdOutlineFilterAlt size={18} />
+            <span>Filter</span>
+            {activeFiltersCount > 0 && (
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ff8b00] text-[11px] font-bold text-white">
+                {activeFiltersCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => {
+              setIsEditing(false);
+              setEditingId(null);
+              setTitle("");
+              setDate("");
+              setEndDate("");
+              setLocation("");
+              setDescription("");
+              setImagePreview(null);
+              setImageUrl("");
+              setShowModal(true);
+            }}
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#ff8b00] px-4 text-[16px] font-semibold text-white hover:bg-[#ec7f00] transition-colors"
+          >
+            + Add Event
+          </button>
+        </div>
+      </div>
 
- <div className="mb-4 flex h-11 items-center gap-2 rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] px-3 text-[#8b93a0]">
- <MdOutlineSearch size={20} />
- <input className="w-full bg-transparent text-[17px] text-[#202632] dark:text-slate-200 outline-none" placeholder="Search event..." />
- </div>
+      {showFilterPanel && (
+        <div className="mb-4 rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-slate-850 p-4 transition-all">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <span className="text-[15px] font-bold text-[#1f2530] dark:text-slate-200 flex items-center gap-1.5">
+              <MdOutlineFilterAlt size={16} className="text-[#ff8b00]" /> Filter Events
+            </span>
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={handleClearFilters}
+                className="text-xs font-semibold text-[#ff8b00] hover:underline"
+              >
+                Reset All Filters
+              </button>
+            )}
+          </div>
+          <div className="max-w-xs">
+            <label className="block text-xs font-semibold text-[#5c6675] dark:text-slate-300 mb-1">
+              Event Status
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full h-10 rounded-lg border border-[#ece8e1] dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm text-[#202632] dark:text-slate-200 outline-none focus:border-[#ff8b00]"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Upcoming">Upcoming</option>
+              <option value="Active">Active / Ongoing</option>
+              <option value="Completed">Completed</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+      )}
 
- <div className="overflow-auto rounded-xl border border-[#f1ede6] dark:border-slate-700 ">
- <table className="w-full min-w-[980px] text-[17px]">
- <thead className="bg-[#f8f6f2] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] text-[#2a3140] dark:text-slate-200 ">
- <tr>
- <th className="px-3 py-3 text-left font-semibold">Event</th>
- <th className="px-3 py-3 text-left font-semibold">Date</th>
- <th className="px-3 py-3 text-left font-semibold">Venue</th>
- {/* Slots and Registrations columns removed per request */}
- <th className="px-3 py-3 text-left font-semibold">Status</th>
- <th className="px-3 py-3 text-left font-semibold">Actions</th>
- </tr>
- </thead>
- <tbody>
- {festivalRows.map((row) => (
- <tr key={row._id || row.title} className="border-t border-[#f1ede6] dark:border-slate-700 text-[#2f3645] dark:text-slate-200 ">
- <td className="px-3 py-3">
- <div className="flex items-center gap-2">
- {row.image ? (
- <img src={row.image} alt={row.title} className="h-8 w-8 rounded-full object-cover" />
- ) : null}
- <span>{row.title}</span>
- </div>
- </td>
+      <div className="mb-4 flex h-11 items-center gap-2 rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] px-3 text-[#8b93a0]">
+        <MdOutlineSearch size={20} />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full bg-transparent text-[16px] text-[#202632] dark:text-slate-200 outline-none placeholder:text-gray-400"
+          placeholder="Search event by name, venue, or description..."
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery("")}
+            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200"
+            title="Clear search"
+          >
+            <MdClose size={18} />
+          </button>
+        )}
+      </div>
 
- <td className="px-3 py-3">{row.date ? new Date(row.date).toLocaleDateString() : "-"}</td>
+      <div className="overflow-auto rounded-xl border border-[#f1ede6] dark:border-slate-700">
+        <table className="w-full min-w-[980px] text-[17px]">
+          <thead className="bg-[#f8f6f2] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] text-[#2a3140] dark:text-slate-200">
+            <tr>
+              <th className="px-3 py-3 text-left font-semibold">Event</th>
+              <th className="px-3 py-3 text-left font-semibold">Date</th>
+              <th className="px-3 py-3 text-left font-semibold">Venue</th>
+              <th className="px-3 py-3 text-left font-semibold">Status</th>
+              <th className="px-3 py-3 text-left font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredEvents.length === 0 ? (
+              <tr>
+                <td colSpan="5" className="py-12 text-center text-[#5c6675] dark:text-slate-400">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <MdOutlineEvent size={38} className="text-gray-300 dark:text-slate-600" />
+                    <p className="text-base font-semibold">No events found</p>
+                    <p className="text-sm text-gray-400">
+                      {activeFiltersCount > 0 ? "Try adjusting your search query or filter options." : "No events are available at this time."}
+                    </p>
+                    {activeFiltersCount > 0 && (
+                      <button
+                        onClick={handleClearFilters}
+                        className="mt-2 text-sm font-semibold text-[#ff8b00] hover:underline"
+                      >
+                        Reset All Filters
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              filteredEvents.map((row) => (
+                <tr key={row._id || row.title} className="border-t border-[#f1ede6] dark:border-slate-700 text-[#2f3645] dark:text-slate-200 hover:bg-[#fbf9f5] dark:hover:bg-slate-800/40 transition-colors">
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-2.5">
+                      {row.image ? (
+                        <img src={row.image} alt={row.title} className="h-9 w-9 rounded-full object-cover border border-[#ece8e1] dark:border-slate-700" />
+                      ) : null}
+                      <span className="font-medium">{row.title}</span>
+                    </div>
+                  </td>
 
- <td className="px-3 py-3">{row.location || "-"}</td>
+                  <td className="px-3 py-3">{formatEventDates(row.date, row.endDate)}</td>
 
- <td className="px-3 py-3">
- <span className={`rounded-xl px-3 py-1 text-[14px] font-semibold ${statusClass[row.status || "Upcoming"] || "bg-[#efefef] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 text-[#555]"}`}>
- {row.status || "Upcoming"}
- </span>
- </td>
+                  <td className="px-3 py-3">{row.location || "-"}</td>
 
- <td className="px-3 py-3">
- <div className="flex items-center gap-2">
- <button onClick={() => setViewEvent(row)} className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-[#ece8e1] dark:border-slate-700 bg-[#faf7f2] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] text-[#7b5324]" title="View Details">
- <MdOutlineRemoveRedEye />
- </button>
+                  <td className="px-3 py-3">
+                    <span className={`rounded-xl px-3 py-1 text-[13px] font-semibold ${statusClass[getResolvedStatus(row)] || "bg-[#efefef] text-[#555]"}`}>
+                      {getResolvedStatus(row)}
+                    </span>
+                  </td>
 
- <button onClick={() => {
- setIsEditing(true);
- setEditingId(row._id);
- setTitle(row.title || "");
- setDate(row.date ? new Date(row.date).toISOString().slice(0,10) : "");
- setLocation(row.location || "");
- setDescription(row.description || "");
- setImagePreview(row.image || null);
- setImageUrl(row.image || "");
- setShowModal(true);
- }} className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-[#ece8e1] dark:border-slate-700 bg-[#faf7f2] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] text-[#7b5324]" title="Edit Event">
- <MdOutlineEdit />
- </button>
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setViewEvent(row)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#ece8e1] dark:border-slate-700 bg-[#faf7f2] dark:bg-[#0f172a] dark:text-slate-200 text-[#7b5324] hover:bg-[#f0ebe3] transition-colors"
+                        title="View Details"
+                      >
+                        <MdOutlineRemoveRedEye size={16} />
+                      </button>
 
- <button
- onClick={() => {
- const newDateStr = window.prompt("Enter new Date to postpone the event (YYYY-MM-DD):", row.date ? new Date(row.date).toISOString().slice(0, 10) : "");
- if (newDateStr) {
- const parsedDate = new Date(newDateStr);
- if (!Number.isNaN(parsedDate.getTime())) {
- const autoDay = parsedDate.toLocaleDateString("en-US", { weekday: 'long' });
- const newDayStr = window.prompt("Confirm or enter the Day of the week:", autoDay);
- if (newDayStr) {
- handlePostponeEvent(row._id, newDateStr, newDayStr);
- }
- } else {
- alert("Invalid date format.");
- }
- }
- }}
- title="Postpone Event"
- className="inline-flex h-8 px-2 items-center justify-center rounded-lg border border-[#ece8e1] dark:border-slate-700 bg-[#faf7f2] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] text-[#d97706] text-xs font-semibold hover:bg-orange-50 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 "
- >
- Postpone
- </button>
- </div>
- </td>
- </tr>
- ))}
- </tbody>
- </table>
- </div>
- </div>
+                      <button
+                        onClick={() => {
+                          setIsEditing(true);
+                          setEditingId(row._id);
+                          setTitle(row.title || "");
+                          setDate(row.date ? new Date(row.date).toISOString().slice(0,10) : "");
+                          setEndDate(row.endDate ? new Date(row.endDate).toISOString().slice(0,10) : (row.date ? new Date(row.date).toISOString().slice(0,10) : ""));
+                          setLocation(row.location || "");
+                          setDescription(row.description || "");
+                          setImagePreview(row.image || null);
+                          setImageUrl(row.image || "");
+                          setShowModal(true);
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#ece8e1] dark:border-slate-700 bg-[#faf7f2] dark:bg-[#0f172a] dark:text-slate-200 text-[#7b5324] hover:bg-[#f0ebe3] transition-colors"
+                        title="Edit Event"
+                      >
+                        <MdOutlineEdit size={16} />
+                      </button>
 
- <div className="space-y-4">
- <div className="rounded-2xl border border-[#ece8e1] dark:border-slate-700 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-4">
- <h3 className="text-[40px] font-bold text-[#17151f] dark:text-slate-200 ">Upcoming Event</h3>
- {upcomingFestival ? (
- <>
- <img src={upcomingFestival.image || "https://images.unsplash.com/photo-1532664189809-02133fee698d?auto=format&fit=crop&w=1300&q=80"} alt={upcomingFestival.title} className="mt-3 h-[168px] w-full rounded-xl object-cover" />
- <div className="mt-3">
- <h4 className="text-[39px] font-bold text-[#1b2230] dark:text-slate-200 ">{upcomingFestival.title}</h4>
- <div className="mt-1 space-y-1 text-[24px] text-[#3f4757] dark:text-slate-200 ">
- <p className="flex items-center gap-2"><FaRegCalendarAlt className="text-[#8b5b2d]" /> Date : {new Date(upcomingFestival.date).toLocaleDateString()}</p>
- <p className="flex items-center gap-2"><MdLocationOn className="text-[#8b5b2d]" /> Venue : {upcomingFestival.location}</p>
- <p className="flex items-center gap-2"><MdAccessTime className="text-[#8b5b2d]" /> Time : {upcomingFestival.time || "TBD"}</p>
- <p className="flex items-center gap-2"><MdPeople className="text-[#8b5b2d]" /> Registrations : {upcomingFestival.registrations || 0}</p>
- <p className="flex items-center gap-2"><MdOutlineCurrencyRupee className="text-[#8b5b2d]" /> Collection : Rs {upcomingFestival.collection || 0}</p>
- </div>
- <button className="mt-3 h-11 w-full rounded-lg bg-[#ff8b00] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] text-[19px] font-semibold text-white hover:bg-[#ec7f00] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 ">View Full Details</button>
- </div>
- </>
- ) : (
- <div className="mt-3 text-[18px] text-[#5c6675]">No upcoming event scheduled.</div>
- )}
- </div>
+                      <button
+                        onClick={() => {
+                          const newDateStr = window.prompt("Enter new Date to postpone the event (YYYY-MM-DD):", row.date ? new Date(row.date).toISOString().slice(0, 10) : "");
+                          if (newDateStr) {
+                            const parsedDate = new Date(newDateStr);
+                            if (!Number.isNaN(parsedDate.getTime())) {
+                              const autoDay = parsedDate.toLocaleDateString("en-US", { weekday: 'long' });
+                              const newDayStr = window.prompt("Confirm or enter the Day of the week:", autoDay);
+                              if (newDayStr) {
+                                handlePostponeEvent(row._id, newDateStr, newDayStr);
+                              }
+                            } else {
+                              alert("Invalid date format.");
+                            }
+                          }
+                        }}
+                        title="Postpone Event"
+                        className="inline-flex h-8 px-2.5 items-center justify-center rounded-lg border border-[#ece8e1] dark:border-slate-700 bg-[#faf7f2] dark:bg-[#0f172a] text-[#d97706] text-xs font-semibold hover:bg-orange-50 transition-colors"
+                      >
+                        Postpone
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteEvent(row)}
+                        title="Delete Event"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/60 transition-colors"
+                      >
+                        <MdOutlineDelete size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-[#ece8e1] dark:border-slate-700 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-4">
+        <h3 className="text-[40px] font-bold text-[#17151f] dark:text-slate-200 ">Upcoming Event</h3>
+        {upcomingFestival ? (
+          <>
+            <img src={upcomingFestival.image || "https://images.unsplash.com/photo-1532664189809-02133fee698d?auto=format&fit=crop&w=1300&q=80"} alt={upcomingFestival.title} className="mt-3 h-[168px] w-full rounded-xl object-cover" />
+            <div className="mt-3">
+              <h4 className="text-[39px] font-bold text-[#1b2230] dark:text-slate-200 ">{upcomingFestival.title}</h4>
+              <div className="mt-1 space-y-1 text-[24px] text-[#3f4757] dark:text-slate-200 ">
+                <p className="flex items-center gap-2"><FaRegCalendarAlt className="text-[#8b5b2d]" /> Date : {formatEventDates(upcomingFestival.date, upcomingFestival.endDate)}</p>
+                <p className="flex items-center gap-2"><MdLocationOn className="text-[#8b5b2d]" /> Venue : {upcomingFestival.location}</p>
+                <p className="flex items-center gap-2"><MdAccessTime className="text-[#8b5b2d]" /> Time : {upcomingFestival.time || "TBD"}</p>
+                <p className="flex items-center gap-2"><MdPeople className="text-[#8b5b2d]" /> Registrations : {upcomingFestival.registrations || 0}</p>
+                <p className="flex items-center gap-2"><MdOutlineCurrencyRupee className="text-[#8b5b2d]" /> Collection : Rs {upcomingFestival.collection || 0}</p>
+              </div>
+              <button
+                onClick={() => setViewEvent(upcomingFestival)}
+                className="mt-3 h-11 w-full rounded-lg bg-[#ff8b00] text-[19px] font-semibold text-white hover:bg-[#ec7f00] transition-colors shadow-sm"
+              >
+                View Full Details
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="mt-3 text-[18px] text-[#5c6675]">No upcoming event scheduled.</div>
+        )}
+      </div>
 
  <div className="rounded-2xl border border-[#ece8e1] dark:border-slate-700 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-4">
  <h3 className="text-[36px] font-bold text-[#17151f] dark:text-slate-200 ">Quick Actions</h3>
@@ -567,15 +850,42 @@ const FestivalsEventsManagement = () => {
  />
  </div>
 
- <div>
- <label className="block text-[16px] font-semibold text-[#17151f] dark:text-slate-200 mb-2">Date *</label>
- <input
- type="date"
- value={date}
- onChange={(e) => setDate(e.target.value)}
- className="w-full rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] px-4 py-2.5 text-[16px] text-[#202632] dark:text-slate-200 outline-none focus:border-[#ff8b00] focus:ring-1 focus:ring-[#ff8b00]"
- />
- </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[15px] font-semibold text-[#17151f] dark:text-slate-200 mb-1.5">
+                  From Date *
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  min={minSelectableDate}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    setDate(newDate);
+                    if (!endDate || endDate < newDate) {
+                      setEndDate(newDate);
+                    }
+                  }}
+                  className="w-full rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-[#0f172a] dark:text-slate-200 px-3 py-2 text-[15px] text-[#202632] outline-none focus:border-[#ff8b00] focus:ring-1 focus:ring-[#ff8b00]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[15px] font-semibold text-[#17151f] dark:text-slate-200 mb-1.5">
+                  To Date *
+                </label>
+                <input
+                  type="date"
+                  value={endDate || date}
+                  min={date || minSelectableDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-[#0f172a] dark:text-slate-200 px-3 py-2 text-[15px] text-[#202632] outline-none focus:border-[#ff8b00] focus:ring-1 focus:ring-[#ff8b00]"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-[#8b5b2d] dark:text-amber-400 font-medium -mt-2">
+              * Previous dates and today cannot be selected. Events must start from tomorrow onwards.
+            </p>
 
  <div>
  <label className="block text-[16px] font-semibold text-[#17151f] dark:text-slate-200 mb-2">Venue/Location *</label>
@@ -628,42 +938,106 @@ const FestivalsEventsManagement = () => {
  )}
 
  {/* View Event Modal */}
- {viewEvent && (
- <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
- <div className="w-full max-w-lg rounded-2xl border border-[#ece8e1] dark:border-slate-700 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] p-6 shadow-2xl">
- <div className="mb-4 flex items-center justify-between">
- <h2 className="text-[24px] font-bold text-[#17151f] dark:text-slate-200 ">{viewEvent.title}</h2>
- <button onClick={() => setViewEvent(null)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#ece8e1] dark:border-slate-700 bg-[#faf7f2] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] text-[#7b5324] hover:bg-[#f0ebe3] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 ">Close</button>
- </div>
- <div>
- {viewEvent.image && <img src={viewEvent.image} alt={viewEvent.title} className="h-44 w-full rounded-md object-cover" />}
- <div className="mt-3 space-y-2 text-[16px] text-[#3f4757] dark:text-slate-200 ">
- <p><strong>Date:</strong> {viewEvent.date ? new Date(viewEvent.date).toLocaleString() : "-"}</p>
- <p><strong>Venue:</strong> {viewEvent.location || "-"}</p>
- <p><strong>Description:</strong> {viewEvent.description || "-"}</p>
- <p><strong>Registrations:</strong> {viewEvent.registrations || 0}</p>
- <p><strong>Collection:</strong> Rs {viewEvent.collection || 0}</p>
- <p><strong>Status:</strong> {viewEvent.status || "Upcoming"}</p>
- </div>
- <div className="mt-4 text-right">
- <button onClick={() => {
- setViewEvent(null);
- // open edit modal
- setIsEditing(true);
- setEditingId(viewEvent._id);
- setTitle(viewEvent.title || "");
- setDate(viewEvent.date ? new Date(viewEvent.date).toISOString().slice(0,10) : "");
- setLocation(viewEvent.location || "");
- setDescription(viewEvent.description || "");
- setImagePreview(viewEvent.image || null);
- setImageUrl(viewEvent.image || "");
- setShowModal(true);
- }} className="rounded-xl bg-[#ff8b00] dark:bg-[#0f172a] dark:text-slate-200 dark:border-slate-700 dark:bg-[#0f172a] px-4 py-2 text-white">Edit Event</button>
- </div>
- </div>
- </div>
- </div>
- )}
+  {viewEvent && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-lg rounded-2xl border border-[#ece8e1] dark:border-slate-700 bg-temple-100 dark:bg-[#0f172a] dark:text-slate-200 p-6 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[24px] font-bold text-[#17151f] dark:text-slate-200">{viewEvent.title}</h2>
+            <span className={`rounded-xl px-2.5 py-0.5 text-[12px] font-semibold ${statusClass[getResolvedStatus(viewEvent)] || "bg-[#efefef] text-[#555]"}`}>
+              {getResolvedStatus(viewEvent)}
+            </span>
+          </div>
+          <button
+            onClick={() => setViewEvent(null)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#ece8e1] dark:border-slate-700 bg-[#faf7f2] dark:bg-slate-800 text-[#7b5324] dark:text-slate-200 hover:bg-[#f0ebe3] transition-colors"
+            title="Close"
+          >
+            <MdClose size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {viewEvent.image && (
+            <img src={viewEvent.image} alt={viewEvent.title} className="h-44 w-full rounded-xl object-cover border border-[#ece8e1] dark:border-slate-700" />
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-slate-800/60 p-3">
+              <span className="text-xs font-semibold text-[#8b5b2d] dark:text-amber-400 block mb-0.5">Date</span>
+              <p className="text-sm font-bold text-[#1f2530] dark:text-slate-200">
+                {formatEventDates(viewEvent.date, viewEvent.endDate)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-slate-800/60 p-3">
+              <span className="text-xs font-semibold text-[#8b5b2d] dark:text-amber-400 block mb-0.5">Venue</span>
+              <p className="text-sm font-bold text-[#1f2530] dark:text-slate-200 truncate">
+                {viewEvent.location || "-"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-slate-800/60 p-3">
+              <span className="text-xs font-semibold text-[#8b5b2d] dark:text-amber-400 block mb-0.5">Time</span>
+              <p className="text-sm font-bold text-[#1f2530] dark:text-slate-200">
+                {viewEvent.time || "TBD"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-slate-800/60 p-3">
+              <span className="text-xs font-semibold text-[#8b5b2d] dark:text-amber-400 block mb-0.5">Collection</span>
+              <p className="text-sm font-bold text-[#1f2530] dark:text-slate-200">
+                Rs {Number(viewEvent.collection || 0).toLocaleString()}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf9f7] dark:bg-slate-800/60 p-3">
+            <span className="text-xs font-semibold text-[#8b5b2d] dark:text-amber-400 block mb-1">Description</span>
+            <p className="text-sm text-[#3f4757] dark:text-slate-300 whitespace-pre-line">
+              {viewEvent.description || "No description provided for this event."}
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-[#f1ede6] dark:border-slate-700">
+            <button
+              onClick={() => handleDeleteEvent(viewEvent)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-3.5 py-2 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 transition-colors"
+            >
+              <MdOutlineDelete size={18} />
+              Delete Event
+            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewEvent(null)}
+                className="rounded-xl border border-[#ece8e1] dark:border-slate-700 bg-[#faf7f2] dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-[#4f5866] dark:text-slate-200 hover:bg-[#f0ebe3] transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  const ev = viewEvent;
+                  setViewEvent(null);
+                  setIsEditing(true);
+                  setEditingId(ev._id || ev.id);
+                  setTitle(ev.title || "");
+                  setDate(ev.date ? new Date(ev.date).toISOString().slice(0, 10) : "");
+                  setEndDate(ev.endDate ? new Date(ev.endDate).toISOString().slice(0, 10) : (ev.date ? new Date(ev.date).toISOString().slice(0, 10) : ""));
+                  setLocation(ev.location || "");
+                  setDescription(ev.description || "");
+                  setImagePreview(ev.image || null);
+                  setImageUrl(ev.image || "");
+                  setShowModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#ff8b00] px-4 py-2 text-sm font-semibold text-white hover:bg-[#ec7f00] transition-colors"
+              >
+                <MdOutlineEdit size={16} />
+                Edit Event
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
  {/* Send Invitation Modal */}
  {showInvitationModal && (
  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
