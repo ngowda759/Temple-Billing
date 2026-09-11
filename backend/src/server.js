@@ -1,11 +1,14 @@
 require("dotenv").config();
 const app = require("./app");
 const { connectDB } = require("./config/db");
+const { initPostgres } = require("./config/postgres");
 const eventRoutes = require("./routes/eventRoutes");
 const PORT = process.env.PORT || 5000;
 app.use("/api/events", eventRoutes);
 const startServer = async () => {
   const dbConnected = await connectDB();
+
+  await initPostgres();
 
   if (!dbConnected) {
     console.warn("Starting without MongoDB. Auth will use local file fallback.");
