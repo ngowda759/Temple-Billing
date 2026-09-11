@@ -4,6 +4,8 @@ const path = require("path");
 const { getPool } = require("../config/postgres");
 
 const MIGRATIONS_DIR = path.join(__dirname, "migrations");
+// App-specific advisory lock key (fixed constant) so concurrent runners exclude each other.
+const MIGRATE_LOCK_KEY = 727271701;
 
 const ensureTrackingTable = async (client) => {
   await client.query(`
@@ -30,6 +32,9 @@ const runPendingMigrations = async () => {
   const client = await pool.connect();
 
   try {
+    // Serialize migration runs across processes; released in the finally below.
+    await client.query("SELECT pg_advisory_lock($1)", [MIGRATE_LOCK_KEY]);
+
     await client.query("BEGIN");
     await ensureTrackingTable(client);
     await client.query("COMMIT");
@@ -66,6 +71,7 @@ const runPendingMigrations = async () => {
 
     return { applied: results.length, results };
   } finally {
+    await client.query("SELECT pg_advisory_unlock($1)", [MIGRATE_LOCK_KEY]).catch(() => {});
     client.release();
   }
 };

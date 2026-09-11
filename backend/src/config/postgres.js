@@ -1,5 +1,6 @@
 const { Pool } = require("pg");
 
+const DEFAULT_CONNECT_TIMEOUT_MS = 5000
 const DEFAULT_SSL_MODES = new Set([
   "require",
   "verify-ca",
@@ -37,7 +38,11 @@ const resolveSsl = () => {
 
 const resolveConfig = () => {
   const ssl = resolveSsl();
-  const config = {};
+  const config = { connectionTimeoutMillis: DEFAULT_CONNECT_TIMEOUT_MS };
+
+  if (process.env.PG_CONNECT_TIMEOUT_MS) {
+    config.connectionTimeoutMillis = Number(process.env.PG_CONNECT_TIMEOUT_MS);
+  }
 
   if (process.env.DATABASE_URL) {
     config.connectionString = process.env.DATABASE_URL;
@@ -74,8 +79,7 @@ const hasPostgresConfig = () =>
     process.env.PGPORT ||
     process.env.PGDATABASE ||
     process.env.PGUSER ||
-    process.env.PGPASSWORD ||
-    process.env.POSTGRES_SSL
+    process.env.PGPASSWORD
   );
 
 const initPostgres = async () => {
@@ -83,9 +87,8 @@ const initPostgres = async () => {
     console.log("PostgreSQL not configured; skipping connection.");
     return false;
   }
-  const pool = getPool();
   try {
-    await pool.query("SELECT 1");
+    await getPool().query("SELECT 1");
     return true;
   } catch (error) {
     console.error("PostgreSQL connection failed:", error);
@@ -116,6 +119,7 @@ module.exports = {
   getPool,
   initPostgres,
   isPostgresConnected,
+  hasPostgresConfig,
   query,
   closePostgres,
 };

@@ -37,11 +37,16 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use("/api/notifications", notificationRoutes);
 
 app.get("/api/health", async (req, res) => {
-  const postgres = await isPostgresConnected();
+  let postgres = "unavailable";
+  try {
+    postgres = (await isPostgresConnected()) ? "connected" : "unavailable";
+  } catch (error) {
+    console.error("Health check: PostgreSQL status error:", error.message);
+  }
   res.status(200).json({
     status: "ok",
     service: "temple-billing-backend",
-    postgres: postgres ? "connected" : "unavailable",
+    postgres,
   });
 });
 
