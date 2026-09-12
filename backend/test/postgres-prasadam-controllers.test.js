@@ -75,6 +75,9 @@ const RAZORPAY_KEY_SECRET = "test_secret_" + unique();
 const validSignature = (orderId, paymentId) =>
   crypto.createHmac("sha256", RAZORPAY_KEY_SECRET).update(`${orderId}|${paymentId}`).digest("hex");
 
+const communicationService = require("../src/utils/communicationService");
+const originalSendPrasadamOrderConfirmation = communicationService.sendPrasadamOrderConfirmation;
+
 test.before(async () => {
   originalIsDbConnected = dbConfig.isDbConnected;
   await resetAllTables(TEST_DB_URL);
@@ -95,10 +98,18 @@ test.before(async () => {
   process.env.RAZORPAY_KEY_SECRET = RAZORPAY_KEY_SECRET;
 
   dbConfig.isDbConnected = () => true;
+
+  // devoteeController destructures sendPrasadamOrderConfirmation at module
+  // load time, so patch it BEFORE the controller module is first required —
+  // otherwise confirmations trigger real sendEmail/sendSMS (which append to a
+  // tracked communications.log as a side effect).
+  communicationService.sendPrasadamOrderConfirmation = async () => ({});
 });
 
 test.after(async () => {
   dbConfig.isDbConnected = originalIsDbConnected;
+  communicationService.sendPrasadamOrderConfirmation = originalSendPrasadamOrderConfirmation;
+
   await closePostgres();
 });
 
