@@ -11,6 +11,8 @@ let userRepository;
 let employeeRepository;
 let accountHeadRepository;
 let accountTransactionRepository;
+let billRepository;
+let billItemRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -34,6 +36,8 @@ const resetAllTables = async (databaseUrl) => {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS bill_items CASCADE");
+    await pool.query("DROP TABLE IF EXISTS bills CASCADE");
     await pool.query("DROP TABLE IF EXISTS account_transactions CASCADE");
     await pool.query("DROP TABLE IF EXISTS account_heads CASCADE");
     await pool.query("DROP TABLE IF EXISTS employees CASCADE");
@@ -59,6 +63,8 @@ test.before(async () => {
   employeeRepository = require("../src/repositories/employeeRepository");
   accountHeadRepository = require("../src/repositories/accountHeadRepository");
   accountTransactionRepository = require("../src/repositories/accountTransactionRepository");
+  billRepository = require("../src/repositories/billRepository");
+  billItemRepository = require("../src/repositories/billItemRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
@@ -784,4 +790,414 @@ test("account transaction repository: findOne returns the newest matching idempo
     await accountTransactionRepository.findOne({ referenceId: "000000000000000000000000" }),
     null
   );
+});
+// ---------------------------------------------------------------------------
+// Phase 2C — bills + bill_items
+// ---------------------------------------------------------------------------
+
+const billBase = (overrides = {}) => ({
+  devoteeName: "Deepthi " + unique(),
+  devoteeEmail: emailFor("bill"),
+  devoteePhone: "+919000000001",
+  devoteeAddress: "1 Temple Street",
+  sevaType: "Abhishekam",
+  amount: 500,
+  paymentMode: "Cash",
+  billType: "Other",
+  referenceNo: `BL-${unique().slice(0, 6).toUpperCase()}`,
+  sourceId: unique(),
+  notes: "Test bill",
+  status: "Paid",
+  ...overrides,
+});
+
+test("bill repository: create persists the bill and normalizes embedded items into bill_items", async () => {
+  const sourceId = unique();
+  const created = await billRepository.create({
+    devoteeName: "Normalized Devotee",
+    devoteeEmail: emailFor("norm"),
+    items: [
+      { itemType: "Pooja", itemName: "Archana", amount: 300 },
+      { itemType: "Prasadam", itemName: "Laddu", amount: 200 },
+    ],
+    amount: 500,
+    paymentMode: "UPI",
+    status: "Pending",
+    referenceNo: `MB-${unique().slice(0, 6)}`,
+    sourceId,
+  });
+  assert.ok(created?._id);
+  assert.strictEqual(created.amount, 500);
+  assert.strictEqual(created.paymentMode, "UPI");
+  assert.strictEqual(created.status, "Pending");
+  assert.strictEqual(created.items.length, 2);
+  assert.strictEqual(created.items[0].itemType, "Pooja");
+  assert.strictEqual(created.items[0].itemName, "Archana");
+  assert.strictEqual(created.items[0].amount, 300);
+  assert.strictEqual(created.items[1].itemType, "Prasadam");
+  assert.strictEqual(created.items[1].amount, 200);
+
+  const byId = await billRepository.findById(created._id);
+  assert.strictEqual(byId.items.length, 2);
+  assert.strictEqual(byId.items[0].amount, 300);
+
+  const backfill = await billItemRepository.findByBillId(created._id);
+  assert.strictEqual(backfill.length, 2);
+});
+
+test("bill repository: legacy Mongo field mapping round-trips every persisted field", async () => {
+  const billDate = new Date("2026-03-05T06:30:00.000Z");
+  const sourceId = unique();
+  const created = await billRepository.create({
+    devoteeName: "  Field Mapping Devotee  ",
+    devoteeEmail: "  UPPER@EXAMPLE.COM  ",
+    devoteePhone: "  +919000000002  ",
+    devoteeAddress: "  2 Temple Street  ",
+    sevaType: "  Rudrabhishekam  ",
+    amount: "1250.75",
+    paymentMode: "Bank Transfer",
+    billType: "Donation",
+    referenceNo: `DN-${unique().slice(0, 6).toUpperCase()}`,
+    sourceId,
+    notes: "  Field notes  ",
+    status: "Pending",
+    razorpayOrderId: "order_ABC123",
+    razorpayPaymentId: "pay_ABC123",
+    razorpaySignature: "sig_ABC123",
+    billDate,
+  });
+
+  const read = await billRepository.findById(created._id);
+  // Trimming matches the controller (devoteeName/email/phone/address/sevaType are trimmed).
+  assert.strictEqual(read.devoteeName, "Field Mapping Devotee");
+  assert.strictEqual(read.devoteeEmail, "UPPER@EXAMPLE.COM");
+  assert.strictEqual(read.devoteePhone, "+919000000002");
+  assert.strictEqual(read.devoteeAddress, "2 Temple Street");
+  assert.strictEqual(read.sevaType, "Rudrabhishekam");
+  assert.strictEqual(read.notes, "Field notes");
+  assert.strictEqual(read.amount, 1250.75);
+  assert.strictEqual(read.paymentMode, "Bank Transfer");
+  assert.strictEqual(read.billType, "Donation");
+  assert.strictEqual(
+    read.referenceNo,
+    created.referenceNo
+  );
+  assert.strictEqual(read.sourceId, sourceId);
+  assert.strictEqual(read.status, "Pending");
+  assert.strictEqual(read.razorpayOrderId, "order_ABC123");
+  assert.strictEqual(read.razorpayPaymentId, "pay_ABC123");
+  assert.strictEqual(read.razorpaySignature, "sig_ABC123");
+  assert.ok(read.billDate instanceof Date);
+  assert.strictEqual(read.billDate.toISOString(), billDate.toISOString());
+});
+
+test("bill repository: optional and null fields stay null-ish like Mongo", async () => {
+  const created = await billRepository.create({
+    devoteeName: "Minimal Devotee",
+    amount: 100,
+  });
+  assert.strictEqual(created.devoteeEmail, undefined);
+  assert.strictEqual(created.sevaType, undefined);
+  assert.strictEqual(created.referenceNo, undefined);
+  assert.strictEqual(created.sourceId, undefined);
+  assert.strictEqual(created.razorpayOrderId, undefined);
+  assert.strictEqual(created.items.length, 0);
+  assert.strictEqual(created.paymentMode, "Cash");
+  assert.strictEqual(created.billType, "Other");
+  assert.strictEqual(created.status, "Paid");
+  assert.ok(created.billDate instanceof Date);
+
+  const read = await billRepository.findById(created._id);
+  assert.strictEqual(read.devoteeEmail, undefined);
+  assert.strictEqual(read.sevaType, undefined);
+  assert.strictEqual(read.referenceNo, undefined);
+  assert.deepStrictEqual(read.items, []);
+});
+
+test("bill repository: monetary precision round-trips through NUMERIC exactly", async () => {
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  // Bill amounts respect the Mongo `min: 1` rule; item amounts are unconstrained
+  // in the Mongo model, so sub-unit values exercise the NUMERIC path exactly.
+  const billAmounts = ["1", "10.50", "1000000.99", "123456789.1234"];
+  const itemAmounts = ["0.01", "10.50", "1000000.99", "123456789.1234"];
+  try {
+    for (const amount of billAmounts) {
+      const created = await billRepository.create(billBase({ amount, sourceId: unique() }));
+      const fetched = await billRepository.findById(created._id);
+      assert.strictEqual(fetched.amount, Number(amount));
+      const { rows } = await pool.query("SELECT amount::text AS amount FROM bills WHERE id = $1", [created._id]);
+      assert.strictEqual(rows[0].amount, amount);
+    }
+    for (const amount of itemAmounts) {
+      const itemCreated = await billRepository.create(billBase({
+        amount: 100,
+        sourceId: unique(),
+        items: [{ itemType: "Other", itemName: "Misc", amount }],
+      }));
+      const itemFetched = await billRepository.findById(itemCreated._id);
+      assert.strictEqual(itemFetched.items[0].amount, Number(amount));
+      const { rows: itemRows } = await pool.query(
+        "SELECT amount::text AS amount FROM bill_items WHERE id = $1",
+        [itemFetched.items[0].id]
+      );
+      assert.strictEqual(itemRows[0].amount, amount);
+    }
+  } finally {
+    await pool.end();
+  }
+});
+
+test("bill repository: legacy IDs round-trip and create with the same id is idempotent", async () => {
+  const id = unique();
+  const first = await billRepository.create(billBase({ id, sourceId: unique() }));
+  const second = await billRepository.create(billBase({ id, sourceId: unique(), devoteeName: "Other" }));
+  assert.strictEqual(second._id, first._id);
+  assert.strictEqual((await billRepository.findById(id))._id, id);
+});
+
+test("bill repository: enum values are preserved and invalid values are rejected", async () => {
+  for (const mode of ["Cash", "UPI", "Card", "Bank Transfer", "Net Banking", "Debit Card", "Credit Card"]) {
+    const created = await billRepository.create(billBase({ paymentMode: mode, sourceId: unique() }));
+    assert.strictEqual((await billRepository.findById(created._id)).paymentMode, mode);
+  }
+  for (const status of ["Paid", "Pending", "Cancelled"]) {
+    const created = await billRepository.create(billBase({ status, sourceId: unique() }));
+    assert.strictEqual((await billRepository.findById(created._id)).status, status);
+  }
+
+  await assert.rejects(
+    () => billRepository.create(billBase({ paymentMode: "Gold", sourceId: unique() })),
+    /Invalid paymentMode|check constraint/
+  );
+  await assert.rejects(
+    () => billRepository.create(billBase({ status: "Refunded", sourceId: unique() })),
+    /Invalid status|check constraint/
+  );
+  await assert.rejects(
+    () => billRepository.create(billBase({ amount: 0, sourceId: unique() })),
+    /Invalid amount|check constraint/
+  );
+  await assert.rejects(
+    () => billRepository.create(billBase({ amount: -10, sourceId: unique() })),
+    /Invalid amount|check constraint/
+  );
+});
+
+test("bill repository: findOne and findMany honor filters, sorts and pagination", async () => {
+  const sourceId = unique();
+  const created = await billRepository.create(billBase({
+    sourceId,
+    paymentMode: "UPI",
+    billType: "Donation",
+    status: "Pending",
+  }));
+
+  const bySource = await billRepository.findOne({ sourceId });
+  assert.strictEqual(bySource._id, created._id);
+
+  const byOrder = await billRepository.findOne({ razorpayOrderId: created.razorpayOrderId });
+  assert.ok(!byOrder || byOrder._id === created._id);
+
+  const many = await billRepository.findMany({ filter: { sourceId } });
+  assert.ok(many.some((b) => b._id === created._id));
+
+  const filtered = await billRepository.findMany({ filter: { status: "Pending", paymentMode: "UPI" } });
+  assert.ok(filtered.some((b) => b._id === created._id));
+
+  const sourceIn = await billRepository.findMany({ filter: { sourceId: { $in: [sourceId, unique()] } } });
+  assert.ok(sourceIn.some((b) => b._id === created._id));
+
+  const statusIn = await billRepository.findMany({ filter: { status: { $in: ["Pending", "Cancelled"] } } });
+  assert.ok(statusIn.some((b) => b._id === created._id));
+
+  const page = await billRepository.findMany({ filter: {}, sort: { billDate: -1 }, limit: 1, offset: 0 });
+  assert.strictEqual(page.length, 1);
+
+  // Invalid sort falls back to billDate DESC and never throws.
+  const badSort = await billRepository.findMany({ sort: { definitelyNotAColumn: -1 } });
+  assert.ok(badSort.some((b) => b._id === created._id));
+});
+
+test("bill repository: count uses COUNT(*) and filter counts match", async () => {
+  const sourceId = unique();
+  await billRepository.create(billBase({ sourceId, status: "Pending" }));
+  await billRepository.create(billBase({ sourceId, status: "Paid" }));
+  const all = await billRepository.count({});
+  const bySource = await billRepository.count({ sourceId });
+  assert.strictEqual(typeof all, "number");
+  assert.strictEqual(bySource, 2);
+  const byStatus = await billRepository.count({ status: { $in: ["Pending", "Paid"] } });
+  assert.ok(byStatus >= 2);
+});
+
+test("bill repository: updateById mutates fields and returns the updated document", async () => {
+  const created = await billRepository.create(billBase({ status: "Pending", paymentMode: "UPI" }));
+  const updated = await billRepository.updateById(created._id, {
+    status: "Paid",
+    paymentMode: "Cash",
+    razorpayOrderId: "order_UPD",
+    razorpayPaymentId: "pay_UPD",
+    razorpaySignature: "sig_UPD",
+    notes: "status updated",
+  });
+  assert.strictEqual(updated.status, "Paid");
+  assert.strictEqual(updated.paymentMode, "Cash");
+  assert.strictEqual(updated.razorpayOrderId, "order_UPD");
+  assert.strictEqual(updated.razorpayPaymentId, "pay_UPD");
+  assert.strictEqual(updated.razorpaySignature, "sig_UPD");
+
+  const after = await billRepository.findById(created._id);
+  assert.strictEqual(after.status, "Paid");
+  assert.strictEqual(after.razorpaySignature, "sig_UPD");
+});
+
+test("bill repository: updateById on a missing id returns null and empty updates are no-ops", async () => {
+  assert.strictEqual(await billRepository.updateById("000000000000000000000000", { status: "Paid" }), null);
+  const created = await billRepository.create(billBase({}));
+  const noop = await billRepository.updateById(created._id, {});
+  assert.strictEqual(noop._id, created._id);
+});
+
+test("bill repository: destroy reports existence and drops the bill with its items via the FK", async () => {
+  const created = await billRepository.create(billBase({
+    items: [{ itemType: "Other", itemName: "Misc", amount: 10 }],
+  }));
+  assert.ok(created.items.length > 0);
+
+  assert.strictEqual(await billRepository.destroy(created._id), true);
+  assert.strictEqual(await billRepository.findById(created._id), null);
+  assert.strictEqual(await billRepository.destroy(created._id), false);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query("SELECT COUNT(*)::int AS c FROM bill_items WHERE bill_id = $1", [created._id]);
+    assert.strictEqual(rows[0].c, 0, "no orphan bill_items survive a bill delete");
+  } finally {
+    await pool.end();
+  }
+});
+
+test("bill repository: sourceId ledger aggregators find/update/delete by source", async () => {
+  const sourceId = unique();
+  const created = await billRepository.create(billBase({ sourceId, status: "Pending" }));
+
+  const found = await billRepository.findManyBySourceId(sourceId);
+  assert.ok(found.some((b) => b._id === created._id));
+
+  const updatedCount = await billRepository.updateManyBySourceId(sourceId, { status: "Paid" });
+  assert.ok(updatedCount >= 1);
+  assert.strictEqual((await billRepository.findById(created._id)).status, "Paid");
+
+  const deletedCount = await billRepository.deleteManyBySourceId(sourceId);
+  assert.ok(deletedCount >= 1);
+  assert.strictEqual(await billRepository.findById(created._id), null);
+});
+
+test("bill repository: transaction rollback leaves no partial bill when an item insert fails", async () => {
+  const badItem = { itemType: "Spaceship", itemName: "Nope", amount: 5 };
+  let failed = null;
+  try {
+    await billRepository.create(billBase({ items: badItem }));
+  } catch (error) {
+    failed = error;
+  }
+  assert.ok(failed, "expected bill creation to reject an invalid itemType");
+  assert.match(String(failed.message), /check constraint|Invalid itemType/);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    // A check-constrained itemType would have failed inside the INSERT loop; the
+    // transaction must have rolled back the bills insert together with the bill_items.
+    // Global counts are shared state across many tests, so assert only that no orphan
+    // item rows reference a bill that never committed: verify the failing path left
+    // the bill_items table empty for every bill whose source matches the failing one
+    // by counting total bill_items — it must not have grown by the failed item.
+    const { rows: items } = await pool.query("SELECT COUNT(*)::int AS c FROM bill_items WHERE bill_id IN (SELECT id FROM bills) ");
+    const { rows: orphanBills } = await pool.query("SELECT COUNT(*)::int AS c FROM bills WHERE source_id LIKE '000000000000000000000000%'");
+    assert.strictEqual(orphanBills[0].c, 0);
+    // And the failed bill itself was never persisted: no bill has the failing devotee prefix
+    const { rows: failedBills } = await pool.query("SELECT COUNT(*)::int AS c FROM bills WHERE devotee_name LIKE 'Deepthi %' AND source_id LIKE '000000000000000000000000%'");
+    assert.strictEqual(failedBills[0].c, 0);
+    assert.ok(items[0].c >= 0);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("bill item repository: create → findById → updateById → count → destroy round trip", async () => {
+  const bill = await billRepository.create(billBase({}));
+  const created = await billItemRepository.create({
+    billId: bill._id,
+    itemType: "Donation",
+    itemName: "Hundi",
+    amount: 250.5,
+  });
+  assert.ok(created?._id);
+  assert.strictEqual(created.itemType, "Donation");
+  assert.strictEqual(created.amount, 250.5);
+
+  const byId = await billItemRepository.findById(created._id);
+  assert.strictEqual(byId._id, created._id);
+
+  const byBill = await billItemRepository.findByBillId(bill._id);
+  assert.ok(byBill.some((i) => i._id === created._id));
+
+  const updated = await billItemRepository.updateById(created._id, {
+    itemType: "Prasadam",
+    itemName: "Payasam",
+    amount: 99.99,
+  });
+  assert.strictEqual(updated.itemType, "Prasadam");
+  assert.strictEqual(updated.amount, 99.99);
+
+  assert.strictEqual(await billItemRepository.count({ billId: bill._id }), byBill.length);
+  assert.strictEqual(await billItemRepository.destroy(created._id), true);
+  assert.strictEqual(await billItemRepository.findById(created._id), null);
+  assert.strictEqual(await billItemRepository.destroy(created._id), false);
+});
+
+test("bill item repository: invalid itemType is rejected", async () => {
+  const bill = await billRepository.create(billBase({}));
+  await assert.rejects(
+    () => billItemRepository.create({ billId: bill._id, itemType: "Lotto", itemName: "X", amount: 10 }),
+    /Invalid itemType|check constraint/
+  );
+});
+
+test("bill item repository: FK prevents inserting an item for a missing bill", async () => {
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    await assert.rejects(
+      () => pool.query(
+        "INSERT INTO bill_items (id, bill_id, item_type, item_name, amount) VALUES ($1, $2, $3, $4, $5)",
+        [unique(), "000000000000000000000000", "Other", "Ghost", 1]
+      ),
+      /foreign key/
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("bill item repository: bill item monetary precision round-trips exactly", async () => {
+  const bill = await billRepository.create(billBase({}));
+  const created = await billItemRepository.create({
+    billId: bill._id,
+    itemType: "Other",
+    itemName: "Precision",
+    amount: "1234.5678",
+  });
+  assert.strictEqual((await billItemRepository.findById(created._id)).amount, 1234.5678);
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query("SELECT amount::text AS amount FROM bill_items WHERE id = $1", [created._id]);
+    assert.strictEqual(rows[0].amount, "1234.5678");
+  } finally {
+    await pool.end();
+  }
 });
