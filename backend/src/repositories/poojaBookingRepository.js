@@ -127,7 +127,7 @@ const materialRepository = {
   findByPoojaBookingId: async (poojaBookingId) => {
     if (!poojaBookingId) return [];
     const { rows } = await query(
-      `SELECT id, item, item_name, qty, unit
+      `SELECT id, item, item_name, qty
        FROM pooja_booking_material_requests
        WHERE pooja_booking_id = $1 ORDER BY position ASC, id ASC`,
       [String(poojaBookingId)]
@@ -138,7 +138,6 @@ const materialRepository = {
       item: r.item || undefined,
       itemName: r.item_name || undefined,
       qty: r.qty || undefined,
-      unit: r.unit || undefined,
     }));
   },
   replace: async (client, poojaBookingId, entries = []) => {
@@ -146,14 +145,13 @@ const materialRepository = {
     for (const [index, entry] of entries.entries()) {
       if (!entry || typeof entry !== "object") continue;
       await client.query(
-        `INSERT INTO pooja_booking_material_requests (id, pooja_booking_id, position, item, item_name, qty, unit)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        `INSERT INTO pooja_booking_material_requests (id, pooja_booking_id, position, item, item_name, qty)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           entry.id || newId(), String(poojaBookingId), index,
           entry.item ? String(entry.item) : null,
           entry.itemName ?? null,
           entry.qty ? String(entry.qty) : null,
-          entry.unit ?? null,
         ]
       );
     }

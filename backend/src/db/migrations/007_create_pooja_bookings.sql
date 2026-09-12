@@ -25,8 +25,11 @@
 --
 -- Embedded/nested data:
 --   * templeMaterialRequests[] → pooja_booking_material_requests child table.
---     The create path (poojaBookingController.createBooking) writes entries with
---     item/itemName/qty/unit, and the cashier pages read them back keyed by the
+--     The create path (poojaBookingController.createBooking) pushes entries with
+--     item/itemName/qty (the PoojaBooking sub-schema declares only item, itemName
+--     and qty; the extra "unit" pushed by the controller is stripped by Mongoose
+--     strict mode and never persisted — same conclusion as Phase 2E's
+--     booking_material_requests). The cashier pages read them back keyed by the
 --     booking. Array order matters and is preserved with a position column.
 --   * priestChecklist → JSONB. A flat map of six boolean flags; always
 --     read/written as a whole and never queried by inner field — the same
@@ -94,7 +97,6 @@ CREATE TABLE IF NOT EXISTS pooja_booking_material_requests (
   item TEXT,
   item_name TEXT,
   qty TEXT,
-  unit TEXT,
   FOREIGN KEY (pooja_booking_id) REFERENCES pooja_bookings(id) ON DELETE CASCADE
 );
 

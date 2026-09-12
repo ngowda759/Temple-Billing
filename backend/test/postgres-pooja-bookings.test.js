@@ -144,9 +144,10 @@ test("pooja_bookings table schema matches the Mongo PoojaBooking model", async (
       SELECT column_name FROM information_schema.columns
       WHERE table_name = 'pooja_booking_material_requests' ORDER BY ordinal_position`);
     const childCols = children.map((c) => c.column_name);
-    for (const name of ["id", "pooja_booking_id", "position", "item", "item_name", "qty", "unit"]) {
+    for (const name of ["id", "pooja_booking_id", "position", "item", "item_name", "qty"]) {
       assert.ok(childCols.includes(name), `child column ${name}`);
     }
+    assert.ok(!childCols.includes("unit"), "unit is not persisted on the Mongo PoojaBooking sub-schema");
 
     const { rows: fks } = await pool.query(`
       SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -192,15 +193,14 @@ test("pooja booking repository: create → read → update round trip", async ()
 test("pooja booking repository: normalized children round-trip (templeMaterialRequests)", async () => {
   const created = await poojaBookingRepository.create(poojaBookingBase({
     templeMaterialRequests: [
-      { item: "a".repeat(24), itemName: "Coconut", qty: "2 No", unit: "No" },
-      { item: "b".repeat(24), itemName: "Banana", qty: "3 Nos", unit: "Nos" },
+      { item: "a".repeat(24), itemName: "Coconut", qty: "2 No" },
+      { item: "b".repeat(24), itemName: "Banana", qty: "3 Nos" },
     ],
   }));
   const read = await poojaBookingRepository.findById(created._id);
   assert.strictEqual(read.templeMaterialRequests.length, 2);
   assert.strictEqual(read.templeMaterialRequests[0].itemName, "Coconut");
   assert.strictEqual(read.templeMaterialRequests[0].qty, "2 No");
-  assert.strictEqual(read.templeMaterialRequests[0].unit, "No");
   assert.strictEqual(read.templeMaterialRequests[1].itemName, "Banana");
 
   // Array order is preserved even after an update that rewrites the children.
@@ -462,7 +462,7 @@ test("pooja booking repository: findOne and findOneByBookingNumber", async () =>
 
 test("pooja booking repository: destroy reports existence and drops children via the FK", async () => {
   const created = await poojaBookingRepository.create(poojaBookingBase({
-    templeMaterialRequests: [{ itemName: "Coconut", qty: "1", unit: "No" }],
+    templeMaterialRequests: [{ itemName: "Coconut", qty: "1" }],
   }));
   assert.ok(created.templeMaterialRequests.length > 0);
 
@@ -507,8 +507,8 @@ test("pooja booking repository: child FK prevents an orphan child row", async ()
   try {
     await assert.rejects(
       () => pool.query(
-        "INSERT INTO pooja_booking_material_requests (id, pooja_booking_id, item_name, qty, unit) VALUES ($1, $2, $3, $4, $5)",
-        [unique(), "000000000000000000000000", "Coconut", "1", "No"]
+        "INSERT INTO pooja_booking_material_requests (id, pooja_booking_id, item_name, qty) VALUES ($1, $2, $3, $4)",
+        [unique(), "000000000000000000000000", "Coconut", "1"]
       ),
       /foreign key/
     );
