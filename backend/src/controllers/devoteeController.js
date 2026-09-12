@@ -23,6 +23,10 @@ const {
 const { sendBookingConfirmation, sendDonationReceipt, sendPrasadamOrderConfirmation } = require("../utils/communicationService");
 const { buildEmailLookup, normalizeEmail } = require("../utils/email");
 const { recordTransaction } = require("../services/accountingService");
+// Prasadam Order persistence is additive: the shared service selects
+// PostgreSQL when the Prasadam Order path is explicitly used and PostgreSQL is
+// reachable, and otherwise falls back to the existing Mongoose model.
+const prasadamOrderService = require("../services/prasadamOrderService");
 const InventoryRequest = require("../models/InventoryRequest");
 const InventoryItem = require("../models/InventoryItem");
 const Employee = require("../models/Employee");
@@ -1457,6 +1461,31 @@ const getPrasadamOrders = async (req, res) => {
       .toLowerCase();
     const channel = normalizedChannel === "cashier" ? "cashier" : normalizedChannel === "devotee" ? "devotee" : "";
 
+    // When PostgreSQL is used for Prasadam Orders the same query semantics are
+    // expressed with simple filter fields. "channel devotee" (the devotee
+    // portal case) also matches orders that predate the channel field, exactly
+    // like the Mongo { $or: [{ channel: "devotee" }, { channel: { $exists:
+    // false } }] } clause below.
+    const pgSelected = await prasadamOrderService.usePostgres();
+    if (pgSelected) {
+      const filter = {};
+      if (email) {
+        const user = await User.findOne(buildEmailLookup("email", email)).select("_id").lean();
+        filter.$or = [
+          { email },
+          ...(user?._id ? [{ devoteeId: String(user._id) }] : []),
+        ];
+        filter.channel = { $in: ["devotee", ""] };
+      } else if (channel) {
+        filter.channel = channel;
+      }
+      const orders = await prasadamOrderService.findMany({
+        filter,
+        sort: { createdAt: -1 },
+      });
+      return res.status(200).json({ orders: orders.map((order) => normalizeOrderEmails(order.toObject ? order.toObject() : order)) });
+    }
+
     const conditions = [];
 
     if (email) {
@@ -1517,7 +1546,12 @@ const createPrasadamOrder = async (req, res) => {
       if (user?._id) resolvedDevoteeId = user._id;
     }
 
-    const order = await PrasadamOrder.create({
+    // The shared Prasadam Order service routes to the PostgreSQL repository
+    // when the Prasadam Order path is explicitly used and PostgreSQL is
+    // reachable, and to the existing Mongoose model otherwise. The order
+    // document (with a 24-char hex _id) is what the rest of this handler and
+    // the ledger bill reference, so both paths return the same shape.
+    let order = await prasadamOrderService.create({
       channel: resolvedChannel,
       devoteeId: resolvedDevoteeId,
       devoteeName,
@@ -1557,8 +1591,15 @@ const createPrasadamOrder = async (req, res) => {
       };
 
       const rzpOrder = await razorpayClient.orders.create(orderOptions);
-      order.razorpayOrderId = rzpOrder.id;
-      await order.save();
+      // On the PostgreSQL path the order is a plain repository object, so the
+      // razorpayOrderId mutation goes through the repository as well; Mongoose
+      // documents keep the original in-place save.
+      if (await prasadamOrderService.usePostgres()) {
+        order = await prasadamOrderService.updateById(order._id || order.id, { razorpayOrderId: rzpOrder.id });
+      } else {
+        order.razorpayOrderId = rzpOrder.id;
+        await order.save();
+      }
 
       return res.status(201).json({
         order: normalizeOrderEmails(order.toObject ? order.toObject() : order),
@@ -1628,14 +1669,26 @@ const verifyPrasadamPayment = async (req, res) => {
     }
 
     let order = null;
-    if (orderId) order = await PrasadamOrder.findById(orderId);
-    if (!order) order = await PrasadamOrder.findOne({ razorpayOrderId: razorpay_order_id });
+    if (orderId) order = await prasadamOrderService.findById(orderId);
+    if (!order) order = await prasadamOrderService.findOneByRazorpayOrderId(razorpay_order_id);
     if (!order) return res.status(404).json({ error: "Prasadam order not found." });
 
-    order.status = "Placed";
-    order.razorpayPaymentId = razorpay_payment_id;
-    order.razorpaySignature = razorpay_signature;
-    await order.save();
+    // Persist the payment-verification mutation. On the PostgreSQL path this
+    // goes through the repository (order.save() is a Mongoose-only concept);
+    // on the Mongo path the original document mutation is preserved.
+    if (await prasadamOrderService.usePostgres()) {
+      await prasadamOrderService.updateById(order._id || order.id, {
+        status: "Placed",
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature,
+      });
+      order = await prasadamOrderService.findById(order._id || order.id);
+    } else {
+      order.status = "Placed";
+      order.razorpayPaymentId = razorpay_payment_id;
+      order.razorpaySignature = razorpay_signature;
+      await order.save();
+    }
 
     await Bill.updateMany(
       { sourceId: order._id.toString() },
@@ -1695,11 +1748,12 @@ const verifyPrasadamPayment = async (req, res) => {
 const cancelPrasadamOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const order = await PrasadamOrder.findById(id);
+    let order = await prasadamOrderService.findById(id);
     if (!order) return res.status(404).json({ error: "Prasadam order not found." });
     if (order.status === "Cancelled") return res.status(200).json({ order });
-    order.status = "Cancelled";
-    await order.save();
+    // Persist the cancellation through the active Prasadam Order path so both
+    // the PostgreSQL repository and the Mongoose model stay consistent.
+    order = await prasadamOrderService.updateById(id, { status: "Cancelled" });
     await Notification.create({
       title: "Prasadam Order Cancelled",
       message: `${order.devoteeName} cancelled ${order.itemName} order.`,
