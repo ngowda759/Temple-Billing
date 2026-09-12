@@ -38,6 +38,8 @@ const resetAllTables = async (databaseUrl) => {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS pooja_booking_material_requests CASCADE");
+    await pool.query("DROP TABLE IF EXISTS pooja_bookings CASCADE");
     await pool.query("DROP TABLE IF EXISTS booking_items CASCADE");
     await pool.query("DROP TABLE IF EXISTS booking_material_requests CASCADE");
     await pool.query("DROP TABLE IF EXISTS booking_history CASCADE");
