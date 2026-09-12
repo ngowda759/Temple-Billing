@@ -2,6 +2,7 @@ const Bill = require("../models/Bill");
 const Booking = require("../models/Booking");
 const Donation = require("../models/Donation");
 const PrasadamOrder = require("../models/PrasadamOrder");
+const prasadamOrderService = require("../services/prasadamOrderService");
 
 const syncLedgerBills = async () => {
   try {
@@ -57,8 +58,10 @@ const syncLedgerBills = async () => {
       console.log(`Synced ${donationCount} missing bills for donations.`);
     }
 
-    // 3. Sync Prasadam Orders
-    const orders = await PrasadamOrder.find();
+    // 3. Sync Prasadam Orders — reads go through the active Prasadam Order path
+    //    (PostgreSQL when the Prasadam Order path is active and PostgreSQL is
+    //    reachable, Mongoose otherwise), but bills remain Mongo-backed.
+    const orders = await prasadamOrderService.findMany({});
     let orderCount = 0;
     for (const o of orders) {
       const existing = await Bill.findOne({ sourceId: o._id.toString() });

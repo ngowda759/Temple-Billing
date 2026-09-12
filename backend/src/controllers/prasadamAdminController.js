@@ -2,6 +2,8 @@ const PrasadamOrder = require("../models/PrasadamOrder");
 const Prasadam = require("../models/Prasadam");
 const Bill = require("../models/Bill");
 const { createStaffNotification } = require("../utils/notificationService");
+const prasadamOrderService = require("../services/prasadamOrderService");
+const { mapToModelStatuses, mapFromModelStatus } = require("../utils/prasadamOrderHelper");
 
 const clean = (v) => String(v || "").trim();
 
@@ -16,60 +18,6 @@ const ALLOWED_ORDER_STATUSES = [
   "Completed",
   "Cancelled",
 ];
-
-const mapToModelStatuses = (incoming) => {
-  if (incoming === "Collected") return ["Collected"];
-  if (incoming === "Not Collected") return ["Not Collected"];
-  switch (incoming) {
-    case "Pending":
-      return ["Pending", "Placed", "Not Collected"];
-    case "Approved":
-      return ["Approved"];
-    case "Rejected":
-      return ["Rejected"];
-    case "Processing":
-      return ["Processing", "Preparing"];
-    case "Ready for Pickup":
-      return ["Ready for Pickup", "Ready"];
-    case "Completed":
-      return ["Completed", "Delivered", "Collected"];
-    case "Cancelled":
-      return ["Cancelled"];
-    default:
-      return [incoming];
-  }
-};
-
-const mapFromModelStatus = (modelStatus) => {
-  if (modelStatus === "Collected") return "Collected";
-  if (modelStatus === "Not Collected") return "Not Collected";
-  switch (modelStatus) {
-    case "Pending":
-      return "Not Collected";
-    case "Approved":
-      return "Collected";
-    case "Rejected":
-      return "Not Collected";
-    case "Processing":
-      return "Not Collected";
-    case "Ready for Pickup":
-      return "Collected";
-    case "Completed":
-      return "Collected";
-    case "Placed":
-      return "Not Collected";
-    case "Preparing":
-      return "Not Collected";
-    case "Ready":
-      return "Collected";
-    case "Delivered":
-      return "Collected";
-    case "Cancelled":
-      return "Not Collected";
-    default:
-      return modelStatus || "Not Collected";
-  }
-};
 
 const buildOrderList = (orders) => {
   return orders.map((o) => ({
@@ -100,6 +48,38 @@ exports.getAdminPrasadamOrders = async (req, res) => {
     const normalizedStatus = clean(status);
     if (normalizedStatus) {
       statusFilter = mapToModelStatuses(normalizedStatus);
+    }
+
+    // PostgreSQL path (additive): the Prasadam Order service prefers
+    // PostgreSQL when it is reachable and the Prasadam Order path is active.
+    // The filter mirrors the Mongo query below field-for-field.
+    if (await prasadamOrderService.usePostgres()) {
+      const filter = { channel: "devotee" };
+      if (statusFilter.length) filter.status = statusFilter.length === 1 ? statusFilter[0] : { $in: statusFilter };
+      const sd = startDate ? new Date(startDate) : null;
+      const ed = endDate ? new Date(endDate) : null;
+      if (sd && !Number.isNaN(sd.getTime())) {
+        filter.createdAt = { ...(filter.createdAt || {}), $gte: sd };
+      }
+      if (ed && !Number.isNaN(ed.getTime())) {
+        const end = new Date(ed);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt = { ...(filter.createdAt || {}), $lte: end };
+      }
+      if (q) filter.search = q;
+
+      const [total, orders] = await Promise.all([
+        prasadamOrderService.count(filter),
+        prasadamOrderService.findMany({ filter, sort: { createdAt: -1 }, limit: l, offset: skip }),
+      ]);
+
+      return res.json({
+        orders: buildOrderList(orders),
+        total,
+        page: p,
+        limit: l,
+        totalPages: Math.max(1, Math.ceil(total / l)),
+      });
     }
 
     const dateFilter = {};
@@ -152,7 +132,7 @@ exports.getAdminPrasadamOrders = async (req, res) => {
 exports.getAdminPrasadamOrderById = async (req, res) => {
   try {
     const { id } = req.params;
-    const order = await PrasadamOrder.findById(id);
+    const order = await prasadamOrderService.findById(id);
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
@@ -176,7 +156,7 @@ exports.updateAdminPrasadamOrderStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid order status" });
     }
 
-    const order = await PrasadamOrder.findById(id);
+    let order = await prasadamOrderService.findById(id);
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
@@ -188,8 +168,16 @@ exports.updateAdminPrasadamOrderStatus = async (req, res) => {
     }
 
     const prevModelStatus = order.status;
-    order.status = modelStatus;
-    await order.save();
+    // Persist the status change through the active Prasadam Order path so the
+    // PostgreSQL repository and the Mongoose model behave identically.
+    const savedOrder = await prasadamOrderService.updateById(id, { status: modelStatus });
+    if (!savedOrder) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    // Re-read so downstream code (Bill sync + transaction + notification)
+    // always works with the persisted document; the raw field values are
+    // authoritative for what was just written.
+    order = savedOrder;
 
     // Sync bill ledger status as well
     await Bill.updateMany(
@@ -249,13 +237,15 @@ exports.updateAdminPrasadamOrderStatus = async (req, res) => {
 exports.deleteAdminPrasadamOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const order = await PrasadamOrder.findById(id);
+    const order = await prasadamOrderService.findById(id);
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
     await Promise.all([
-      PrasadamOrder.deleteOne({ _id: id }),
+      prasadamOrderService.destroy(id),
+      // Bills stay Mongo-backed during Phase 2G; the polymorphic sourceId
+      // reference is preserved and cleaned up exactly as before.
       Bill.deleteMany({ sourceId: String(id) }),
     ]);
 

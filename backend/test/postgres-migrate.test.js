@@ -31,6 +31,7 @@ const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
   // Phase 2A–2F tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS prasadam_orders CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_booking_material_requests CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_bookings CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS booking_items CASCADE");
@@ -51,7 +52,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 7 migration\(s\)\./);
+  assert.match(output, /Applied 8 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -62,6 +63,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "005_create_donations.sql",
     "006_create_bookings.sql",
     "007_create_pooja_bookings.sql",
+    "008_create_prasadam_orders.sql",
   ]);
 });
 
@@ -74,7 +76,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 7);
+  assert.strictEqual(rows.length, 8);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -98,6 +100,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "005_create_donations.sql",
       "006_create_bookings.sql",
       "007_create_pooja_bookings.sql",
+      "008_create_prasadam_orders.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -338,6 +341,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   // Dropping all migrations and re-running simulates a full rollback +
   // re-apply cycle at the migration layer. All DDL is idempotent (IF NOT EXISTS).
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS prasadam_orders CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_booking_material_requests CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_bookings CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS booking_items CASCADE");
@@ -354,7 +358,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 7 migration\(s\)\./);
+  assert.match(output, /Applied 8 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -368,6 +372,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   assert.ok(tables.some((t) => t.table_name === "booking_items"));
   assert.ok(tables.some((t) => t.table_name === "pooja_bookings"));
   assert.ok(tables.some((t) => t.table_name === "pooja_booking_material_requests"));
+  assert.ok(tables.some((t) => t.table_name === "prasadam_orders"));
 });
 
 test("SELECT 1 succeeds against test database", async () => {

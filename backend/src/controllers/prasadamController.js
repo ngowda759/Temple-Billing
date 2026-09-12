@@ -1,6 +1,7 @@
 const Prasadam = require("../models/Prasadam");
 const PrasadamOrder = require("../models/PrasadamOrder");
 const { createStaffNotification } = require("../utils/notificationService");
+const prasadamOrderService = require("../services/prasadamOrderService");
 
 const clean = (value) => String(value || "").trim();
 
@@ -151,6 +152,55 @@ const getSalesReports = async (req, res) => {
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
+
+    // PostgreSQL path (additive): when Prasadam Orders use the PostgreSQL
+    // repository, sales reports are computed from the same normalized records.
+    // The aggregation mirrors the Mongo aggregate below.
+    if (await prasadamOrderService.usePostgres()) {
+      const { query } = require("../config/postgres");
+      const [todaySales, monthlySales] = await Promise.all([
+        (async () => {
+          const { rows } = await query(
+            `SELECT COALESCE(SUM(amount), 0)::numeric AS total_revenue, COUNT(*)::int AS total_orders
+             FROM prasadam_orders WHERE created_at >= $1`,
+            [todayStart]
+          );
+          return rows[0];
+        })(),
+        (async () => {
+          const { rows } = await query(
+            `SELECT COALESCE(SUM(amount), 0)::numeric AS total_revenue, COUNT(*)::int AS total_orders
+             FROM prasadam_orders WHERE created_at >= $1`,
+            [monthStart]
+          );
+          return rows[0];
+        })(),
+      ]);
+      const { rows: topSelling } = await query(
+        `SELECT item_name, SUM(quantity)::numeric AS total_quantity
+         FROM prasadam_orders WHERE created_at >= $1
+         GROUP BY item_name ORDER BY total_quantity DESC LIMIT 5`,
+        [monthStart]
+      );
+
+      return res.json({
+        success: true,
+        reports: {
+          today: {
+            totalRevenue: todaySales.total_revenue === null ? 0 : Number(todaySales.total_revenue),
+            totalOrders: todaySales.total_orders || 0,
+          },
+          monthly: {
+            totalRevenue: monthlySales.total_revenue === null ? 0 : Number(monthlySales.total_revenue),
+            totalOrders: monthlySales.total_orders || 0,
+          },
+          topSelling: topSelling.map((r) => ({
+            _id: r.item_name,
+            totalQuantity: Number(r.total_quantity),
+          })),
+        },
+      });
+    }
 
     const [todaySales, monthlySales] = await Promise.all([
       PrasadamOrder.aggregate([
