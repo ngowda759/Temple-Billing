@@ -209,7 +209,6 @@ const buildPrasadamOrderFilter = (filter = {}) => {
     conditions.push(`(${orParts.join(" OR ")})`);
   }
 
-  if (filter.channel && typeof filter.channel === "string") pushCond("channel", "=", filter.channel);
   if (filter.paymentMethod) pushCond("payment_method", "=", filter.paymentMethod);
   if (filter.devoteeId) pushCond("devotee_id", "=", String(filter.devoteeId));
   if (filter.itemName) pushCond("item_name", "=", String(filter.itemName).trim());
