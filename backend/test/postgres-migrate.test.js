@@ -37,6 +37,7 @@ const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS account_heads CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS employees CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS users CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS donations CASCADE");
 };
 
 test("db:migrate runs clean from scratch on a fresh database", async () => {
@@ -44,7 +45,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 4 migration\(s\)\./);
+  assert.match(output, /Applied 5 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -52,6 +53,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "002_create_users_employees.sql",
     "003_create_accounting.sql",
     "004_create_bills.sql",
+    "005_create_donations.sql",
   ]);
 });
 
@@ -64,7 +66,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 4);
+  assert.strictEqual(rows.length, 5);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -85,6 +87,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "002_create_users_employees.sql",
       "003_create_accounting.sql",
       "004_create_bills.sql",
+      "005_create_donations.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -153,12 +156,51 @@ test("bills migration creates NUMERIC monetary columns, normalized bill_items an
   assert.ok(fk.some((r) => /REFERENCES bills\(id\)/.test(r.def) && /DELETE CASCADE/i.test(r.def)));
 });
 
+test("donations migration creates NUMERIC monetary columns with enum CHECK and defaults", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const donations = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'donations' ORDER BY column_name`);
+  const col = (name) => donations.find((c) => c.column_name === name);
+  assert.ok(col("id") && col("id").data_type === "text");
+  assert.ok(col("donor_name") && col("donor_name").data_type === "text");
+  assert.ok(col("donor_email") && col("donor_email").data_type === "text");
+  assert.ok(col("amount") && col("amount").data_type === "numeric");
+  assert.ok(col("category") && col("category").data_type === "text");
+  assert.ok(col("category") && col("category").column_default === "'General'::text");
+  assert.ok(col("payment_method") && col("payment_method").column_default === "'UPI'::text");
+  assert.ok(col("status") && col("status").column_default === "'Not Collected'::text");
+  assert.ok(col("contact_number") && col("contact_number").is_nullable === "YES");
+  assert.ok(col("donor_phone") && col("donor_phone").is_nullable === "YES");
+  assert.ok(col("transaction_id"));
+  assert.ok(col("razorpay_order_id"));
+  assert.ok(col("razorpay_payment_id"));
+  assert.ok(col("razorpay_signature"));
+  assert.ok(col("event_id"));
+  assert.ok(col("notes"));
+  assert.ok(col("donated_by"));
+  assert.ok(col("created_at") && col("created_at").data_type === "timestamp with time zone");
+  assert.ok(col("updated_at") && col("updated_at").data_type === "timestamp with time zone");
+
+  const checks = await poolQuery(databaseUrl, `
+    SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'donations'::regclass AND contype = 'c'`);
+  const defs = checks.map((r) => r.def);
+  assert.ok(defs.some((d) => /payment_method.*'Cash'.*'UPI'.*'Card'.*'Bank Transfer'.*'Debit Card'.*'Credit Card'.*'Net Banking'/.test(d)), "paymentMethod CHECK");
+  assert.ok(defs.some((d) => /status.*'Collected'.*'Not Collected'.*'Completed'.*'Pending'.*'Failed'/.test(d)), "status CHECK");
+  assert.ok(defs.some((d) => /amount\s*>\s*\(0\)/.test(d)), "amount CHECK");
+});
+
 test("rollback of the accounting migration leaves no tables behind", async () => {
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
   runMigrate(databaseUrl);
 
-  // Dropping migrations 001–004 and re-running simulates a full rollback +
+  // Dropping migrations 001–005 and re-running simulates a full rollback +
   // re-apply cycle at the migration layer. All DDL is idempotent (IF NOT EXISTS).
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS bill_items CASCADE");
@@ -167,16 +209,18 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS account_heads CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS employees CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS users CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS donations CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 4 migration\(s\)\./);
+  assert.match(output, /Applied 5 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
   assert.ok(tables.some((t) => t.table_name === "account_transactions"));
   assert.ok(tables.some((t) => t.table_name === "bills"));
   assert.ok(tables.some((t) => t.table_name === "bill_items"));
+  assert.ok(tables.some((t) => t.table_name === "donations"));
 });
 
 test("SELECT 1 succeeds against test database", async () => {

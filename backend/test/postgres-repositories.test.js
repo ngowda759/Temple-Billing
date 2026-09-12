@@ -13,6 +13,7 @@ let accountHeadRepository;
 let accountTransactionRepository;
 let billRepository;
 let billItemRepository;
+let donationRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -42,6 +43,7 @@ const resetAllTables = async (databaseUrl) => {
     await pool.query("DROP TABLE IF EXISTS account_heads CASCADE");
     await pool.query("DROP TABLE IF EXISTS employees CASCADE");
     await pool.query("DROP TABLE IF EXISTS users CASCADE");
+    await pool.query("DROP TABLE IF EXISTS donations CASCADE");
   } finally {
     await pool.end();
   }
@@ -65,6 +67,7 @@ test.before(async () => {
   accountTransactionRepository = require("../src/repositories/accountTransactionRepository");
   billRepository = require("../src/repositories/billRepository");
   billItemRepository = require("../src/repositories/billItemRepository");
+  donationRepository = require("../src/repositories/donationRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
@@ -1200,4 +1203,354 @@ test("bill item repository: bill item monetary precision round-trips exactly", a
   } finally {
     await pool.end();
   }
+});
+// ---------------------------------------------------------------------------
+// Phase 2D — donations
+// ---------------------------------------------------------------------------
+
+const donationBase = (overrides = {}) => ({
+  donorName: "Donor " + unique(),
+  donorEmail: emailFor("donation"),
+  amount: 500.75,
+  category: "General",
+  paymentMethod: "UPI",
+  status: "Completed",
+  ...overrides,
+});
+
+test("donation repository: create → read → update round trip", async () => {
+  const created = await donationRepository.create(donationBase());
+  assert.ok(created?._id);
+  assert.strictEqual(created.donorName.startsWith("Donor "), true);
+  assert.strictEqual(created.amount, 500.75);
+  assert.strictEqual(created.category, "General");
+  assert.strictEqual(created.paymentMethod, "UPI");
+  assert.strictEqual(created.status, "Completed");
+  assert.ok(created.createdAt instanceof Date);
+
+  const byId = await donationRepository.findById(created._id);
+  assert.strictEqual(byId._id, created._id);
+  assert.strictEqual(byId.donorEmail, created.donorEmail.toLowerCase());
+
+  const updated = await donationRepository.updateById(created._id, {
+    amount: 1000.99,
+    status: "Pending",
+    paymentMethod: "Cash",
+    category: "Hundi",
+    notes: "Updated note",
+  });
+  assert.strictEqual(updated.amount, 1000.99);
+  assert.strictEqual(updated.status, "Pending");
+  assert.strictEqual(updated.paymentMethod, "Cash");
+  assert.strictEqual(updated.category, "Hundi");
+  assert.strictEqual(updated.notes, "Updated note");
+  assert.ok(updated.updatedAt instanceof Date);
+
+  const after = await donationRepository.findById(created._id);
+  assert.strictEqual(after.amount, 1000.99);
+  assert.strictEqual(after.status, "Pending");
+});
+
+test("donation repository: all Mongo persisted fields map to the PostgreSQL row", async () => {
+  const eventId = unique();
+  const donatedBy = unique();
+  const created = await donationRepository.create(donationBase({
+    donorName: "  Field Mapping Donor  ",
+    donorEmail: "  MiXeD@ExAmPlE.com  ",
+    contactNumber: "+91-90000-00001",
+    donorPhone: "+91-90000-00002",
+    amount: 1234.56,
+    category: "Annadanam",
+    paymentMethod: "Bank Transfer",
+    transactionId: "TXN-001",
+    razorpayOrderId: "order_001",
+    razorpayPaymentId: "pay_001",
+    razorpaySignature: "sig_001",
+    eventId,
+    notes: "notes field",
+    status: "Failed",
+    donatedBy,
+  }));
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query("SELECT * FROM donations WHERE id = $1", [created._id]);
+    const row = rows[0];
+    assert.strictEqual(row.donor_name, "Field Mapping Donor");
+    // The Mongo schema declares `lowercase: true` for donorEmail; stored lowercased.
+    assert.strictEqual(row.donor_email, "mixed@example.com");
+    assert.strictEqual(row.contact_number, "+91-90000-00001");
+    assert.strictEqual(row.donor_phone, "+91-90000-00002");
+    assert.strictEqual(row.amount.toString(), "1234.56");
+    assert.strictEqual(row.category, "Annadanam");
+    assert.strictEqual(row.payment_method, "Bank Transfer");
+    assert.strictEqual(row.transaction_id, "TXN-001");
+    assert.strictEqual(row.razorpay_order_id, "order_001");
+    assert.strictEqual(row.razorpay_payment_id, "pay_001");
+    assert.strictEqual(row.razorpay_signature, "sig_001");
+    assert.strictEqual(row.event_id, eventId);
+    assert.strictEqual(row.notes, "notes field");
+    assert.strictEqual(row.status, "Failed");
+    assert.strictEqual(row.donated_by, donatedBy);
+    assert.strictEqual(row.created_at instanceof Date, true);
+    assert.strictEqual(row.updated_at instanceof Date, true);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("donation repository: optional and null fields stay null-ish like Mongo", async () => {
+  const created = await donationRepository.create({
+    donorName: "Minimal Donor",
+    amount: 100,
+  });
+  assert.strictEqual(created.donorEmail, undefined);
+  assert.strictEqual(created.contactNumber, undefined);
+  assert.strictEqual(created.donorPhone, undefined);
+  assert.strictEqual(created.transactionId, undefined);
+  assert.strictEqual(created.razorpayOrderId, undefined);
+  assert.strictEqual(created.razorpayPaymentId, undefined);
+  assert.strictEqual(created.razorpaySignature, undefined);
+  assert.strictEqual(created.eventId, undefined);
+  assert.strictEqual(created.notes, undefined);
+  assert.strictEqual(created.donatedBy, undefined);
+  assert.strictEqual(created.category, "General");
+  assert.strictEqual(created.paymentMethod, "UPI");
+  assert.strictEqual(created.status, "Not Collected");
+  assert.ok(created.createdAt instanceof Date);
+
+  const read = await donationRepository.findById(created._id);
+  assert.strictEqual(read.donorEmail, undefined);
+  assert.strictEqual(read.contactNumber, undefined);
+  assert.strictEqual(read.notes, undefined);
+  assert.strictEqual(read.eventId, undefined);
+});
+
+test("donation repository: monetary precision round-trips through NUMERIC exactly", async () => {
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  // The Mongo Donation amount is a JS Number; the stated goal is exact
+  // preservation of sub-unit amounts. Donation amounts are unrestricted scale,
+  // like account_transactions (Phase 2B) and bill_items (Phase 2C).
+  const amounts = ["0.01", "10.50", "1000.99", "1000000.99", "123456789.1234"];
+  try {
+    for (const amount of amounts) {
+      const created = await donationRepository.create(donationBase({ amount }));
+      const fetched = await donationRepository.findById(created._id);
+      assert.strictEqual(fetched.amount, Number(amount));
+      const { rows } = await pool.query("SELECT amount::text AS amount FROM donations WHERE id = $1", [created._id]);
+      assert.strictEqual(rows[0].amount, amount);
+    }
+  } finally {
+    await pool.end();
+  }
+});
+
+test("donation repository: legacy IDs round-trip and create with the same id is idempotent", async () => {
+  const id = unique();
+  const first = await donationRepository.create(donationBase({ id }));
+  const second = await donationRepository.create(donationBase({ id, donorName: "Other" }));
+  assert.strictEqual(second._id, first._id);
+  assert.strictEqual((await donationRepository.findById(id))._id, id);
+});
+
+test("donation repository: enum values are preserved and invalid values are rejected", async () => {
+  for (const mode of ["Cash", "UPI", "Card", "Bank Transfer", "Net Banking", "Debit Card", "Credit Card"]) {
+    const created = await donationRepository.create(donationBase({ paymentMethod: mode }));
+    assert.strictEqual((await donationRepository.findById(created._id)).paymentMethod, mode);
+  }
+  for (const status of ["Collected", "Not Collected", "Completed", "Pending", "Failed"]) {
+    const created = await donationRepository.create(donationBase({ status }));
+    assert.strictEqual((await donationRepository.findById(created._id)).status, status);
+  }
+
+  await assert.rejects(
+    () => donationRepository.create(donationBase({ paymentMethod: "Gold" })),
+    /Invalid paymentMethod|check constraint/
+  );
+  await assert.rejects(
+    () => donationRepository.create(donationBase({ status: "Refunded" })),
+    /Invalid status|check constraint/
+  );
+  await assert.rejects(
+    () => donationRepository.create(donationBase({ amount: 0 })),
+    /Invalid amount|check constraint/
+  );
+  await assert.rejects(
+    () => donationRepository.create(donationBase({ amount: -10 })),
+    /Invalid amount|check constraint/
+  );
+});
+
+test("donation repository: required fields are enforced like Mongo", async () => {
+  await assert.rejects(
+    () => donationRepository.create({ donorEmail: "a@b.com", amount: 10 }),
+    /donor_name|not-null|donorName/
+  );
+  await assert.rejects(
+    () => donationRepository.create({ donorName: "No Amount" }),
+    /Invalid amount|not-null|amount/
+  );
+});
+
+test("donation repository: dates round-trip correctly through TIMESTAMPTZ", async () => {
+  const createdAt = new Date("2025-08-15T10:30:00+05:30");
+  const created = await donationRepository.create(donationBase({ createdAt }));
+  const read = await donationRepository.findById(created._id);
+  assert.ok(read.createdAt instanceof Date);
+  // PostgreSQL TIMESTAMPTZ preserves the instant: the same UTC moment comes back.
+  assert.strictEqual(read.createdAt.toISOString(), createdAt.toISOString());
+});
+
+test("donation repository: findOne and findMany honor filters, sorts and pagination", async () => {
+  const eventId = unique();
+  const created = await donationRepository.create(donationBase({
+    eventId,
+    category: "Hundi",
+    paymentMethod: "Cash",
+    status: "Pending",
+  }));
+
+  const byEvent = await donationRepository.findOne({ eventId });
+  assert.strictEqual(byEvent._id, created._id);
+
+  const many = await donationRepository.findMany({ filter: { eventId } });
+  assert.ok(many.some((d) => d._id === created._id));
+
+  const filtered = await donationRepository.findMany({
+    filter: { category: "Hundi", paymentMethod: "Cash", status: "Pending" },
+  });
+  assert.ok(filtered.some((d) => d._id === created._id));
+
+  const byName = await donationRepository.findMany({ filter: { donorName: created.donorName } });
+  assert.ok(byName.some((d) => d._id === created._id));
+
+  // Mongo-style { status: { $in: [...] } }.
+  const statusIn = await donationRepository.findMany({ filter: { status: { $in: ["Pending", "Failed"] } } });
+  assert.ok(statusIn.some((d) => d._id === created._id));
+
+  const page = await donationRepository.findMany({ filter: {}, sort: { createdAt: -1 }, limit: 1, offset: 0 });
+  assert.strictEqual(page.length, 1);
+
+  // Invalid sort fields fall back to created_at DESC and never throw.
+  const badSort = await donationRepository.findMany({ sort: { definitelyNotAColumn: -1 } });
+  assert.ok(badSort.some((d) => d._id === created._id));
+
+  // Date range filter: { createdAt: { $gte, $lte } }.
+  const ranged = await donationRepository.findMany({
+    filter: { createdAt: { $gte: "2020-01-01T00:00:00Z", $lte: new Date(Date.now() + 86400000) } },
+  });
+  assert.ok(ranged.some((d) => d._id === created._id));
+});
+
+test("donation repository: donorEmail $in filter mirrors buildEmailLookup aliases", async () => {
+  // devoteeController.getDonations calls buildEmailLookup("donorEmail", email),
+  // which for a gmail address emits { donorEmail: { $in: ['alias@gmail.com', 'alias@temple.local'] } }.
+  // The devotee flow normalizes aliases at write time (normalizeEmail maps
+  // @temple.local → @gmail.com), so the canonical value is what is stored.
+  const created = await donationRepository.create(donationBase({ donorEmail: "alias@gmail.com" }));
+  const byIn = await donationRepository.findMany({
+    filter: { donorEmail: { $in: ["alias@gmail.com", "alias@temple.local"] } },
+  });
+  assert.ok(byIn.some((d) => d._id === created._id));
+
+  const byCanonical = await donationRepository.findMany({
+    filter: { donorEmail: "alias@gmail.com" },
+  });
+  assert.ok(byCanonical.some((d) => d._id === created._id));
+});
+
+test("donation repository: count uses COUNT(*) and filter counts match", async () => {
+  const eventId = unique();
+  await donationRepository.create(donationBase({ eventId, status: "Pending" }));
+  await donationRepository.create(donationBase({ eventId, status: "Completed" }));
+  const all = await donationRepository.count({});
+  const byEvent = await donationRepository.count({ eventId });
+  assert.strictEqual(typeof all, "number");
+  assert.strictEqual(byEvent, 2);
+  const byStatus = await donationRepository.count({ status: { $in: ["Pending", "Completed"] } });
+  assert.ok(byStatus >= 2);
+});
+
+test("donation repository: updateById on a missing id returns null and empty updates are no-ops", async () => {
+  assert.strictEqual(
+    await donationRepository.updateById("000000000000000000000000", { status: "Completed" }),
+    null
+  );
+  const created = await donationRepository.create(donationBase({}));
+  const noop = await donationRepository.updateById(created._id, {});
+  assert.strictEqual(noop._id, created._id);
+});
+
+test("donation repository: destroy reports existence", async () => {
+  const created = await donationRepository.create(donationBase({}));
+  assert.strictEqual(await donationRepository.destroy(created._id), true);
+  assert.strictEqual(await donationRepository.findById(created._id), null);
+  assert.strictEqual(await donationRepository.destroy(created._id), false);
+  assert.strictEqual(await donationRepository.destroy("000000000000000000000000"), false);
+});
+
+test("donation repository: donation → Bill.sourceId relationship round-trips", async () => {
+  // Mirrors donationController.createDonation: a donation persists, then a bill
+  // is created with sourceId = donation._id. The migration deliberately keeps
+  // bills.source_id polymorphic TEXT (bookings/prasadam remain Mongo-backed), so
+  // no FK exists; the polyglot relationship is verified end to end via the
+  // already-migrated bill repository.
+  const billRepositoryModule = require("../src/repositories/billRepository");
+  const donation = await donationRepository.create(donationBase({ status: "Completed" }));
+  const bill = await billRepositoryModule.create({
+    devoteeName: donation.donorName,
+    sevaType: donation.category,
+    amount: donation.amount,
+    paymentMode: donation.paymentMethod,
+    billType: "Donation",
+    referenceNo: `DN-${String(donation._id).slice(-6).toUpperCase()}`,
+    sourceId: donation._id,
+    notes: donation.notes || "",
+    status: "Paid",
+  });
+  assert.strictEqual(bill.sourceId, donation._id);
+
+  const bySource = await billRepositoryModule.findManyBySourceId(donation._id);
+  assert.ok(bySource.some((b) => b._id === bill._id));
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query(
+      "SELECT source_id FROM bills WHERE id = $1",
+      [bill._id]
+    );
+    assert.strictEqual(rows[0].source_id, donation._id);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("donation repository: donation → AccountTransaction.referenceId relationship round-trips", async () => {
+  // Mirrors donationController.createDonation / devoteeController flows: an
+  // account transaction is recorded with referenceId = donation._id and
+  // referenceModel = 'Donation'. The account_transactions.reference_id column
+  // stays polymorphic TEXT until every referenced entity is migrated.
+  const donation = await donationRepository.create(donationBase({ status: "Completed" }));
+  const tx = await accountTransactionRepository.create({
+    transactionType: "Credit",
+    source: "Donation",
+    category: "Donation Income",
+    amount: donation.amount,
+    financialYear: "2026-2027",
+    paymentMethod: donation.paymentMethod,
+    status: "Completed",
+    description: `Donation by ${donation.donorName}`,
+    referenceId: donation._id,
+    referenceModel: "Donation",
+  });
+  assert.strictEqual(tx.referenceId, donation._id);
+  assert.strictEqual(tx.referenceModel, "Donation");
+
+  const byRef = await accountTransactionRepository.findMany({
+    filter: { referenceId: donation._id, referenceModel: "Donation" },
+  });
+  assert.ok(byRef.some((t) => t._id === tx._id));
 });
