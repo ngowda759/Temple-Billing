@@ -30,7 +30,9 @@ const poolQuery = async (databaseUrl, sql) => {
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
-  // Phase 2A–2E tables must be dropped too so a fresh run applies the latest DDL.
+  // Phase 2A–2F tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_booking_material_requests CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_bookings CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS booking_items CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS booking_material_requests CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS booking_history CASCADE");
@@ -49,7 +51,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 6 migration\(s\)\./);
+  assert.match(output, /Applied 7 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -59,6 +61,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "004_create_bills.sql",
     "005_create_donations.sql",
     "006_create_bookings.sql",
+    "007_create_pooja_bookings.sql",
   ]);
 });
 
@@ -71,7 +74,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 6);
+  assert.strictEqual(rows.length, 7);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -94,6 +97,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "004_create_bills.sql",
       "005_create_donations.sql",
       "006_create_bookings.sql",
+      "007_create_pooja_bookings.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -269,6 +273,63 @@ test("bookings migration creates NUMERIC monetary columns, enum CHECKs and casca
   assert.ok(fkDefs.some((d) => /booking_items.*REFERENCES bookings\(id\).*ON DELETE CASCADE/.test(d)), "booking_items FK cascade");
 });
 
+test("pooja_bookings migration creates NUMERIC monetary columns, enum CHECKs and a cascade FK", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const bookings = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'pooja_bookings' ORDER BY column_name`);
+  const col = (name) => bookings.find((c) => c.column_name === name);
+  assert.ok(col("id") && col("id").data_type === "text");
+  assert.ok(col("booking_number") && col("booking_number").data_type === "text" && col("booking_number").is_nullable === "NO");
+  assert.ok(col("customer_name") && col("customer_name").data_type === "text" && col("customer_name").is_nullable === "NO");
+  assert.ok(col("service") && col("service").data_type === "text" && col("service").is_nullable === "NO");
+  assert.ok(col("amount") && col("amount").data_type === "numeric" && col("amount").is_nullable === "NO");
+  assert.ok(col("payment_method") && col("payment_method").data_type === "text" && col("payment_method").is_nullable === "NO");
+  assert.ok(col("contact_number") && col("contact_number").data_type === "text" && col("contact_number").is_nullable === "NO");
+  assert.ok(col("email") && col("email").is_nullable === "YES");
+  assert.ok(col("address") && col("address").is_nullable === "YES");
+  assert.ok(col("notes") && col("notes").column_default === "''::text");
+  assert.ok(col("booking_date") && col("booking_date").data_type === "timestamp with time zone" && col("booking_date").is_nullable === "NO");
+  assert.ok(col("status") && col("status").column_default === "'Booked'::text");
+  assert.ok(col("created_by") && col("created_by").data_type === "text" && col("created_by").is_nullable === "NO");
+  assert.ok(col("temple_arrangement") && col("temple_arrangement").is_nullable === "NO" && col("temple_arrangement").column_default === "false");
+  assert.ok(col("temple_material_charge") && col("temple_material_charge").data_type === "numeric" && col("temple_material_charge").column_default === "0");
+  assert.ok(col("material_status") && col("material_status").column_default === "'N/A'::text");
+  assert.ok(col("priest_checklist") && col("priest_checklist").data_type === "jsonb");
+  assert.ok(col("created_at") && col("created_at").data_type === "timestamp with time zone");
+  assert.ok(col("updated_at") && col("updated_at").data_type === "timestamp with time zone");
+
+  const checks = await poolQuery(databaseUrl, `
+    SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'pooja_bookings'::regclass AND contype = 'c'`);
+  const defs = checks.map((r) => r.def);
+  assert.ok(defs.some((d) => /payment_method.*'UPI'.*'Cash'.*'Card'/.test(d)), "paymentMethod CHECK");
+  assert.ok(defs.some((d) => /status.*'Booked'.*'Completed'.*'Cancelled'/.test(d)), "status CHECK");
+  assert.ok(defs.some((d) => /material_status.*'N\/A'.*'Pending'.*'Approved'.*'Reserved'.*'Ready'.*'Issued'.*'Consumed'.*'Cancelled'/.test(d)), "materialStatus CHECK");
+  assert.ok(defs.some((d) => /amount\s*>=\s*\(0\)/.test(d)), "amount >= 0 CHECK");
+
+  const uniq = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'pooja_bookings'::regclass AND contype = 'u'`);
+  assert.ok(uniq.some((r) => /UNIQUE \(booking_number\)/.test(r.def)), "bookingNumber UNIQUE constraint");
+
+  const fks = await poolQuery(databaseUrl, `
+    SELECT conrelid::regclass::text AS tbl, pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE contype = 'f'
+    AND conrelid = 'pooja_booking_material_requests'::regclass`);
+  assert.ok(fks.some((r) => /REFERENCES pooja_bookings\(id\).*ON DELETE CASCADE/.test(r.def)), "pooja_booking_material_requests FK cascade");
+
+  // No FK between pooja_bookings and bookings: the Mongo model has no bookingId.
+  const allFks = await poolQuery(databaseUrl, `
+    SELECT conrelid::regclass::text AS tbl, pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE contype = 'f' AND conrelid = 'pooja_bookings'::regclass`);
+  assert.strictEqual(allFks.length, 0, "pooja_bookings must not carry fake FKs to other entities");
+});
+
 test("rollback of the accounting migration leaves no tables behind", async () => {
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
@@ -277,6 +338,8 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   // Dropping all migrations and re-running simulates a full rollback +
   // re-apply cycle at the migration layer. All DDL is idempotent (IF NOT EXISTS).
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_booking_material_requests CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_bookings CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS booking_items CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS booking_material_requests CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS booking_history CASCADE");
@@ -291,7 +354,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 6 migration\(s\)\./);
+  assert.match(output, /Applied 7 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -303,6 +366,8 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   assert.ok(tables.some((t) => t.table_name === "booking_history"));
   assert.ok(tables.some((t) => t.table_name === "booking_material_requests"));
   assert.ok(tables.some((t) => t.table_name === "booking_items"));
+  assert.ok(tables.some((t) => t.table_name === "pooja_bookings"));
+  assert.ok(tables.some((t) => t.table_name === "pooja_booking_material_requests"));
 });
 
 test("SELECT 1 succeeds against test database", async () => {
