@@ -14,6 +14,7 @@ let accountTransactionRepository;
 let billRepository;
 let billItemRepository;
 let donationRepository;
+let bookingRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -37,6 +38,10 @@ const resetAllTables = async (databaseUrl) => {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS booking_items CASCADE");
+    await pool.query("DROP TABLE IF EXISTS booking_material_requests CASCADE");
+    await pool.query("DROP TABLE IF EXISTS booking_history CASCADE");
+    await pool.query("DROP TABLE IF EXISTS bookings CASCADE");
     await pool.query("DROP TABLE IF EXISTS bill_items CASCADE");
     await pool.query("DROP TABLE IF EXISTS bills CASCADE");
     await pool.query("DROP TABLE IF EXISTS account_transactions CASCADE");
@@ -68,6 +73,7 @@ test.before(async () => {
   billRepository = require("../src/repositories/billRepository");
   billItemRepository = require("../src/repositories/billItemRepository");
   donationRepository = require("../src/repositories/donationRepository");
+  bookingRepository = require("../src/repositories/bookingRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
