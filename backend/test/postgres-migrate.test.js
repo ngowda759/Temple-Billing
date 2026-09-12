@@ -30,6 +30,10 @@ const poolQuery = async (databaseUrl, sql) => {
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
+  // Phase 2A tables must be dropped too so a fresh run applies the latest
+  // DDL (e.g. employees.current_duty changing from TEXT to JSONB).
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS employees CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS users CASCADE");
 };
 
 test("db:migrate runs clean from scratch on a fresh database", async () => {

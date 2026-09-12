@@ -288,8 +288,8 @@ const removeFromRole = async (role) => {
 const destroyUser = async (id) => {
   if (!id) return false;
   if (isDbConnected()) {
-    await query("DELETE FROM users WHERE id = $1", [String(id)]);
-    return true;
+    const { rows } = await query("DELETE FROM users WHERE id = $1 RETURNING id", [String(id)]);
+    return rows.length > 0;
   }
   return false;
 };

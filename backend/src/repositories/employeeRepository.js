@@ -9,6 +9,20 @@ const newId = () => crypto.randomBytes(12).toString("hex");
 
 const normalizeEmail = (email) => String(email || "").toLowerCase().trim();
 
+const CURRENT_DUTY_PRIORITIES = new Set(["Low", "Medium", "High", "Urgent"]);
+
+const assertCurrentDutyPriority = (currentDuty) => {
+  if (currentDuty === undefined || currentDuty === null) return;
+  if (typeof currentDuty === "string") {
+    try { currentDuty = JSON.parse(currentDuty); } catch { throw new Error("currentDuty must be valid JSON"); }
+  }
+  if (typeof currentDuty !== "object") return;
+  const priority = currentDuty.priority;
+  if (priority !== undefined && !CURRENT_DUTY_PRIORITIES.has(priority)) {
+    throw new Error(`Invalid currentDuty.priority: ${priority}. Allowed: Low, Medium, High, Urgent`);
+  }
+};
+
 const EMP_COLS = [
   "id", "employee_id", "username", "user_id", "name", "email", "password", "role",
   "gender", "dob", "blood_group", "aadhaar", "phone", "address", "emergency_contact",
@@ -24,7 +38,9 @@ const EMP_COLS = [
 const toDoc = (row) => {
   if (!row) return null;
   const currentDuty = (() => {
-    try { return JSON.parse(row.current_duty || "{}"); } catch { return {}; }
+    try {
+      return typeof row.current_duty === "string" ? JSON.parse(row.current_duty || "{}") : (row.current_duty || {});
+    } catch { return {}; }
   })();
   return {
     _id: row.id,
@@ -89,7 +105,7 @@ const fromDbToPlain = (row) => {
 };
 
 const toRow = (data, id = newId()) => {
-  const currentDuty = typeof data.currentDuty === "string" ? data.currentDuty : JSON.stringify(data.currentDuty || {});
+  const currentDuty = typeof data.currentDuty === "string" ? data.currentDuty : (data.currentDuty || {});
   return {
     id,
     employee_id: data.employeeId || null,
@@ -206,6 +222,7 @@ const exists = async (filter) => {
 
 const create = async (data) => {
   const id = data.id || newId();
+  assertCurrentDutyPriority(data.currentDuty);
   const row = toRow(data, id);
   if (isDbConnected()) {
     await query(
@@ -262,7 +279,10 @@ const updateById = async (id, updates, { returnDoc = true } = {}) => {
         case "defaultDuty": apply("default_duty", value ?? null); break;
         case "dutyLocation": apply("duty_location", value ?? null); break;
         case "biometricId": apply("biometric_id", value ?? null); break;
-        case "currentDuty": apply("current_duty", typeof value === "string" ? value : JSON.stringify(value || {})); break;
+        case "currentDuty":
+          assertCurrentDutyPriority(value);
+          apply("current_duty", typeof value === "string" ? value : (value || {}));
+          break;
         case "photo": apply("photo", value || ""); break;
         case "profilePhoto": apply("profile_photo", value || ""); break;
         case "faceRegistered": apply("face_registered", Boolean(value)); break;
@@ -295,7 +315,7 @@ const updateById = async (id, updates, { returnDoc = true } = {}) => {
     }
     if (!returnDoc) return true;
     const existing = await findById(id);
-    return existing ? toDoc(existing) : null;
+    return existing;
   }
   const updated = await Employee.findByIdAndUpdate(
     String(id),
@@ -305,16 +325,33 @@ const updateById = async (id, updates, { returnDoc = true } = {}) => {
   return updated ? toDoc(updated) : null;
 };
 
-const findMany = async (options = {}) => {
-  const { filter = {}, sort = { createdAt: -1 }, limit, offset } = options;
-  if (!isDbConnected()) {
-    let q = Employee.find(filter).sort(sort);
-    if (limit) q = q.limit(limit);
-    if (offset) q = q.skip(offset);
-    const docs = await q;
-    return docs.map((d) => toDoc(d));
-  }
+const SORT_COLUMNS = {
+  createdAt: "created_at",
+  name: "name",
+  employeeId: "employee_id",
+  department: "department",
+  salary: "salary",
+  joiningDate: "joining_date",
+  status: "status",
+};
 
+const resolveOrderBy = (sort) => {
+  const defaultOrder = "created_at DESC";
+  let key; let direction;
+  if (typeof sort === "string") {
+    key = sort; direction = 1;
+  } else {
+    const entry = Object.entries(sort || {})[0] || [];
+    key = entry[0]; direction = entry[1];
+  }
+  const col = SORT_COLUMNS[key];
+  if (!col) return defaultOrder;
+  const dir = direction === "DESC" || Number(direction) === -1 ? "DESC" : (direction === "ASC" || Number(direction) === 1 ? "ASC" : null);
+  if (!dir) return defaultOrder;
+  return `${col} ${dir}`;
+};
+
+const buildEmployeeFilter = (filter) => {
   const conditions = [];
   const values = [];
   const pushCond = (col, op, value) => {
@@ -333,11 +370,11 @@ const findMany = async (options = {}) => {
         // Mongo semantics: match shift OR default_shift OR current_duty.shift
         if (Array.isArray(value)) {
           value.forEach((v) => {
-            conditions.push(`(shift = $${values.length + 1} OR default_shift = $${values.length + 2} OR current_duty::jsonb->>'shift' = $${values.length + 3})`);
+            conditions.push(`(shift = $${values.length + 1} OR default_shift = $${values.length + 2} OR current_duty->>'shift' = $${values.length + 3})`);
             values.push(v, v, v);
           });
         } else {
-          conditions.push(`(shift = $${values.length + 1} OR default_shift = $${values.length + 2} OR current_duty::jsonb->>'shift' = $${values.length + 3})`);
+          conditions.push(`(shift = $${values.length + 1} OR default_shift = $${values.length + 2} OR current_duty->>'shift' = $${values.length + 3})`);
           values.push(value, value, value);
         }
         break;
@@ -379,14 +416,21 @@ const findMany = async (options = {}) => {
   };
 
   for (const [key, value] of Object.entries(filter)) mapFilter(key, value);
+  return { where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", values };
+};
 
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  const orderBy = (() => {
-    if (typeof sort === "string") return sort;
-    const [key, direction] = Object.entries(sort || { createdAt: -1 })[0] || [];
-    const col = { createdAt: "created_at", name: "name" }[key] || key;
-    return `${col} ${Number(direction) < 0 ? "DESC" : "ASC"}`;
-  })();
+const findMany = async (options = {}) => {
+  const { filter = {}, sort = { createdAt: -1 }, limit, offset } = options;
+  if (!isDbConnected()) {
+    let q = Employee.find(filter).sort(sort);
+    if (limit) q = q.limit(limit);
+    if (offset) q = q.skip(offset);
+    const docs = await q;
+    return docs.map((d) => toDoc(d));
+  }
+
+  const { where, values } = buildEmployeeFilter(filter);
+  const orderBy = resolveOrderBy(sort);
 
   let sql = `SELECT ${EMP_COLS.join(", ")} FROM employees ${where} ORDER BY ${orderBy}`;
   if (limit) sql += ` LIMIT ${Number(limit)}`;
@@ -397,15 +441,16 @@ const findMany = async (options = {}) => {
 
 const count = async (filter = {}) => {
   if (!isDbConnected()) return Employee.countDocuments(filter);
-  const rows = await findMany({ filter });
-  return rows.length;
+  const { where, values } = buildEmployeeFilter(filter);
+  const { rows } = await query(`SELECT COUNT(*)::int AS count FROM employees ${where}`, values);
+  return rows[0]?.count || 0;
 };
 
 const removeById = async (id) => {
   if (!id) return false;
   if (isDbConnected()) {
-    await query("DELETE FROM employees WHERE id = $1", [String(id)]);
-    return true;
+    const { rows } = await query(`DELETE FROM employees WHERE id = $1 RETURNING id`, [String(id)]);
+    return rows.length > 0;
   }
   return false;
 };
@@ -413,8 +458,8 @@ const removeById = async (id) => {
 const destroyUser = async (id) => {
   if (!id) return false;
   if (isDbConnected()) {
-    await query("DELETE FROM employees WHERE id = $1", [String(id)]);
-    return true;
+    const { rows } = await query(`DELETE FROM employees WHERE id = $1 RETURNING id`, [String(id)]);
+    return rows.length > 0;
   }
   return false;
 };

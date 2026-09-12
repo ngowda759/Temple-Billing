@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS employees (
   default_duty TEXT,
   duty_location TEXT,
   biometric_id TEXT,
-  current_duty TEXT NOT NULL DEFAULT '{}',
+  current_duty JSONB NOT NULL DEFAULT '{}'::jsonb,
   photo TEXT NOT NULL DEFAULT '',
   profile_photo TEXT NOT NULL DEFAULT '',
   face_registered BOOLEAN NOT NULL DEFAULT FALSE,

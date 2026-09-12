@@ -27,8 +27,21 @@ const emailFor = (tag) => `${tag}-${unique()}@example.com`;
 
 let originalIsDbConnected;
 
-test.before(() => {
+const resetUsersEmployees = async (databaseUrl) => {
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS employees CASCADE");
+    await pool.query("DROP TABLE IF EXISTS users CASCADE");
+  } finally {
+    await pool.end();
+  }
+};
+
+test.before(async () => {
   originalIsDbConnected = dbConfig.isDbConnected;
+  await resetUsersEmployees(TEST_DB_URL);
 
   const res = spawnSync(process.execPath, [MIGRATE_SCRIPT], {
     encoding:"utf8",
@@ -365,4 +378,101 @@ test("employee repository: removeById and destroyUser delete the row", async () 
 
   assert.strictEqual(await employeeRepository.removeById(created._id), true);
   assert.strictEqual(await employeeRepository.findById(created._id), null);
+});
+
+test("employee repository: currentDuty is a JSONB round-trip with priority validation", async () => {
+  const base = {
+    employeeId: "E-" + unique(),
+    name: "Duty Employee",
+    email: emailFor("duty"),
+    password: "secret123",
+    salary: 23000,
+    joiningDate: "2024-04-10",
+    bankName: "Bank D",
+    accountNumber: "D-1",
+  };
+  const created = await employeeRepository.create({
+    ...base,
+    currentDuty: { shift: "Morning", dutyName: "Temple Front", priority: "High" },
+  });
+  assert.deepStrictEqual(created.currentDuty, { shift: "Morning", dutyName: "Temple Front", priority: "High" });
+
+  const fetched = await employeeRepository.findById(created._id);
+  assert.deepStrictEqual(fetched.currentDuty, { shift: "Morning", dutyName: "Temple Front", priority: "High" });
+
+  const updated = await employeeRepository.updateById(created._id, { currentDuty: { priority: "Urgent" } });
+  assert.strictEqual(updated.currentDuty.priority, "Urgent");
+
+  await assert.rejects(
+    () => employeeRepository.create({
+      ...base,
+      employeeId: "E-" + unique(),
+      email: emailFor("duty-bad-priority"),
+      currentDuty: { priority: "Critical" },
+    }),
+    /Invalid currentDuty\.priority/
+  );
+  await assert.rejects(
+    () => employeeRepository.updateById(created._id, { currentDuty: { priority: "ASAP" } }),
+    /Invalid currentDuty\.priority/
+  );
+});
+
+test("employee repository: invalid sort fields fall back to created_at DESC, bare count works", async () => {
+  const a = await employeeRepository.create({
+    employeeId: "E-" + unique(),
+    name: "Sort Alpha",
+    email: emailFor("sort-a"),
+    password: "secret123",
+    salary: 40000,
+    joiningDate: "2024-01-05",
+    bankName: "Bank E",
+    accountNumber: "E-1",
+  });
+  const b = await employeeRepository.create({
+    employeeId: "E-" + unique(),
+    name: "Sort Beta",
+    email: emailFor("sort-b"),
+    password: "secret123",
+    salary: 30000,
+    joiningDate: "2024-01-06",
+    bankName: "Bank E",
+    accountNumber: "E-2",
+  });
+  await new Promise((r) => setTimeout(r, 10));
+  const bad = await employeeRepository.findMany({
+    filter: {}, sort: { definitelyNotAColumn: 1 },
+  });
+  assert.ok(bad.some((e) => e._id === a._id) && bad.some((e) => e._id === b._id));
+  const bare = await employeeRepository.count({});
+  assert.strictEqual(typeof bare, "number");
+  assert.ok(bare >= 2);
+});
+
+test("employee repository: removeById and destroyUser on missing ids return false", async () => {
+  const missing = "000000000000000000000000";
+  assert.strictEqual(await employeeRepository.removeById(missing), false);
+  assert.strictEqual(await employeeRepository.destroyUser(missing), false);
+});
+
+test("user repository: destroyUser on a missing id returns false", async () => {
+  assert.strictEqual(await userRepository.destroyUser("000000000000000000000000"), false);
+});
+
+test("employee repository: faceDescriptor array round-trips through DOUBLE PRECISION[]", async () => {
+  const created = await employeeRepository.create({
+    employeeId: "E-" + unique(),
+    name: "Face Employee",
+    email: emailFor("face"),
+    password: "secret123",
+    salary: 19000,
+    joiningDate: "2024-05-01",
+    bankName: "Bank F",
+    accountNumber: "F-1",
+    faceRegistered: true,
+    faceDescriptor: [-0.043331239, 0.0123456789],
+  });
+  const fetched = await employeeRepository.findById(created._id);
+  assert.ok(Array.isArray(fetched.faceDescriptor));
+  assert.strictEqual(Number(fetched.faceDescriptor[0]).toFixed(4), "-0.0433");
 });
