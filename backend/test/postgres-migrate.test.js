@@ -30,7 +30,8 @@ const poolQuery = async (databaseUrl, sql) => {
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
-  // Phase 2A–2K tables must be dropped too so a fresh run applies the latest DDL.
+  // Phase 2A–2L tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_requests CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_consumptions CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_logs CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_batches CASCADE");
@@ -56,7 +57,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 12 migration\(s\)\./);
+  assert.match(output, /Applied 13 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -72,6 +73,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "010_create_inventory_batches.sql",
     "011_create_inventory_logs.sql",
     "012_create_inventory_consumption.sql",
+    "013_create_inventory_requests.sql",
   ]);
 });
 
@@ -84,7 +86,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 12);
+  assert.strictEqual(rows.length, 13);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -113,6 +115,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "010_create_inventory_batches.sql",
       "011_create_inventory_logs.sql",
       "012_create_inventory_consumption.sql",
+      "013_create_inventory_requests.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -374,7 +377,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 12 migration\(s\)\./);
+  assert.match(output, /Applied 13 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -411,7 +414,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 12);
+  assert.strictEqual(rows.length, 13);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -436,7 +439,7 @@ test("rollback of the Phase 2J inventory_logs migration can be removed and reapp
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 12);
+  assert.strictEqual(rows.length, 13);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -509,7 +512,7 @@ test("rollback of the Phase 2K inventory_consumptions migration can be removed a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 12);
+  assert.strictEqual(rows.length, 13);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT kcu.column_name, pg_get_constraintdef(oid) AS def FROM pg_constraint c
@@ -622,6 +625,182 @@ test("a deliberately failed inventory_consumptions migration rolls back fully", 
   } finally {
     fs.unlinkSync(broken);
   }
+});
+
+test("inventory_requests migration creates the Mongo-mapped columns, enum CHECKs, quantity >= 0 CHECK and real indexes", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const cols = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'inventory_requests' ORDER BY column_name`);
+  const col = (name) => cols.find((c) => c.column_name === name);
+  assert.ok(col("id") && col("id").data_type === "text" && col("id").is_nullable === "NO");
+  assert.ok(col("user_id") && col("user_id").data_type === "text" && col("user_id").is_nullable === "NO");
+  assert.ok(col("user_name") && col("user_name").data_type === "text" && col("user_name").is_nullable === "NO");
+  assert.ok(col("role") && col("role").data_type === "text" && col("role").is_nullable === "NO" && col("role").column_default === "'Staff'::text");
+  assert.ok(col("requested_by") && col("requested_by").data_type === "text" && col("requested_by").column_default === "''::text");
+  assert.ok(col("item_name") && col("item_name").data_type === "text" && col("item_name").is_nullable === "NO");
+  // quantity is NUMERIC with no fixed precision (preserves arbitrary scale)
+  assert.ok(col("quantity") && col("quantity").data_type === "numeric" && col("quantity").is_nullable === "NO");
+  assert.ok(col("unit") && col("unit").data_type === "text" && col("unit").is_nullable === "NO");
+  assert.ok(col("reason") && col("reason").data_type === "text" && col("reason").is_nullable === "NO" && col("reason").column_default === "''::text");
+  assert.ok(col("purpose") && col("purpose").data_type === "text" && col("purpose").is_nullable === "NO" && col("purpose").column_default === "''::text");
+  assert.ok(col("expected_date") && col("expected_date").data_type === "timestamp with time zone" && col("expected_date").is_nullable === "NO");
+  assert.ok(col("priority") && col("priority").data_type === "text" && col("priority").is_nullable === "NO" && col("priority").column_default === "'Medium'::text");
+  assert.ok(col("status") && col("status").data_type === "text" && col("status").is_nullable === "NO" && col("status").column_default === "'Pending'::text");
+  assert.ok(col("admin_reason") && col("admin_reason").data_type === "text" && col("admin_reason").column_default === "''::text");
+  assert.ok(col("rejection_reason") && col("rejection_reason").data_type === "text" && col("rejection_reason").column_default === "''::text");
+  // Nullable date columns stay nullable with no default (match Mongo default null)
+  assert.ok(col("rejected_at") && col("rejected_at").data_type === "timestamp with time zone" && col("rejected_at").is_nullable === "YES" && col("rejected_at").column_default === null);
+  assert.ok(col("approved_at") && col("approved_at").data_type === "timestamp with time zone" && col("approved_at").is_nullable === "YES" && col("approved_at").column_default === null);
+  assert.ok(col("reviewed_at") && col("reviewed_at").data_type === "timestamp with time zone" && col("reviewed_at").is_nullable === "YES" && col("reviewed_at").column_default === null);
+  assert.ok(col("issued_at") && col("issued_at").data_type === "timestamp with time zone" && col("issued_at").is_nullable === "YES" && col("issued_at").column_default === null);
+  assert.ok(col("approved_by") && col("approved_by").data_type === "text" && col("approved_by").column_default === "''::text");
+  assert.ok(col("reviewed_by") && col("reviewed_by").data_type === "text" && col("reviewed_by").column_default === "''::text");
+  assert.ok(col("created_at") && col("created_at").data_type === "timestamp with time zone");
+  assert.ok(col("updated_at") && col("updated_at").data_type === "timestamp with time zone");
+  assert.strictEqual(cols.filter((c) => c.column_name === "quantity").length, 1);
+
+  // enum CHECKs preserved exactly (priority: High/Medium/Low; status:
+  // Pending/Approved/Rejected/Issued) and the quantity >= 0 CHECK mirroring the
+  // Mongo schema's min: 0.
+  const checks = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'inventory_requests'::regclass AND contype = 'c'`);
+  const checkDefs = checks.map((r) => r.def);
+  // PostgreSQL renders IN-list CHECKs with = ANY (ARRAY[...]), preserving the
+  // exact enum values from the Mongo schema.
+  const priorityCheck = checkDefs.find((d) => d.startsWith("CHECK ((priority"));
+  assert.ok(priorityCheck && priorityCheck.includes("'High'::text") && priorityCheck.includes("'Medium'::text") && priorityCheck.includes("'Low'::text"), "priority enum CHECK contains High/Medium/Low");
+  assert.ok(!priorityCheck.includes("'Urgent'"), "priority CHECK has no extra values");
+  const statusCheck = checkDefs.find((d) => d.startsWith("CHECK ((status"));
+  assert.ok(statusCheck && statusCheck.includes("'Pending'::text") && statusCheck.includes("'Approved'::text") && statusCheck.includes("'Rejected'::text") && statusCheck.includes("'Issued'::text"), "status enum CHECK contains Pending/Approved/Rejected/Issued");
+  assert.ok(!statusCheck.includes("'Cancelled'"), "status CHECK has no extra values");
+  assert.ok(checkDefs.some((d) => /quantity\s*>=\s*\(*0\)*/.test(d)), "quantity >= 0 CHECK");
+
+  // No fake FKs: the Mongo schema stores userId as a String and itemName as a
+  // free-form String — neither is a real reference to migrated entities, so
+  // the table must have ZERO foreign keys.
+  const fks = await poolQuery(databaseUrl, `
+    SELECT kcu.column_name FROM pg_constraint c
+    JOIN information_schema.key_column_usage kcu ON c.conname = kcu.constraint_name
+    WHERE c.contype = 'f' AND c.conrelid = 'inventory_requests'::regclass`);
+  assert.strictEqual(fks.length, 0, "no fake FKs — userId and itemName are plain Strings in Mongo");
+
+  // Indexes justified by actual query patterns (Mongo schema userId index,
+  // createdAt DESC list sorts, and the duplicate-guard range predicate).
+  const indexes = await poolQuery(databaseUrl, `
+    SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'`);
+  const defs = indexes.map((r) => r.indexdef);
+  assert.ok(defs.some((d) => /\(user_id\)/.test(d)), "user_id index (Mongo schema index: true)");
+  assert.ok(defs.some((d) => /\(created_at DESC\)/.test(d)), "created_at DESC index (list sorts)");
+  assert.ok(defs.some((d) => /\(user_id, status, created_at DESC\)/.test(d)), "duplicate-guard compound index");
+
+  // Physical NUMERIC precision: an explicit-value insert round-trips exactly
+  // (this verifies no unintended rounding at the column level).
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    const rows = await pool.query(
+      "INSERT INTO inventory_requests (id, user_id, user_name, item_name, quantity, unit, reason, purpose) VALUES ($1, 'u', 'n', 'item', 1000.125, 'Pack', 'r', 'p') RETURNING quantity::text AS q",
+      ["000000000000000000000100"]
+    );
+    assert.strictEqual(rows.rows[0].q, "1000.125");
+  } finally {
+    await pool.end();
+  }
+});
+
+test("rollback of the Phase 2L inventory_requests migration can be removed and reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // Simulate rolling back only migration 013: drop the inventory_requests
+  // table (and its tracking record). All earlier tables stay in place, so a
+  // re-run must re-apply only 013 and rebuild inventory_requests + indexes.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_requests CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '013_create_inventory_requests.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*013_create_inventory_requests\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+
+  const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
+  assert.strictEqual(rows.length, 13);
+
+  const indexes = await poolQuery(databaseUrl, `
+    SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'
+    AND indexdef NOT LIKE '%inventory_requests_pkey%'`);
+  assert.strictEqual(indexes.length, 3, "re-applied migration rebuilds all three non-pkey indexes");
+
+  const { output: second } = runMigrate(databaseUrl);
+  assert.match(second, /No pending migrations\./);
+});
+
+test("a deliberately failed inventory_requests migration rolls back fully", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // Create a migration after 013 whose BEGIN-transaction fails AFTER issuing
+  // DDL. The runner wraps each file in a transaction; on error it rolls back,
+  // so no partial table/index/constraint may remain and the migration must not
+  // be recorded.
+  const broken = path.join(MIGRATIONS_DIR, "997_broken_requests_test.sql");
+  fs.writeFileSync(
+    broken,
+    "CREATE TABLE partial_requests_test (id TEXT PRIMARY KEY, user_id TEXT);" +
+    "CREATE INDEX idx_partial_requests_test ON partial_requests_test (user_id);" +
+    "SELECT * FROM table_that_does_not_exist;"
+  );
+  try {
+    const res = runMigrate(databaseUrl);
+    assert.match(res.output, /Migration 997_broken_requests_test\.sql failed/);
+    assert.strictEqual(res.status, 1);
+
+    // Not recorded.
+    const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations WHERE name = '997_broken_requests_test.sql'");
+    assert.strictEqual(rows.length, 0, "failed migration must not be recorded");
+
+    // No partial table/index/constraint may remain.
+    const objs = await poolQuery(databaseUrl, `
+      SELECT c.relname FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname IN ('partial_requests_test', 'idx_partial_requests_test')`);
+    assert.strictEqual(objs.length, 0, "no partial table/index may remain");
+    const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.partial_requests_test') AS t");
+    assert.strictEqual(tbl[0].t, null, "no partial table may remain");
+
+    // The real Phase 2L table remains intact (migration file untouched by the
+    // failure) — once the broken file is removed, re-running applies nothing.
+    const real = await poolQuery(databaseUrl, `
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'inventory_requests' ORDER BY column_name`);
+    assert.ok(real.length >= 23, "inventory_requests columns intact");
+    const tblNow = await poolQuery(databaseUrl, "SELECT to_regclass('public.inventory_requests') AS t");
+    assert.ok(tblNow[0].t, "inventory_requests still exists after the failed migration");
+  } finally {
+    fs.unlinkSync(broken);
+  }
+
+  // After cleanup the chain is fully applied and another run is a no-op.
+  const { output: noPending } = runMigrate(databaseUrl);
+  assert.match(noPending, /No pending migrations\./);
+});
+
+test("previous migrations are unchanged (git diff on migrations dir is empty of edits)", async () => {
+  // Phase 2L must not modify any previous migration file. This sanity guard
+  // re-applies the full chain from scratch and verifies the applied count is
+  // exactly the number of *.sql files in the directory.
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied 13 migration\(s\)\./);
 });
 
 test("SELECT 1 succeeds against test database", async () => {

@@ -1,3 +1,12 @@
+// Inventory Request persistence is additive (Phase 2L): the service selects
+// PostgreSQL when the Inventory Request path is explicitly used and PostgreSQL
+// is reachable, and otherwise falls back to the existing Mongoose model. The
+// standalone request endpoints (create/read/status) go through this seam; the
+// multi-entity flows below document where they intentionally stay on Mongo.
+const inventoryRequestService = require("../services/inventoryRequestService");
+// Direct model import retained for exports.issueInventoryRequest, which keeps
+// its single Mongo multi-document transaction (InventoryItem +
+// InventoryIssue + InventoryRequest) — see the comment there.
 const InventoryRequest = require("../models/InventoryRequest");
 const InventoryItem = require("../models/InventoryItem");
 const InventoryIssue = require("../models/InventoryIssue");
@@ -70,13 +79,15 @@ exports.createInventoryRequest = async (req, res) => {
       });
     }
 
-    // Duplicate check: same staffId + itemName + Pending request today
+    // Duplicate check: same staffId + itemName + Pending request today. The
+    // service routes to PostgreSQL when the datasource seam is open, and to the
+    // Mongoose model otherwise — the duplicate guard behaves identically on both.
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    const duplicate = await InventoryRequest.findOne({
+    const duplicate = await inventoryRequestService.findOne({
       userId: trimmedUserId,
       itemName: trimmedItemName,
       status: "Pending",
@@ -90,7 +101,7 @@ exports.createInventoryRequest = async (req, res) => {
       });
     }
 
-    const request = await InventoryRequest.create({
+    const request = await inventoryRequestService.create({
       userId: trimmedUserId,
       userName: trimmedUserName,
       role: requestRole,
@@ -128,7 +139,10 @@ exports.getInventoryRequests = async (req, res) => {
     const { staffId, userId } = req.params;
     const id = clean(userId || staffId);
     const query = id ? { userId: id } : {};
-    const requests = await InventoryRequest.find(query).sort({ createdAt: -1 });
+    const requests = await inventoryRequestService.findMany({
+      filter: query,
+      sort: { createdAt: -1 },
+    });
     return res.json({ success: true, requests });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -140,7 +154,7 @@ exports.getInventorySummary = async (req, res) => {
   try {
     const { staffId, userId } = req.params;
     const id = clean(userId || staffId);
-    const requests = await InventoryRequest.find({ userId: id });
+    const requests = await inventoryRequestService.findMany({ filter: { userId: id } });
     const summary = buildInventorySummary(requests);
     return res.json({ success: true, summary });
   } catch (error) {
@@ -166,22 +180,35 @@ exports.updateInventoryRequestStatus = async (req, res) => {
       });
     }
 
-    const request = await InventoryRequest.findById(id);
+    const request = await inventoryRequestService.findById(id);
     if (!request) {
       return res.status(404).json({ success: false, message: "Inventory request not found" });
     }
 
+    // Approval/rejection mutates the request, applies admin/reviewer metadata
+    // and timestamps, then persists through the Phase 2L service — PostgreSQL
+    // when the datasource seam is open, the Mongoose model otherwise. The
+    // transition rules below (cannot re-approve, cannot reject an approved
+    // request, cannot re-reject) are preserved exactly.
     if (normalizedStatus === "Approved") {
       if (request.status === "Approved") {
         return res.status(400).json({ success: false, message: "This request has already been approved." });
       }
-      request.status = "Approved";
-      request.adminReason = clean(adminReason);
-      request.reviewedBy = clean(reviewedBy) || (req.user ? req.user.name : "Admin");
-      request.reviewedAt = new Date();
-      request.approvedBy = clean(reviewedBy) || (req.user ? req.user.name : "Admin");
-      request.approvedAt = new Date();
-      await request.save();
+      const actor = clean(reviewedBy) || (req.user ? req.user.name : "Admin");
+      const updated = await inventoryRequestService.updateById(id, {
+        status: "Approved",
+        adminReason: clean(adminReason),
+        reviewedBy: actor,
+        reviewedAt: new Date(),
+        approvedBy: actor,
+        approvedAt: new Date(),
+      });
+      request.status = updated.status;
+      request.adminReason = updated.adminReason;
+      request.reviewedBy = updated.reviewedBy;
+      request.reviewedAt = updated.reviewedAt;
+      request.approvedBy = updated.approvedBy;
+      request.approvedAt = updated.approvedAt;
 
       await createStaffNotification({
         title: "🔔 Request Approved",
@@ -197,13 +224,21 @@ exports.updateInventoryRequestStatus = async (req, res) => {
         return res.status(400).json({ success: false, message: "This request has already been rejected." });
       }
 
-      request.status = "Rejected";
-      request.adminReason = clean(adminReason) || clean(rejectionReason);
-      request.rejectionReason = clean(rejectionReason) || clean(adminReason);
-      request.reviewedBy = clean(reviewedBy) || (req.user ? req.user.name : "Admin");
-      request.reviewedAt = new Date();
-      request.rejectedAt = new Date();
-      await request.save();
+      const actor = clean(reviewedBy) || (req.user ? req.user.name : "Admin");
+      const updated = await inventoryRequestService.updateById(id, {
+        status: "Rejected",
+        adminReason: clean(adminReason) || clean(rejectionReason),
+        rejectionReason: clean(rejectionReason) || clean(adminReason),
+        reviewedBy: actor,
+        reviewedAt: new Date(),
+        rejectedAt: new Date(),
+      });
+      request.status = updated.status;
+      request.adminReason = updated.adminReason;
+      request.rejectionReason = updated.rejectionReason;
+      request.reviewedBy = updated.reviewedBy;
+      request.reviewedAt = updated.reviewedAt;
+      request.rejectedAt = updated.rejectedAt;
 
       await createStaffNotification({
         title: "🔔 Request Rejected",
@@ -220,6 +255,18 @@ exports.updateInventoryRequestStatus = async (req, res) => {
 };
 
 // POST /api/admin/inventory-requests/:id/issue
+//
+// Intentionally stays on the existing Mongoose path (NOT routed through the
+// Phase 2L service). Issuing is a cross-entity business operation: it loads the
+// request, decrements InventoryItem.availableStock / increments
+// InventoryItem.issuedStock, writes an InventoryIssue row and sets the
+// request's status to 'Issued' — all inside ONE Mongo multi-document
+// transaction (mongoose.startSession). InventoryIssue is still Mongo-backed
+// (no Phase 2L migration) and the app performs no such atomic cross-entity
+// operation on PostgreSQL, so routing only the request-side of this flow to PG
+// would split the transaction across two databases and lose atomicity. The
+// inventory_requests table/repository is reached through the standalone
+// endpoints only (create / list / summary / approve / reject).
 exports.issueInventoryRequest = async (req, res) => {
   const mongoose = require("mongoose");
   const session = await mongoose.startSession();
