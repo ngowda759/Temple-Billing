@@ -30,7 +30,8 @@ const poolQuery = async (databaseUrl, sql) => {
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
-  // Phase 2A–2H tables must be dropped too so a fresh run applies the latest DDL.
+  // Phase 2A–2I tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_batches CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_items CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS prasadam_orders CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_booking_material_requests CASCADE");
@@ -53,7 +54,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 9 migration\(s\)\./);
+  assert.match(output, /Applied 10 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -66,6 +67,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "007_create_pooja_bookings.sql",
     "008_create_prasadam_orders.sql",
     "009_create_inventory_items.sql",
+    "010_create_inventory_batches.sql",
   ]);
 });
 
@@ -78,7 +80,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 9);
+  assert.strictEqual(rows.length, 10);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -104,6 +106,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "007_create_pooja_bookings.sql",
       "008_create_prasadam_orders.sql",
       "009_create_inventory_items.sql",
+      "010_create_inventory_batches.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -344,6 +347,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   // Dropping all migrations and re-running simulates a full rollback +
   // re-apply cycle at the migration layer. All DDL is idempotent (IF NOT EXISTS).
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_batches CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_items CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS prasadam_orders CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_booking_material_requests CASCADE");
@@ -362,7 +366,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 9 migration\(s\)\./);
+  assert.match(output, /Applied 10 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -378,6 +382,32 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   assert.ok(tables.some((t) => t.table_name === "pooja_booking_material_requests"));
   assert.ok(tables.some((t) => t.table_name === "prasadam_orders"));
   assert.ok(tables.some((t) => t.table_name === "inventory_items"));
+  assert.ok(tables.some((t) => t.table_name === "inventory_batches"));
+});
+
+test("rollback of the inventory_batches migration can be reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // Simulate rolling back only migration 010: drop the table (and its tracking
+  // record). inventory_items stays in place, so a re-run must re-apply only
+  // 010 and rebuild inventory_batches + its FK.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS inventory_batches CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '010_create_inventory_batches.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*010_create_inventory_batches\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+
+  const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
+  assert.strictEqual(rows.length, 10);
+
+  const fk = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'inventory_batches'::regclass AND contype = 'f'`);
+  assert.ok(fk.length === 1);
+  assert.ok(/REFERENCES inventory_items\(id\).*ON DELETE RESTRICT/i.test(fk[0].def));
 });
 
 test("SELECT 1 succeeds against test database", async () => {
