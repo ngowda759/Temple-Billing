@@ -29,6 +29,7 @@ const resetAllTables = async (databaseUrl) => {
   try {
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
     await pool.query("DROP TABLE IF EXISTS inventory_batches CASCADE");
+    await pool.query("DROP TABLE IF EXISTS inventory_consumptions CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_items CASCADE");
     await pool.query("DROP TABLE IF EXISTS prasadam_orders CASCADE");
     await pool.query("DROP TABLE IF EXISTS pooja_booking_material_requests CASCADE");
