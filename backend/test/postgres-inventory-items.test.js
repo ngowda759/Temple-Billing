@@ -263,8 +263,10 @@ test("PG path: enum values are preserved and invalid values rejected", async () 
   await assert.rejects(() => inventoryItemRepository.create(itemBase({ unit: "Litre (l)" })), /Invalid unit|check constraint/); // case-sensitive
 });
 
-test("PG path: stock counters enforce min 0 and reject negatives", async () => {
-  for (const key of ["availableStock", "minimumStock", "reorderLevel", "maximumStock", "reservedStock", "issuedStock", "consumedStock", "damagedStock", "expiredStock", "returnedStock", "shelfLifeDays"]) {
+test("PG path: the ten Mongo min-0 stock counters reject negatives", async () => {
+  // These are the fields the Mongo schema declares with min: 0. shelfLifeDays
+  // is deliberately absent (no min in Mongo) and is covered by the next test.
+  for (const key of ["availableStock", "minimumStock", "reorderLevel", "maximumStock", "reservedStock", "issuedStock", "consumedStock", "damagedStock", "expiredStock", "returnedStock"]) {
     await assert.rejects(
       () => inventoryItemRepository.create(itemBase({ [key]: -1 })),
       new RegExp(`${key} must be a number >= 0`),
@@ -275,12 +277,44 @@ test("PG path: stock counters enforce min 0 and reject negatives", async () => {
   assert.strictEqual(zero.status, "Out Of Stock");
 });
 
-test("PG path: monetary fields reject negatives", async () => {
-  for (const key of ["purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
-    await assert.rejects(
-      () => inventoryItemRepository.create(itemBase({ [key]: -0.01 })),
-      new RegExp(`${key} must be a number >= 0`),
+test("PG path: shelfLifeDays and monetary fields permit negatives exactly like Mongo", async () => {
+  // The Mongo schema has NO min on shelfLifeDays / purchasePrice / sellingPrice
+  // / gstRate / lastPurchasePrice, so PostgreSQL must accept negatives too.
+  for (const key of ["shelfLifeDays", "purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
+    const created = await inventoryItemRepository.create(itemBase({ [key]: -12.5 }));
+    assert.ok(created?._id);
+    const read = await inventoryItemRepository.findById(created._id);
+    assert.strictEqual(read[key], -12.5);
+  }
+  // Non-numeric values are still rejected (Number coercion would make them NaN).
+  await assert.rejects(
+    () => inventoryItemRepository.create(itemBase({ shelfLifeDays: "abc" })),
+    /shelfLifeDays must be a number/,
+  );
+  await assert.rejects(
+    () => inventoryItemRepository.create(itemBase({ purchasePrice: "NaN" })),
+    /purchasePrice must be a number/,
+  );
+});
+
+test("PG path: no >= 0 CHECK constraints exist on the five no-min fields", async () => {
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query(
+      `SELECT conname FROM pg_constraint
+       WHERE conrelid = 'inventory_items'::regclass
+         AND contype = 'c'
+         AND conname IN (
+           'inventory_items_shelf_life_days_check',
+           'inventory_items_purchase_price_check',
+           'inventory_items_selling_price_check',
+           'inventory_items_gst_rate_check',
+           'inventory_items_last_purchase_price_check'
+         )`,
     );
+    assert.strictEqual(rows.length, 0);
+  } finally {
+    await pool.end();
   }
 });
 
@@ -342,6 +376,18 @@ test("PG path: update enforces enums and stock counters", async () => {
   await assert.rejects(() => inventoryItemService.updateById(item._id, { availableStock: -5 }), /availableStock must be a number >= 0/);
   await assert.rejects(() => inventoryItemService.updateById(item._id, { unit: "Nope" }), /Invalid unit/);
   await assert.rejects(() => inventoryItemService.updateById(item._id, { type: "Bad" }), /Invalid type/);
+});
+
+test("PG path: update permits negative shelfLifeDays and prices (no min in Mongo)", async () => {
+  const item = await inventoryItemService.create(itemBase());
+  const updated = await inventoryItemService.updateById(item._id, {
+    shelfLifeDays: -30,
+    sellingPrice: -99.5,
+    gstRate: -8,
+  });
+  assert.strictEqual(updated.shelfLifeDays, -30);
+  assert.strictEqual(updated.sellingPrice, -99.5);
+  assert.strictEqual(updated.gstRate, -8);
 });
 
 test("PG path: update on a missing id returns null", async () => {

@@ -45,9 +45,15 @@
 --     'Miscellaneous Items', 'Cooking / Annaprasada'] — default
 --     'Miscellaneous Items'.
 --
--- Quantities and stock levels use NUMERIC. The Mongo model declares all stock
--- counters with min: 0 (no upper bound, decimals allowed), so the DB mirrors
--- NUMERIC >= 0 rather than integer.
+-- Quantities and stock levels use NUMERIC. The Mongo model declares ten stock
+-- counters with min: 0 (availableStock, reservedStock, issuedStock,
+-- consumedStock, damagedStock, expiredStock, returnedStock, minimumStock,
+-- reorderLevel, maximumStock — no upper bound, decimals allowed), so the DB
+-- mirrors NUMERIC >= 0 rather than integer.
+--
+-- shelfLifeDays, purchasePrice, sellingPrice, gstRate and lastPurchasePrice
+-- have NO min in the Mongo schema ({ type: Number, default: 0 }), so no >= 0
+-- CHECK is applied to them: PostgreSQL permits negatives exactly like Mongo.
 --
 -- Uniqueness semantics are preserved from the Mongo schema:
 --   * compound index (name, category) is UNIQUE — the real applications
@@ -69,7 +75,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   qr_code TEXT,
   type TEXT NOT NULL DEFAULT 'Consumable',
   unit TEXT NOT NULL DEFAULT 'Pack',
-  -- All stock counters: Number, required, min 0 in Mongo. Decimals allowed.
+  -- Ten stock counters with Mongo min: 0 (above). Decimals allowed.
   available_stock NUMERIC NOT NULL DEFAULT 0,
   reserved_stock NUMERIC NOT NULL DEFAULT 0,
   issued_stock NUMERIC NOT NULL DEFAULT 0,
@@ -82,9 +88,10 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   maximum_stock NUMERIC NOT NULL DEFAULT 0,
   batch_required BOOLEAN NOT NULL DEFAULT FALSE,
   expiry_required BOOLEAN NOT NULL DEFAULT FALSE,
+  -- No min in Mongo ({ type: Number, default: 0 }); negatives allowed.
   shelf_life_days NUMERIC NOT NULL DEFAULT 0,
-  -- Monetary values: Number, default 0 in Mongo. NUMERIC preserves sub-unit
-  -- scale exactly.
+  -- Monetary values: Number, default 0 in Mongo — no min (negatives allowed,
+  -- matching Mongo). NUMERIC preserves sub-unit scale exactly.
   purchase_price NUMERIC NOT NULL DEFAULT 0,
   selling_price NUMERIC NOT NULL DEFAULT 0,
   gst_rate NUMERIC NOT NULL DEFAULT 0,
@@ -107,7 +114,9 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   CONSTRAINT inventory_items_type_check CHECK (type IN ('Raw Material', 'Finished Good', 'Asset', 'Consumable', 'Other')),
   CONSTRAINT inventory_items_unit_check CHECK (unit IN ('Piece (Pc)', 'Number (Nos)', 'Unit', 'Pair', 'Set', 'Bundle', 'Packet', 'Pack', 'Box', 'Carton', 'Roll', 'Dozen', 'Tray', 'Sack', 'Bag', 'Pieces', 'Gram (g)', 'Kilogram (kg)', 'Kg', 'Quintal', 'Ton', 'Millilitre (ml)', 'Litre (L)', 'Liter', 'Can', 'Drum', 'Barrel', 'Bottle', 'Jar', 'Tin', 'Container', 'Bucket', 'Cylinder', 'Meter', 'Feet', 'Square Feet', 'Square Meter')),
   CONSTRAINT inventory_items_category_check CHECK (category IN ('Pooja Items', 'Prasadam Ingredients', 'Cleaning Materials', 'Office & Stationery', 'Electrical & Maintenance', 'Festival Materials', 'Miscellaneous Items', 'Cooking / Annaprasada')),
-  -- Stock counters mirror the Mongo min: 0.
+  -- Ten stock counters mirror the Mongo min: 0 (available_stock through
+  -- maximum_stock). shelf_life_days is intentionally NOT constrained: the Mongo
+  -- schema has no min on it, and neither do the price fields below.
   CONSTRAINT inventory_items_available_stock_check CHECK (available_stock >= 0),
   CONSTRAINT inventory_items_reserved_stock_check CHECK (reserved_stock >= 0),
   CONSTRAINT inventory_items_issued_stock_check CHECK (issued_stock >= 0),
@@ -118,15 +127,6 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   CONSTRAINT inventory_items_minimum_stock_check CHECK (minimum_stock >= 0),
   CONSTRAINT inventory_items_reorder_level_check CHECK (reorder_level >= 0),
   CONSTRAINT inventory_items_maximum_stock_check CHECK (maximum_stock >= 0),
-  CONSTRAINT inventory_items_shelf_life_days_check CHECK (shelf_life_days >= 0),
-  -- Monetary values default 0 and cannot go negative in Mongo (no min declared
-  -- on the price fields, but the schema default and every write path keep them
-  -- >= 0; the NUMERIC >= 0 CHECK preserves the read path's assumption that
-  -- prices are never negative).
-  CONSTRAINT inventory_items_purchase_price_check CHECK (purchase_price >= 0),
-  CONSTRAINT inventory_items_selling_price_check CHECK (selling_price >= 0),
-  CONSTRAINT inventory_items_gst_rate_check CHECK (gst_rate >= 0),
-  CONSTRAINT inventory_items_last_purchase_price_check CHECK (last_purchase_price >= 0),
   -- Mirrors the Mongo schema's { name: 1, category: 1 } unique index.
   CONSTRAINT inventory_items_name_category_key UNIQUE (name, category)
 );
@@ -135,6 +135,29 @@ CREATE TABLE IF NOT EXISTS inventory_items (
 -- unique index only constrains non-NULL itemCodes, exactly like Mongo's sparse
 -- index.
 CREATE UNIQUE INDEX IF NOT EXISTS inventory_items_item_code_key ON inventory_items (item_code) WHERE item_code IS NOT NULL;
+
+-- Correctness fix: the initial 009 applied >= 0 CHECKs to shelf_life_days and
+-- the four price fields even though the Mongo schema declares no min on them.
+-- Drop those constraints now (idempotently) so PostgreSQL is not stricter than
+-- Mongo. The ten stock-counter CHECKs (matching Mongo min: 0) stay in place.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_items_shelf_life_days_check') THEN
+    ALTER TABLE inventory_items DROP CONSTRAINT inventory_items_shelf_life_days_check;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_items_purchase_price_check') THEN
+    ALTER TABLE inventory_items DROP CONSTRAINT inventory_items_purchase_price_check;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_items_selling_price_check') THEN
+    ALTER TABLE inventory_items DROP CONSTRAINT inventory_items_selling_price_check;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_items_gst_rate_check') THEN
+    ALTER TABLE inventory_items DROP CONSTRAINT inventory_items_gst_rate_check;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_items_last_purchase_price_check') THEN
+    ALTER TABLE inventory_items DROP CONSTRAINT inventory_items_last_purchase_price_check;
+  END IF;
+END $$;
 
 -- Inventory lists sort by name ASC ({ name: 1 }) in getAllInventoryItems and
 -- getInventoryCatalog.

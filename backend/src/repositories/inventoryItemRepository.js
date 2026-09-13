@@ -42,10 +42,11 @@ const assertName = (name) => {
   }
 };
 
-// Mirrors the Mongo schema: stock counters / minimumStock / reorderLevel /
-// maximumStock / shelfLifeDays are Number min: 0. Decimal quantities are
+// Mirrors the Mongo schema: the nine min: 0 stock counters plus minimumStock,
+// reorderLevel and maximumStock are Number min: 0. Decimal quantities are
 // allowed (the real flows use fractional kitchen quantities), so the check is
-// >= 0 rather than integer.
+// >= 0 rather than integer. shelfLifeDays has NO min in the Mongo schema
+// ({ type: Number, default: 0 }), so it is not validated as a stock counter.
 const assertStockCounter = (value, label) => {
   if (value === undefined || value === null) return;
   const num = Number(value);
@@ -54,12 +55,13 @@ const assertStockCounter = (value, label) => {
   }
 };
 
-// Monetary fields default 0 and are never negative on any write path.
+// Monetary fields default 0 in the Mongo schema and have NO min — negatives are
+// permitted exactly as in Mongo, so only reject non-numeric values.
 const assertPrice = (value, label) => {
   if (value === undefined || value === null) return;
   const num = Number(value);
-  if (!Number.isFinite(num) || num < 0) {
-    throw new Error(`Invalid ${label}: ${value}. ${label} must be a number >= 0`);
+  if (!Number.isFinite(num)) {
+    throw new Error(`Invalid ${label}: ${value}. ${label} must be a number`);
   }
 };
 
@@ -303,11 +305,11 @@ const assertValidCreate = (data) => {
   for (const key of [
     "availableStock", "reservedStock", "issuedStock", "consumedStock",
     "damagedStock", "expiredStock", "returnedStock", "minimumStock",
-    "reorderLevel", "maximumStock", "shelfLifeDays",
+    "reorderLevel", "maximumStock",
   ]) {
     assertStockCounter(data[key], key);
   }
-  for (const key of ["purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
+  for (const key of ["shelfLifeDays", "purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
     assertPrice(data[key], key);
   }
 };
@@ -319,11 +321,11 @@ const validateUpdates = (updates) => {
   for (const key of [
     "availableStock", "reservedStock", "issuedStock", "consumedStock",
     "damagedStock", "expiredStock", "returnedStock", "minimumStock",
-    "reorderLevel", "maximumStock", "shelfLifeDays",
+    "reorderLevel", "maximumStock",
   ]) {
     assertStockCounter(updates[key], key);
   }
-  for (const key of ["purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
+  for (const key of ["shelfLifeDays", "purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
     assertPrice(updates[key], key);
   }
 };

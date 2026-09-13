@@ -55,11 +55,14 @@ const assertStockCounter = (value, label) => {
   }
 };
 
+// shelfLifeDays and the price fields have NO min in the Mongo schema
+// ({ type: Number, default: 0 }); negatives are allowed, so only reject
+// non-numeric values.
 const assertPrice = (value, label) => {
   if (value === undefined || value === null) return;
   const num = Number(value);
-  if (!Number.isFinite(num) || num < 0) {
-    throw new Error(`Invalid ${label}: ${value}. ${label} must be a number >= 0`);
+  if (!Number.isFinite(num)) {
+    throw new Error(`Invalid ${label}: ${value}. ${label} must be a number`);
   }
 };
 
@@ -74,11 +77,12 @@ const assertPrice = (value, label) => {
  *  - type / unit / category belong to the Mongo enum/unit value sets; unit is
  *    required and defaults to 'Pack', type defaults to 'Consumable', category
  *    defaults to 'Miscellaneous Items'.
- *  - all stock counters (availableStock, reservedStock, issuedStock,
- *    consumedStock, damagedStock, expiredStock, returnedStock, minimumStock,
- *    reorderLevel, maximumStock, shelfLifeDays) are >= 0 with default 0.
- *  - prices (purchasePrice, sellingPrice, gstRate, lastPurchasePrice) are
- *    >= 0 with default 0.
+ *  - the ten stock counters with Mongo min: 0 (availableStock, reservedStock,
+ *    issuedStock, consumedStock, damagedStock, expiredStock, returnedStock,
+ *    minimumStock, reorderLevel, maximumStock) are >= 0 with default 0.
+ *  - shelfLifeDays and prices (shelfLifeDays, purchasePrice, sellingPrice,
+ *    gstRate, lastPurchasePrice) default to 0 and have NO min in the Mongo
+ *    schema, so negatives remain allowed.
  */
 const normalizeInventoryItem = (data) => {
   if (!data) throw new Error("Inventory item data is required");
@@ -91,11 +95,11 @@ const normalizeInventoryItem = (data) => {
   for (const key of [
     "availableStock", "reservedStock", "issuedStock", "consumedStock",
     "damagedStock", "expiredStock", "returnedStock", "minimumStock",
-    "reorderLevel", "maximumStock", "shelfLifeDays",
+    "reorderLevel", "maximumStock",
   ]) {
     assertStockCounter(data[key], key);
   }
-  for (const key of ["purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
+  for (const key of ["shelfLifeDays", "purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
     assertPrice(data[key], key);
   }
 
@@ -156,11 +160,11 @@ const updateById = async (id, updates) => {
     for (const key of [
       "availableStock", "reservedStock", "issuedStock", "consumedStock",
       "damagedStock", "expiredStock", "returnedStock", "minimumStock",
-      "reorderLevel", "maximumStock", "shelfLifeDays",
+      "reorderLevel", "maximumStock",
     ]) {
       assertStockCounter(updates[key], key);
     }
-    for (const key of ["purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
+    for (const key of ["shelfLifeDays", "purchasePrice", "sellingPrice", "gstRate", "lastPurchasePrice"]) {
       assertPrice(updates[key], key);
     }
     // Booleans mirror the Mongo cast semantics: Mongoose Boolean accepts any
