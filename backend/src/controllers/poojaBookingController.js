@@ -47,6 +47,10 @@ const createBooking = async (req, res) => {
             unit: reqMat.unit
           });
           
+          // System-generated request creation intentionally stays on the
+          // Mongoose model (NOT the Phase 2L service): this runs inside the
+          // pooja booking creation flow whose PoojaBooking document is still
+          // Mongo-backed, matching the Phase 2L additive boundary.
           const InventoryRequest = require("../models/InventoryRequest");
           await InventoryRequest.create({
             userId: req.user.id,

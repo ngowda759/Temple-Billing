@@ -33,6 +33,11 @@ const Employee = require("../models/Employee");
 const Pooja = require("../models/Pooja");
 
 const generateInventoryRequestsForBooking = async (booking) => {
+  // System-generated request creation intentionally stays on the Mongoose
+  // model (NOT the Phase 2L service): it runs inside the booking flow and
+  // writes the request id back into booking.templeMaterialRequests on the same
+  // Mongo document. This matches the Phase 2L additive boundary — only the
+  // standalone request endpoints route through the PostgreSQL repository.
   try {
     const items = booking.isCombined ? (booking.items || []) : [{
       type: "pooja",

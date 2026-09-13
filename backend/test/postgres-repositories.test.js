@@ -3,6 +3,7 @@ const assert = require("node:assert");
 const crypto = require("crypto");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { Pool } = require("pg");
 
 const { closePostgres } = require("../src/config/postgres");
 const dbConfig = require("../src/config/db");
@@ -15,6 +16,7 @@ let billRepository;
 let billItemRepository;
 let donationRepository;
 let bookingRepository;
+let inventoryRequestRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -80,6 +82,7 @@ test.before(async () => {
   billItemRepository = require("../src/repositories/billItemRepository");
   donationRepository = require("../src/repositories/donationRepository");
   bookingRepository = require("../src/repositories/bookingRepository");
+  inventoryRequestRepository = require("../src/repositories/inventoryRequestRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
@@ -1565,4 +1568,319 @@ test("donation repository: donation → AccountTransaction.referenceId relations
     filter: { referenceId: donation._id, referenceModel: "Donation" },
   });
   assert.ok(byRef.some((t) => t._id === tx._id));
+});
+
+// ─── Phase 2L: Inventory Requests ─────────────────────────────────────────
+const requestBase = (overrides = {}) => ({
+  userId: "staff-ramesh",
+  userName: "Ramesh Kumar",
+  role: "Staff",
+  itemName: "Camphor",
+  quantity: 10,
+  unit: "Pack",
+  reason: "Daily pooja",
+  purpose: "Pooja needs",
+  expectedDate: new Date("2025-07-01T10:00:00+05:30"),
+  priority: "Medium",
+  status: "Pending",
+  ...overrides,
+});
+
+test("inventory request repository: create → read → update round trip", async () => {
+  const created = await inventoryRequestRepository.create(requestBase());
+  assert.ok(created._id);
+  assert.match(created._id, /^[0-9a-f]{24}$/);
+  assert.strictEqual(created.id, created._id);
+  assert.strictEqual(created.userId, "staff-ramesh");
+  assert.strictEqual(created.userName, "Ramesh Kumar");
+  assert.strictEqual(created.role, "Staff");
+  assert.strictEqual(created.requestedBy, "");
+  assert.strictEqual(created.itemName, "Camphor");
+  assert.strictEqual(created.quantity, 10);
+  assert.strictEqual(created.unit, "Pack");
+  assert.strictEqual(created.reason, "Daily pooja");
+  assert.strictEqual(created.purpose, "Pooja needs");
+  assert.ok(created.expectedDate instanceof Date);
+  assert.strictEqual(created.priority, "Medium");
+  assert.strictEqual(created.status, "Pending");
+  assert.strictEqual(created.adminReason, "");
+  assert.strictEqual(created.rejectionReason, "");
+  assert.strictEqual(created.approvedBy, "");
+  assert.strictEqual(created.reviewedBy, "");
+  assert.strictEqual(created.rejectedAt, undefined);
+  assert.strictEqual(created.approvedAt, undefined);
+  assert.strictEqual(created.reviewedAt, undefined);
+  assert.strictEqual(created.issuedAt, undefined);
+  assert.ok(created.createdAt instanceof Date);
+  assert.ok(created.updatedAt instanceof Date);
+
+  const read = await inventoryRequestRepository.findById(created._id);
+  assert.strictEqual(read.itemName, "Camphor");
+
+  const updated = await inventoryRequestRepository.updateById(created._id, {
+    status: "Approved",
+    adminReason: "ok",
+    reviewedBy: "Admin",
+    reviewedAt: new Date("2025-07-02T09:00:00Z"),
+    approvedBy: "Admin",
+    approvedAt: new Date("2025-07-02T09:00:00Z"),
+  });
+  assert.strictEqual(updated.status, "Approved");
+  assert.strictEqual(updated.adminReason, "ok");
+  assert.strictEqual(updated.reviewedBy, "Admin");
+  assert.ok(updated.reviewedAt instanceof Date);
+  assert.strictEqual(updated.approvedBy, "Admin");
+  assert.ok(updated.approvedAt instanceof Date);
+  assert.ok(updated.updatedAt instanceof Date);
+});
+
+test("inventory request repository: every Mongo persisted field maps to the PostgreSQL row", async () => {
+  const when = new Date("2025-12-31T23:59:59+05:30");
+  const approvedAt = new Date("2026-01-01T06:00:00Z");
+  const issuedAt = new Date("2026-01-02T06:00:00Z");
+  const created = await inventoryRequestRepository.create(requestBase({
+    userId: "priest-kumar",
+    userName: "Priest Kumar",
+    role: "Priest",
+    requestedBy: "Priest Kumar",
+    itemName: "Kumkum",
+    quantity: "1000.125",
+    unit: "Gram (g)",
+    reason: "Devotees",
+    purpose: "Archana",
+    expectedDate: when,
+    priority: "High",
+    adminReason: "Approved for archana",
+    rejectionReason: "",
+    approvedBy: "Admin",
+    approvedAt,
+    reviewedBy: "Admin",
+    reviewedAt: approvedAt,
+    issuedAt,
+  }));
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query("SELECT * FROM inventory_requests WHERE id = $1", [created._id]);
+    const row = rows[0];
+    assert.strictEqual(row.user_id, "priest-kumar");
+    assert.strictEqual(row.user_name, "Priest Kumar");
+    assert.strictEqual(row.role, "Priest");
+    assert.strictEqual(row.requested_by, "Priest Kumar");
+    assert.strictEqual(row.item_name, "Kumkum");
+    assert.strictEqual(row.quantity.toString(), "1000.125");
+    assert.strictEqual(row.unit, "Gram (g)");
+    assert.strictEqual(row.reason, "Devotees");
+    assert.strictEqual(row.purpose, "Archana");
+    assert.strictEqual(row.expected_date.toISOString(), when.toISOString());
+    assert.strictEqual(row.priority, "High");
+    assert.strictEqual(row.status, "Pending");
+    assert.strictEqual(row.admin_reason, "Approved for archana");
+    assert.strictEqual(row.rejection_reason, "");
+    assert.strictEqual(row.approved_by, "Admin");
+    assert.strictEqual(row.approved_at.toISOString(), approvedAt.toISOString());
+    assert.strictEqual(row.reviewed_by, "Admin");
+    assert.strictEqual(row.reviewed_at.toISOString(), approvedAt.toISOString());
+    assert.strictEqual(row.issued_at.toISOString(), issuedAt.toISOString());
+    assert.strictEqual(row.rejected_at, null);
+    assert.ok(row.created_at instanceof Date);
+    assert.ok(row.updated_at instanceof Date);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("inventory request repository: required fields are enforced like Mongo", async () => {
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ userId: undefined })), /userId is required/);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ userName: " " })), /userName is required/);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ itemName: "" })), /itemName is required/);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ quantity: undefined })), /quantity is required/);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ unit: " " })), /unit is required/);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ reason: "" })), /reason is required/);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ purpose: undefined })), /purpose is required/);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ quantity: "abc" })), /quantity must be a number/);
+});
+
+test("inventory request repository: defaults match the Mongo schema", async () => {
+  const created = await inventoryRequestRepository.create(requestBase({
+    role: undefined,
+    requestedBy: undefined,
+    priority: undefined,
+    status: undefined,
+    adminReason: undefined,
+    rejectionReason: undefined,
+    approvedBy: undefined,
+    reviewedBy: undefined,
+    rejectedAt: undefined,
+    approvedAt: undefined,
+    reviewedAt: undefined,
+    issuedAt: undefined,
+    expectedDate: undefined,
+  }));
+  assert.strictEqual(created.role, "Staff");
+  assert.strictEqual(created.requestedBy, "");
+  assert.strictEqual(created.priority, "Medium");
+  assert.strictEqual(created.status, "Pending");
+  assert.strictEqual(created.adminReason, "");
+  assert.strictEqual(created.rejectionReason, "");
+  assert.strictEqual(created.approvedBy, "");
+  assert.strictEqual(created.reviewedBy, "");
+  assert.strictEqual(created.rejectedAt, undefined);
+  assert.strictEqual(created.approvedAt, undefined);
+  assert.strictEqual(created.reviewedAt, undefined);
+  assert.strictEqual(created.issuedAt, undefined);
+  assert.ok(created.expectedDate instanceof Date);
+});
+
+test("inventory request repository: enums are preserved and invalid values are rejected", async () => {
+  for (const priority of ["High", "Medium", "Low"]) {
+    const req = await inventoryRequestRepository.create(requestBase({ priority }));
+    assert.strictEqual(req.priority, priority);
+  }
+  for (const status of ["Pending", "Approved", "Rejected", "Issued"]) {
+    const req = await inventoryRequestRepository.create(requestBase({ status, userId: unique() + status }));
+    assert.strictEqual(req.status, status);
+  }
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ priority: "Urgent" })), /Invalid priority/);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ status: "Cancelled" })), /Invalid status/);
+  await assert.rejects(() => inventoryRequestRepository.updateById("000000000000000000000001", { status: "Cancelled" }), /Invalid status/);
+});
+
+test("inventory request repository: zero quantity is legal, negatives rejected (Mongo min: 0)", async () => {
+  const zero = await inventoryRequestRepository.create(requestBase({ quantity: 0 }));
+  assert.strictEqual(Number(zero.quantity), 0);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ quantity: -1 })), /quantity must be >= 0/);
+  await assert.rejects(() => inventoryRequestRepository.create(requestBase({ quantity: -0.5 })), /quantity must be >= 0/);
+
+  // The DB CHECK is real, not just service-level.
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    await assert.rejects(
+      () => pool.query(
+        "INSERT INTO inventory_requests (id, user_id, user_name, item_name, quantity, unit, reason, purpose) VALUES ($1, 'u', 'n', 'item', -1, 'Pack', 'r', 'p')",
+        [crypto.randomBytes(12).toString("hex")]
+      ),
+      /inventory_requests_quantity_check/,
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("inventory request repository: quantity precision round-trips exactly through NUMERIC", async () => {
+  const values = ["0", "0.01", "1", "10.50", "1000.125", "123456.789"];
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    for (const v of values) {
+      const req = await inventoryRequestRepository.create(requestBase({ quantity: v, userId: unique() }));
+      const { rows } = await pool.query("SELECT quantity::text AS q FROM inventory_requests WHERE id = $1", [req._id]);
+      assert.strictEqual(rows[0].q, v);
+      const read = await inventoryRequestRepository.findById(req._id);
+      assert.strictEqual(read.quantity, Number(v));
+    }
+  } finally {
+    await pool.end();
+  }
+});
+
+test("inventory request repository: dates round-trip through TIMESTAMPTZ preserving the instant", async () => {
+  const when = new Date("2025-08-15T10:30:00+05:30");
+  const created = await inventoryRequestRepository.create(requestBase({ expectedDate: when }));
+  const read = await inventoryRequestRepository.findById(created._id);
+  assert.ok(read.expectedDate instanceof Date);
+  assert.strictEqual(read.expectedDate.toISOString(), when.toISOString());
+  assert.ok(read.createdAt instanceof Date);
+  assert.ok(read.updatedAt instanceof Date);
+});
+
+test("inventory request repository: legacy IDs round-trip and create with the same id is idempotent", async () => {
+  const chosenId = crypto.randomBytes(12).toString("hex");
+  const first = await inventoryRequestRepository.create(requestBase({ id: chosenId }));
+  assert.strictEqual(first._id, chosenId);
+  const second = await inventoryRequestRepository.create(requestBase({ id: chosenId, quantity: 200 }));
+  assert.strictEqual(second._id, chosenId);
+  assert.strictEqual(second.quantity, 10, "ON CONFLICT DO NOTHING keeps the existing row");
+});
+
+test("inventory request repository: findOne, findMany, $in, filtering, sorting and pagination", async () => {
+  const now = Date.now();
+  const base = requestBase({ userId: `staff-filter-${unique()}` });
+  const pending = await inventoryRequestRepository.create({ ...base, itemName: "Camphor", status: "Pending", createdAt: new Date(now - 5 * 60 * 1000) });
+  const approved = await inventoryRequestRepository.create({ ...base, itemName: "Kumkum", status: "Approved", approvedAt: new Date(), createdAt: new Date(now - 4 * 60 * 1000) });
+  const rejected = await inventoryRequestRepository.create({ ...base, itemName: "Vibhuti", status: "Rejected", rejectedAt: new Date(), createdAt: new Date(now - 3 * 60 * 1000) });
+
+  // findMany with status filter
+  const approvedList = await inventoryRequestRepository.findMany({ filter: { userId: base.userId, status: "Approved" } });
+  assert.ok(approvedList.some((r) => r._id === approved._id));
+  assert.ok(!approvedList.some((r) => r._id === rejected._id));
+
+  // $in over status
+  const inList = await inventoryRequestRepository.findMany({
+    filter: { userId: base.userId, status: { $in: ["Pending", "Approved"] } },
+  });
+  assert.ok(inList.some((r) => r._id === pending._id));
+  assert.ok(inList.some((r) => r._id === approved._id));
+  assert.ok(!inList.some((r) => r._id === rejected._id));
+
+  // $in over ids
+  const idIn = await inventoryRequestRepository.findMany({
+    filter: { id: { $in: [pending._id, approved._id] } },
+  });
+  assert.strictEqual(idIn.length, 2);
+
+  // createdAt range filter (the createInventoryRequest duplicate guard)
+  const since = new Date(now - 10 * 60 * 1000);
+  const dupCandidate = await inventoryRequestRepository.findOne({
+    userId: base.userId,
+    itemName: "Camphor",
+    status: "Pending",
+    createdAt: { $gte: since, $lte: new Date() },
+  });
+  assert.ok(dupCandidate);
+  assert.strictEqual(dupCandidate._id, pending._id);
+
+  // sort default createdAt DESC; query-specific priority/quantity sorts
+  const sorted = await inventoryRequestRepository.findMany({
+    filter: { userId: base.userId },
+    sort: { createdAt: -1 },
+  });
+  assert.deepStrictEqual(sorted.map((r) => r._id), [rejected._id, approved._id, pending._id]);
+
+  // pagination
+  const page1 = await inventoryRequestRepository.findMany({ filter: { userId: base.userId }, sort: { createdAt: -1 }, limit: 2 });
+  assert.strictEqual(page1.length, 2);
+  const page2 = await inventoryRequestRepository.findMany({ filter: { userId: base.userId }, sort: { createdAt: -1 }, limit: 2, offset: 2 });
+  assert.strictEqual(page2.length, 1);
+
+  // unknown sort keys fall back to createdAt DESC
+  const safeSort = await inventoryRequestRepository.findMany({ filter: { userId: base.userId }, sort: { badColumn: 1 } });
+  assert.strictEqual(safeSort.length, 3);
+});
+
+test("inventory request repository: count uses COUNT(*) and filter counts match", async () => {
+  const userId = `count-user-${unique()}`;
+  const total = await inventoryRequestRepository.count({});
+  await inventoryRequestRepository.create(requestBase({ userId }));
+  await inventoryRequestRepository.create(requestBase({ userId, status: "Approved", approvedAt: new Date() }));
+  const pendingCount = await inventoryRequestRepository.count({ userId, status: "Pending" });
+  assert.strictEqual(pendingCount, 1);
+  const allCount = await inventoryRequestRepository.count({ userId });
+  assert.strictEqual(allCount, 2);
+  // bare count over everything grew by exactly 2
+  const totalAfter = await inventoryRequestRepository.count({});
+  assert.strictEqual(totalAfter, total + 2);
+});
+
+test("inventory request repository: updateById on a missing id returns null and empty updates are no-ops", async () => {
+  assert.strictEqual(await inventoryRequestRepository.updateById("000000000000000000000001", { adminReason: "x" }), null);
+  const existing = await inventoryRequestRepository.create(requestBase());
+  const noop = await inventoryRequestRepository.updateById(existing._id, {});
+  assert.strictEqual(noop._id, existing._id);
+});
+
+test("inventory request repository: destroy reports existence", async () => {
+  const created = await inventoryRequestRepository.create(requestBase());
+  assert.strictEqual(await inventoryRequestRepository.destroy("000000000000000000000001"), false);
+  assert.strictEqual(await inventoryRequestRepository.destroy(created._id), true);
+  assert.strictEqual(await inventoryRequestRepository.destroy(created._id), false);
+  assert.strictEqual(await inventoryRequestRepository.findById(created._id), null);
 });
