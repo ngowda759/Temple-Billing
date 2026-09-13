@@ -17,6 +17,9 @@ let billItemRepository;
 let donationRepository;
 let bookingRepository;
 let inventoryRequestRepository;
+let inventoryItemRepository;
+let purchaseOrderRepository;
+let purchaseOrderItemRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -40,6 +43,8 @@ const resetAllTables = async (databaseUrl) => {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS purchase_order_items CASCADE");
+    await pool.query("DROP TABLE IF EXISTS purchase_orders CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_batches CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_consumptions CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_items CASCADE");
@@ -83,6 +88,9 @@ test.before(async () => {
   donationRepository = require("../src/repositories/donationRepository");
   bookingRepository = require("../src/repositories/bookingRepository");
   inventoryRequestRepository = require("../src/repositories/inventoryRequestRepository");
+  inventoryItemRepository = require("../src/repositories/inventoryItemRepository");
+  purchaseOrderRepository = require("../src/repositories/purchaseOrderRepository");
+  purchaseOrderItemRepository = require("../src/repositories/purchaseOrderItemRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
@@ -1883,4 +1891,517 @@ test("inventory request repository: destroy reports existence", async () => {
   assert.strictEqual(await inventoryRequestRepository.destroy(created._id), true);
   assert.strictEqual(await inventoryRequestRepository.destroy(created._id), false);
   assert.strictEqual(await inventoryRequestRepository.findById(created._id), null);
+});
+
+
+// ─── Phase 2M: Purchase Orders ─────────────────────────────────────────────
+const poBase = (overrides = {}) => ({
+  poNumber: `PO-${unique()}`,
+  supplier: "0000000000000000000000aa",
+  items: [
+    { item: "0000000000000000000000bb", orderedQuantity: 10.5, unitPrice: "1000.99", totalPrice: 10510.395, receivedQuantity: 0 },
+    { item: "0000000000000000000000cc", orderedQuantity: 2, unitPrice: "0.01", totalPrice: 0.02, receivedQuantity: 0 },
+  ],
+  totalAmount: "123456789.1234",
+  status: "Pending Approval",
+  expectedDeliveryDate: new Date("2026-01-15T10:00:00Z"),
+  notes: "Repo test PO",
+  createdBy: "0000000000000000000000dd",
+  ...overrides,
+});
+
+// Creates a real inventory_items row (satisfying the real FK) and returns it.
+const createInventoryItemRow = async (name) => {
+  const created = await inventoryItemRepository.create({
+    name: name || `PO-Item-${unique()}`,
+    unit: "Pack",
+  });
+  assert.ok(created?._id, "inventory item row must exist for the PO FK");
+  return created;
+};
+
+// Creates a PO whose items reference a REAL inventory_items row, so the FK is
+// satisfied. Returns { po, item }.
+const createPoWithRealItem = async (overrides = {}) => {
+  const item = await createInventoryItemRow();
+  const data = {
+    ...poBase({ poNumber: `PO-${unique()}` }),
+    items: [
+      { item: item._id, orderedQuantity: 10.5, unitPrice: "1000.99", totalPrice: 10510.395, receivedQuantity: 0 },
+    ],
+    ...overrides,
+  };
+  const po = await purchaseOrderRepository.create(data);
+  return { po, item };
+};
+
+// ON DELETE RESTRICT on purchase_order_items.inventory_item_id means an
+// inventory item that still has referencing PO rows cannot be deleted (Mongo
+// semantics preservation). Tests remove those POs first, then the item.
+const cleanupPoItem = async (itemId) => {
+  if (!itemId) return;
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query(
+      "SELECT DISTINCT purchase_order_id AS po_id FROM purchase_order_items WHERE inventory_item_id = $1",
+      [String(itemId)]
+    );
+    for (const r of rows) await purchaseOrderRepository.destroy(r.po_id);
+  } finally {
+    await pool.end();
+  }
+  await inventoryItemRepository.destroy(String(itemId)).catch(() => {});
+};
+
+test("purchase order repository: create → read → update round trip with embedded items", async () => {
+  const item = await createInventoryItemRow();
+  const created = await purchaseOrderRepository.create(poBase({
+    poNumber: `PO-${unique()}`,
+    items: [
+      { item: item._id, orderedQuantity: 10.5, unitPrice: "1000.99", totalPrice: 10510.395, receivedQuantity: 0 },
+    ],
+  }));
+  assert.ok(created._id);
+  assert.match(created._id, /^[0-9a-f]{24}$/);
+  assert.strictEqual(created.id, created._id);
+  assert.mockEqual ? assert.strictEqual(true, true) : null;
+  assert.strictEqual(created.supplier, "0000000000000000000000aa");
+  assert.strictEqual(created.status, "Pending Approval");
+  assert.strictEqual(created.totalAmount, 123456789.1234);
+  assert.strictEqual(created.notes, "Repo test PO");
+  assert.strictEqual(created.createdBy, "0000000000000000000000dd");
+  assert.strictEqual(created.approvedBy, undefined);
+  assert.ok(created.expectedDeliveryDate instanceof Date);
+  assert.strictEqual(created.expectedDeliveryDate.toISOString(), "2026-01-15T10:00:00.000Z");
+  assert.strictEqual(created.items.length, 1);
+  assert.strictEqual(created.items[0].item, item._id);
+  assert.strictEqual(created.items[0].orderedQuantity, 10.5);
+  assert.ok(created.createdAt instanceof Date);
+  assert.ok(created.updatedAt instanceof Date);
+
+  const read = await purchaseOrderRepository.findById(created._id);
+  assert.strictEqual(read.poNumber, created.poNumber);
+
+  const updated = await purchaseOrderRepository.updateById(created._id, {
+    status: "Partially Received",
+    approvedBy: "0000000000000000000000ee",
+    notes: "updated",
+  });
+  assert.strictEqual(updated.status, "Partially Received");
+  assert.strictEqual(updated.approvedBy, "0000000000000000000000ee");
+  assert.strictEqual(updated.notes, "updated");
+  assert.ok(updated.updatedAt instanceof Date);
+
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: every Mongo persisted field maps to the PostgreSQL row", async () => {
+  const item = await createInventoryItemRow();
+  const expectedDelivery = new Date("2026-03-01T06:30:00+05:30");
+  const created = await purchaseOrderRepository.create(poBase({
+    poNumber: `PO-${unique()}`,
+    items: [
+      { item: item._id, orderedQuantity: "1000.125", unitPrice: "10.50", totalPrice: 10501.3125, receivedQuantity: "1000.125" },
+    ],
+    expectedDeliveryDate: expectedDelivery,
+    notes: "full map",
+    createdBy: "employee-x",
+    approvedBy: "employee-y",
+  }));
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query("SELECT * FROM purchase_orders WHERE id = $1", [created._id]);
+    const row = rows[0];
+    assert.strictEqual(row.po_number, created.poNumber);
+    assert.strictEqual(row.supplier, "0000000000000000000000aa");
+    assert.strictEqual(row.total_amount.toString(), "123456789.1234");
+    assert.strictEqual(row.status, "Pending Approval");
+    assert.strictEqual(row.expected_delivery_date.toISOString(), expectedDelivery.toISOString());
+    assert.strictEqual(row.notes, "full map");
+    assert.strictEqual(row.created_by, "employee-x");
+    assert.strictEqual(row.approved_by, "employee-y");
+    assert.ok(row.created_at instanceof Date);
+    assert.ok(row.updated_at instanceof Date);
+
+    const { rows: itemRows } = await pool.query(
+      "SELECT * FROM purchase_order_items WHERE purchase_order_id = $1 ORDER BY position",
+      [created._id]
+    );
+    assert.strictEqual(itemRows.length, 1);
+    assert.strictEqual(itemRows[0].inventory_item_id, item._id);
+    assert.strictEqual(itemRows[0].ordered_quantity.toString(), "1000.125");
+    assert.strictEqual(itemRows[0].unit_price.toString(), "10.50");
+    assert.strictEqual(itemRows[0].total_price.toString(), "10501.3125");
+    assert.strictEqual(itemRows[0].received_quantity.toString(), "1000.125");
+  } finally {
+    await pool.end();
+  }
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: required fields are enforced like Mongo", async () => {
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ poNumber: undefined })), /poNumber is required/);
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ poNumber: " " })), /poNumber is required/);
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ supplier: undefined })), /supplier is required/);
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ totalAmount: undefined })), /totalAmount is required/);
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ totalAmount: "abc" })), /totalAmount must be a number/);
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ items: [{ item: undefined, orderedQuantity: 1, unitPrice: 1, totalPrice: 1 }] })), /items.item is required/);
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ items: [{ item: "x", orderedQuantity: undefined, unitPrice: 1, totalPrice: 1 }] })), /items.orderedQuantity is required/);
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ items: [{ item: "x", orderedQuantity: 1, unitPrice: undefined, totalPrice: 1 }] })), /items.unitPrice is required/);
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ items: [{ item: "x", orderedQuantity: 1, unitPrice: 1, totalPrice: undefined }] })), /items.totalPrice is required/);
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ items: [{ item: "x", orderedQuantity: "abc", unitPrice: 1, totalPrice: 1 }] })), /items.orderedQuantity must be a number/);
+});
+
+test("purchase order repository: defaults match the Mongo schema", async () => {
+  const item = await createInventoryItemRow();
+  const created = await purchaseOrderRepository.create({
+    poNumber: `PO-${unique()}`,
+    supplier: "0000000000000000000000aa",
+    items: [
+      { item: item._id, orderedQuantity: 1, unitPrice: "1.50", totalPrice: 1.5 },
+    ],
+    totalAmount: 1.5,
+    status: undefined,
+    expectedDeliveryDate: undefined,
+    notes: undefined,
+    createdBy: undefined,
+    approvedBy: undefined,
+  });
+  assert.strictEqual(created.status, "Draft");
+  assert.strictEqual(created.expectedDeliveryDate, undefined);
+  assert.strictEqual(created.notes, undefined);
+  assert.strictEqual(created.createdBy, undefined);
+  assert.strictEqual(created.approvedBy, undefined);
+  assert.strictEqual(created.items[0].receivedQuantity, 0, "receivedQuantity defaults to 0");
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: status enum is preserved and invalid values are rejected", async () => {
+  const item = await createInventoryItemRow();
+  for (const status of ["Draft", "Pending Approval", "Approved", "Sent", "Partially Received", "Received", "Cancelled", "Closed"]) {
+    const po = await purchaseOrderRepository.create(poBase({ poNumber: `PO-${unique()}`, status, totalAmount: 1, items: [{ item: item._id, orderedQuantity: 1, unitPrice: 1, totalPrice: 1 }] }));
+    assert.strictEqual(po.status, status);
+  }
+  await assert.rejects(() => purchaseOrderRepository.create(poBase({ status: "Ordered" })), /Invalid status/);
+  await assert.rejects(() => purchaseOrderRepository.updateById("000000000000000000000001", { status: "Ordered" }), /Invalid status/);
+  const po = await purchaseOrderRepository.create(poBase({ poNumber: `PO-${unique()}`, totalAmount: 1, items: [{ item: item._id, orderedQuantity: 1, unitPrice: 1, totalPrice: 1 }] }));
+  await assert.rejects(() => purchaseOrderRepository.updateById(po._id, { status: "Ordered" }), /Invalid status/);
+  await cleanupPoItem(item._id);
+
+  // The DB CHECK is real, not just service-level.
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    await assert.rejects(
+      () => pool.query(
+        "INSERT INTO purchase_orders (id, po_number, supplier, total_amount, status) VALUES ($1, $2, 's', 1, 'Ordered')",
+        [crypto.randomBytes(12).toString("hex"), `PO-${unique()}`]
+      ),
+      /purchase_orders_status_check/,
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("purchase order repository: quantity/money precision round-trips exactly through NUMERIC", async () => {
+  const item = await createInventoryItemRow();
+  const cases = [
+    { orderedQuantity: "1.01", unitPrice: "0.01", totalPrice: "0.0101" },
+    { orderedQuantity: "10.50", unitPrice: "10.50", totalPrice: "110.25" },
+    { orderedQuantity: "1000.99", unitPrice: "1000.99", totalPrice: "1001980.9801" },
+    { orderedQuantity: "1000000.99", unitPrice: "1000000.99", totalPrice: "1000001980000.9801" },
+    { orderedQuantity: "123456789.1234", unitPrice: "123456789.1234", totalPrice: "15241578780672878.15254756" },
+  ];
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    for (const c of cases) {
+      const po = await purchaseOrderRepository.create(poBase({
+        poNumber: `PO-${unique()}`,
+        totalAmount: c.totalPrice,
+        items: [{ item: item._id, orderedQuantity: c.orderedQuantity, unitPrice: c.unitPrice, totalPrice: c.totalPrice, receivedQuantity: 0 }],
+      }));
+      const { rows } = await pool.query(
+        "SELECT total_amount::text AS t FROM purchase_orders WHERE id = $1",
+        [po._id]
+      );
+      assert.strictEqual(rows[0].t, c.totalPrice);
+      const { rows: ir } = await pool.query(
+        "SELECT ordered_quantity::text AS q, unit_price::text AS u, total_price::text AS t FROM purchase_order_items WHERE purchase_order_id = $1",
+        [po._id]
+      );
+      assert.strictEqual(ir[0].q, c.orderedQuantity);
+      assert.strictEqual(ir[0].u, c.unitPrice);
+      assert.strictEqual(ir[0].t, c.totalPrice);
+      const read = await purchaseOrderRepository.findById(po._id);
+      assert.strictEqual(read.totalAmount, Number(c.totalPrice));
+      assert.strictEqual(read.items[0].unitPrice, Number(c.unitPrice));
+    }
+  } finally {
+    await pool.end();
+  }
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: dates round-trip through TIMESTAMPTZ preserving the instant", async () => {
+  const { po } = await createPoWithRealItem({ expectedDeliveryDate: new Date("2026-08-15T10:30:00+05:30") });
+  const read = await purchaseOrderRepository.findById(po._id);
+  assert.ok(read.expectedDeliveryDate instanceof Date);
+  assert.strictEqual(read.expectedDeliveryDate.toISOString(), new Date("2026-08-15T10:30:00+05:30").toISOString());
+  assert.ok(read.createdAt instanceof Date);
+});
+
+test("purchase order repository: legacy IDs round-trip and create with the same id is idempotent", async () => {
+  const item = await createInventoryItemRow();
+  const chosenId = crypto.randomBytes(12).toString("hex");
+  const first = await purchaseOrderRepository.create(poBase({ id: chosenId, poNumber: `PO-${unique()}`, totalAmount: 5, items: [{ item: item._id, orderedQuantity: 1, unitPrice: 5, totalPrice: 5 }] }));
+  assert.strictEqual(first._id, chosenId);
+  const second = await purchaseOrderRepository.create(poBase({ id: chosenId, poNumber: `PO-${unique()}`, totalAmount: 99, items: [{ item: item._id, orderedQuantity: 1, unitPrice: 99, totalPrice: 99 }] }));
+  assert.strictEqual(second._id, chosenId);
+  assert.strictEqual(second.totalAmount, 5, "ON CONFLICT DO NOTHING keeps the existing row");
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: unique poNumber is enforced (Mongo unique: true)", async () => {
+  const item = await createInventoryItemRow();
+  const po = await purchaseOrderRepository.create(poBase({ poNumber: `PO-UNIQUE-${unique()}`, totalAmount: 1, items: [{ item: item._id, orderedQuantity: 1, unitPrice: 1, totalPrice: 1 }] }));
+  await assert.rejects(
+    () => purchaseOrderRepository.create(poBase({ poNumber: po.poNumber, totalAmount: 1, items: [{ item: item._id, orderedQuantity: 1, unitPrice: 1, totalPrice: 1 }] })),
+    /duplicate key value violates unique constraint "purchase_orders_po_number_key"/
+  );
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: findOne, findMany, $in, filtering, sorting and pagination", async () => {
+  const item = await createInventoryItemRow();
+  const supplierA = crypto.randomBytes(12).toString("hex");
+  const supplierB = crypto.randomBytes(12).toString("hex");
+  const now = Date.now();
+  const base = { supplier: supplierA, items: [{ item: item._id, orderedQuantity: 1, unitPrice: 1, totalPrice: 1 }] };
+  const draft = await purchaseOrderRepository.create({ ...base, poNumber: `PO-${unique()}`, totalAmount: 1, status: "Draft", createdAt: new Date(now - 5 * 60 * 1000) });
+  const approved = await purchaseOrderRepository.create({ ...base, poNumber: `PO-${unique()}`, totalAmount: 2, status: "Approved", expectedDeliveryDate: new Date("2026-06-15T00:00:00Z"), createdAt: new Date(now - 4 * 60 * 1000) });
+  const cancelled = await purchaseOrderRepository.create({ ...base, poNumber: `PO-${unique()}`, totalAmount: 3, status: "Cancelled", createdAt: new Date(now - 3 * 60 * 1000) });
+  await purchaseOrderRepository.create({ poNumber: `PO-${unique()}`, supplier: supplierB, totalAmount: 4, status: "Draft", items: [{ item: item._id, orderedQuantity: 1, unitPrice: 4, totalPrice: 4 }], createdAt: new Date(now - 2 * 60 * 1000) });
+
+  // findMany with status filter
+  const approvedList = await purchaseOrderRepository.findMany({ filter: { supplier: supplierA, status: "Approved" } });
+  assert.ok(approvedList.some((p) => p._id === approved._id));
+  assert.ok(!approvedList.some((p) => p._id === draft._id));
+
+  // $in over status
+  const inList = await purchaseOrderRepository.findMany({ filter: { supplier: supplierA, status: { $in: ["Draft", "Approved"] } } });
+  assert.ok(inList.some((p) => p._id === draft._id));
+  assert.ok(inList.some((p) => p._id === approved._id));
+  assert.ok(!inList.some((p) => p._id === cancelled._id));
+
+  // $in over ids
+  const idIn = await purchaseOrderRepository.findMany({ filter: { id: { $in: [draft._id, approved._id] } } });
+  assert.strictEqual(idIn.length, 2);
+
+  // $in over suppliers
+  const supplierIn = await purchaseOrderRepository.findMany({ filter: { supplier: { $in: [supplierA, supplierB] } } });
+  assert.strictEqual(supplierIn.length, 4);
+
+  // expectedDeliveryDate range filter
+  const deliveryGte = await purchaseOrderRepository.findMany({
+    filter: { expectedDeliveryDate: { $gte: new Date("2026-01-01T00:00:00Z") } },
+  });
+  assert.ok(deliveryGte.some((p) => p._id === approved._id));
+
+  // sort default createdAt DESC
+  const sorted = await purchaseOrderRepository.findMany({ filter: { supplier: supplierA }, sort: { createdAt: -1 } });
+  assert.deepStrictEqual(sorted.map((p) => p._id), [cancelled._id, approved._id, draft._id]);
+
+  // explicit poNumber sort
+  const byNumber = await purchaseOrderRepository.findMany({ filter: { supplier: supplierA }, sort: { poNumber: 1 } });
+  assert.strictEqual(byNumber.length, 3);
+
+  // pagination
+  const page1 = await purchaseOrderRepository.findMany({ filter: { supplier: supplierA }, sort: { createdAt: -1 }, limit: 2 });
+  assert.strictEqual(page1.length, 2);
+  const page2 = await purchaseOrderRepository.findMany({ filter: { supplier: supplierA }, sort: { createdAt: -1 }, limit: 2, offset: 2 });
+  assert.strictEqual(page2.length, 1);
+
+  // unknown sort keys fall back to createdAt DESC
+  const safeSort = await purchaseOrderRepository.findMany({ filter: { supplier: supplierA }, sort: { badColumn: 1 } });
+  assert.strictEqual(safeSort.length, 3);
+
+  // totalAmount range filter
+  const amountRange = await purchaseOrderRepository.findMany({ filter: { supplier: supplierA, totalAmount: { $gte: 2, $lte: 3 } } });
+  assert.strictEqual(amountRange.length, 2);
+
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: child item ordering is preserved", async () => {
+  const item = await createInventoryItemRow();
+  const po = await purchaseOrderRepository.create(poBase({
+    poNumber: `PO-${unique()}`,
+    totalAmount: 10,
+    items: [
+      { item: item._id, orderedQuantity: 3, unitPrice: 1, totalPrice: 3 },
+      { item: item._id, orderedQuantity: 1, unitPrice: 1, totalPrice: 1 },
+      { item: item._id, orderedQuantity: 2, unitPrice: 1, totalPrice: 2 },
+    ],
+  }));
+  const read = await purchaseOrderRepository.findById(po._id);
+  assert.deepStrictEqual(read.items.map((i) => i.orderedQuantity), [3, 1, 2]);
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query(
+      "SELECT ordered_quantity::text AS q FROM purchase_order_items WHERE purchase_order_id = $1 ORDER BY position, created_at, id",
+      [po._id]
+    );
+    assert.deepStrictEqual(rows.map((r) => Number(r.q)), [3, 1, 2]);
+  } finally {
+    await pool.end();
+  }
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: atomic creation — a failing child item leaves no rows", async () => {
+  const item = await createInventoryItemRow();
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  const poCount = async () => (await pool.query("SELECT COUNT(*)::int AS n FROM purchase_orders")).rows[0].n;
+  const itemCount = async () => (await pool.query("SELECT COUNT(*)::int AS n FROM purchase_order_items")).rows[0].n;
+  try {
+    const beforePo = await poCount();
+    const beforeItems = await itemCount();
+
+    // Invalid second child: orderedQuantity 0 violates the Mongo min: 1.
+    await assert.rejects(
+      () => purchaseOrderRepository.create({
+        poNumber: `PO-${unique()}`,
+        supplier: "0000000000000000000000aa",
+        totalAmount: 5,
+        items: [
+          { item: item._id, orderedQuantity: 5, unitPrice: 1, totalPrice: 5 },
+          { item: item._id, orderedQuantity: 0, unitPrice: 1, totalPrice: 0 },
+        ],
+      }),
+      /items\.orderedQuantity/
+    );
+    assert.strictEqual(await poCount(), beforePo, "no purchase_orders row remains");
+    assert.strictEqual(await itemCount(), beforeItems, "no purchase_order_items rows remain");
+
+    // DB-level FK failure on the second child (nonexistent inventory item):
+    // validation passes for both lines, so the INSERT must roll back mid-way.
+    await assert.rejects(
+      () => purchaseOrderRepository.create({
+        poNumber: `PO-${unique()}`,
+        supplier: "0000000000000000000000aa",
+        totalAmount: 8,
+        items: [
+          { item: item._id, orderedQuantity: 5, unitPrice: 1, totalPrice: 5 },
+          { item: "0000000000000000000000ff", orderedQuantity: 3, unitPrice: 1, totalPrice: 3 },
+        ],
+      }),
+      /inventory_item_id/
+    );
+    assert.strictEqual(await poCount(), beforePo, "no purchase_orders row remains after FK failure");
+    assert.strictEqual(await itemCount(), beforeItems, "no purchase_order_items rows remain after FK failure");
+  } finally {
+    await pool.end();
+  }
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: atomic item replacement — a failing replacement leaves the original items", async () => {
+  const item = await createInventoryItemRow();
+  const { po } = await createPoWithRealItem({ totalAmount: 5 });
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const before = (await pool.query("SELECT COUNT(*)::int AS n FROM purchase_order_items WHERE purchase_order_id = $1", [po._id])).rows[0].n;
+    assert.ok(before >= 1);
+    await assert.rejects(
+      () => purchaseOrderRepository.replaceItems(po._id, [
+        { item: item._id, orderedQuantity: 1, unitPrice: 1, totalPrice: 1 },
+        { item: item._id, orderedQuantity: -1, unitPrice: 1, totalPrice: -1 },
+      ]),
+      /items\.orderedQuantity/
+    );
+    const after = await purchaseOrderRepository.findById(po._id);
+    assert.strictEqual(after.items.length, before, "original items survive a failed replacement");
+  } finally {
+    await pool.end();
+  }
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: count uses COUNT(*) and filter counts match", async () => {
+  const item = await createInventoryItemRow();
+  const supplier = crypto.randomBytes(12).toString("hex");
+  const total = await purchaseOrderRepository.count({});
+  await purchaseOrderRepository.create(poBase({ poNumber: `PO-${unique()}`, supplier, status: "Draft", totalAmount: 1, items: [{ item: item._id, orderedQuantity: 1, unitPrice: 1, totalPrice: 1 }] }));
+  const draftCount = await purchaseOrderRepository.count({ supplier, status: "Draft" });
+  assert.strictEqual(draftCount, 1);
+  const allCount = await purchaseOrderRepository.count({ supplier });
+  assert.strictEqual(allCount, 1);
+  const totalAfter = await purchaseOrderRepository.count({});
+  assert.strictEqual(totalAfter, total + 1);
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: updateById on a missing id returns null and empty updates are no-ops", async () => {
+  assert.strictEqual(await purchaseOrderRepository.updateById("000000000000000000000001", { status: "Approved" }), null);
+  const { po } = await createPoWithRealItem();
+  const noop = await purchaseOrderRepository.updateById(po._id, {});
+  assert.strictEqual(noop._id, po._id);
+  await cleanupPoItem(noop.items[0].item);
+});
+
+test("purchase order repository: destroy reports existence and cascades child items (ON DELETE CASCADE)", async () => {
+  const { po, item } = await createPoWithRealItem();
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const childCount = async () => (await pool.query("SELECT COUNT(*)::int AS n FROM purchase_order_items WHERE purchase_order_id = $1", [po._id])).rows[0].n;
+    assert.strictEqual(await purchaseOrderRepository.destroy("000000000000000000000001"), false);
+    assert.ok((await childCount()) >= 1, "child rows exist before delete");
+    assert.strictEqual(await purchaseOrderRepository.destroy(po._id), true);
+    assert.strictEqual(await purchaseOrderRepository.destroy(po._id), false);
+    assert.strictEqual(await purchaseOrderRepository.findById(po._id), null);
+    assert.strictEqual(await childCount(), 0, "ON DELETE CASCADE removes the embedded items with the PO");
+  } finally {
+    await pool.end();
+  }
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order repository: updateById with items does not silently drop child rows (item-only via replaceItems)", async () => {
+  const item = await createInventoryItemRow();
+  const { po } = await createPoWithRealItem({ totalAmount: 10 });
+  const updated = await purchaseOrderRepository.updateById(po._id, { notes: "still has items" });
+  assert.strictEqual(updated.items.length >= 1, true, "scalar update keeps child rows loaded");
+  assert.strictEqual(updated.notes, "still has items");
+
+  await purchaseOrderRepository.replaceItems(po._id, [
+    { item: item._id, orderedQuantity: 7, unitPrice: "2.50", totalPrice: 17.5, receivedQuantity: 3 },
+  ]);
+  const replaced = await purchaseOrderRepository.findById(po._id);
+  assert.strictEqual(replaced.items.length, 1);
+  assert.strictEqual(replaced.items[0].orderedQuantity, 7);
+  assert.strictEqual(replaced.items[0].receivedQuantity, 3);
+  await cleanupPoItem(item._id);
+});
+
+test("purchase order item repository: findById/findMany/count/destroy on child rows", async () => {
+  const { po, item } = await createPoWithRealItem({ poNumber: `PO-${unique()}`, totalAmount: 10 });
+  const child = await purchaseOrderItemRepository.findByPurchaseOrderId(po._id);
+  assert.strictEqual(child.length, 1);
+  assert.strictEqual(child[0].item, item._id);
+
+  const byId = await purchaseOrderItemRepository.findById(child[0]._id);
+  assert.strictEqual(byId.orderedQuantity, 10.5);
+  assert.strictEqual(byId.unitPrice, 1000.99);
+
+  const viaFindMany = await purchaseOrderItemRepository.findMany({ filter: { purchaseOrderId: po._id } });
+  assert.strictEqual(viaFindMany.length, 1);
+  const viaItemFilter = await purchaseOrderItemRepository.findMany({ filter: { inventoryItemId: item._id } });
+  assert.ok(viaItemFilter.length >= 1);
+
+  assert.strictEqual(await purchaseOrderItemRepository.count({ purchaseOrderId: po._id }), 1);
+
+  const destroyed = await purchaseOrderItemRepository.destroy(child[0]._id);
+  assert.strictEqual(destroyed, true);
+  assert.strictEqual((await purchaseOrderItemRepository.findByPurchaseOrderId(po._id)).length, 0);
+  await cleanupPoItem(item._id);
 });

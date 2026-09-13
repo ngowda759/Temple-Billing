@@ -1,5 +1,6 @@
 const GoodsReceivedNote = require("../models/GoodsReceivedNote");
 const PurchaseOrder = require("../models/PurchaseOrder");
+const purchaseOrderService = require("../services/purchaseOrderService");
 const InventoryItem = require("../models/InventoryItem");
 const InventoryBatch = require("../models/InventoryBatch");
 const AccountTransaction = require("../models/AccountTransaction");
@@ -30,10 +31,10 @@ exports.createGRN = async (req, res) => {
     await newGrn.save();
 
     if (purchaseOrderId) {
-      const po = await PurchaseOrder.findById(purchaseOrderId);
+      const po = await purchaseOrderService.findById(purchaseOrderId);
       if (po) {
-        po.status = "Partially Received"; // Simplified, ideally check quantities
-        await po.save();
+        // Simplified, ideally check quantities.
+        await purchaseOrderService.updateById(po._id, { status: "Partially Received" });
       }
     }
 
