@@ -407,7 +407,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
     WHERE conrelid = 'inventory_batches'::regclass AND contype = 'f'`);
   assert.ok(fk.length === 1);
-  assert.ok(/REFERENCES inventory_items\(id\).*ON DELETE CASCADE/i.test(fk[0].def));
+  assert.ok(/REFERENCES inventory_items\(id\).*ON DELETE RESTRICT/i.test(fk[0].def));
 });
 
 test("SELECT 1 succeeds against test database", async () => {

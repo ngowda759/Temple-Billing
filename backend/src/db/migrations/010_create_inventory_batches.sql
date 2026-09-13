@@ -31,13 +31,16 @@
 --     item: { type: ObjectId, ref: 'InventoryItem', required: true } and both
 --     real usages (approveGRN create, logKitchenProduction FIFO) require it.
 --     inventory_items exists in PostgreSQL (Phase 2H), so a real FK is used.
---     ON DELETE CASCADE mirrors Mongo's observable behaviour:
---     deleteInventoryItem calls InventoryItem.findByIdAndDelete(id) with no
---     batch cleanup, so Mongo silently orphans its batches; PostgreSQL
---     deliberately replaces that silent-orphan behaviour with cascade
---     cleanup. No application path deletes an InventoryItem other than that
---     explicit admin action, so a cascade keeps the two datastores from
---     diverging when the item is removed.
+--     ON DELETE RESTRICT is the least behaviour-changing strategy:
+--       * Mongo's deleteInventoryItem calls InventoryItem.findByIdAndDelete(id)
+--         with no batch cleanup, so batches REMAIN after an item is deleted
+--         (silently orphaned). PostgreSQL must NOT cascade-delete those
+--         batches — a cascade would destroy data Mongo keeps.
+--       * A real FK cannot orphan rows, so deleting an item that still has
+--         batches is refused by the FK (a clear error instructing the caller
+--         to remove the batches first). This is strictly safer than the
+--         current Mongo behaviour: it never silently destroys batch data and
+--         never leaves PostgreSQL in a state Mongo would not be in.
 --   * grn → GoodsReceivedNote and supplier → InventorySupplier are plain
 --     indexed TEXT holding Mongo ObjectIds: those entities are still
 --     Mongo-backed (not migrated in this phase), so no FK is created — no
@@ -70,8 +73,9 @@
 CREATE TABLE IF NOT EXISTS inventory_batches (
   id TEXT PRIMARY KEY,
   -- Mongo: item ObjectId ref 'InventoryItem' — required. Real FK to the
-  -- Phase 2H table; cascade mirrors the admin item-delete behaviour.
-  inventory_item_id TEXT NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+  -- Phase 2H table. ON DELETE RESTRICT: Mongo keeps batches orphaned when an
+  -- item is deleted, so PostgreSQL refuses the delete instead (see header).
+  inventory_item_id TEXT NOT NULL REFERENCES inventory_items(id) ON DELETE RESTRICT,
   batch_number TEXT NOT NULL,
   -- Mongo: grn ObjectId ref 'GoodsReceivedNote' — optional. GoodsReceivedNote
   -- is still Mongo-backed, so this is plain TEXT, no FK.

@@ -55,16 +55,21 @@ test.after(async () => {
   dbConfig.isDbConnected = originalIsDbConnected;
 });
 
+/**
+ * Replaces the InventoryBatch Mongoose model with call-tracking spies so tests
+ * can prove the Mongo path is genuinely invoked on the fallback branch — the
+ * loaded model object is the SAME reference the repository captures (it calls
+ * properties like InventoryBatch.create at call time), so swapping the methods
+ * is authoritative regardless of module load order.
+ */
 const stubBatchesCollection = () => {
   const saved = [];
-  const saveWith = async (obj) => {
-    const doc = { ...obj, _id: "000000000000000000000001", toObject: () => ({ ...obj, _id: "000000000000000000000001" }) };
-    saved.push(doc);
-    return doc;
-  };
-  const create = async (data) => saveWith(data);
-  const findById = async () => null;
-  const findOne = async () => null;
+  const calls = [];
+  const doc = (obj, id = "000000000000000000000001") => ({
+    ...obj,
+    _id: id,
+    toObject: () => ({ ...obj, _id: id }),
+  });
   const execQuery = async () => [];
   const chain = {
     limit: () => chain,
@@ -74,15 +79,20 @@ const stubBatchesCollection = () => {
     then: (resolve) => execQuery().then(resolve),
     catch: (reject) => execQuery().catch(reject),
   };
-  const find = () => chain;
+
+  const create = async (data) => { calls.push(["create", data]); const d = doc(data); saved.push(d); return d; };
+  const findById = async (id) => { calls.push(["findById", id]); return null; };
+  const findOne = async (filter) => { calls.push(["findOne", filter]); const found = saved.find((d) => String(d._id) === String(filter.id)); return found || null; };
+  const find = (filter) => { calls.push(["find", filter]); return chain; };
   const findByIdAndUpdate = async (id, updates) => {
+    calls.push(["findByIdAndUpdate", id, updates]);
     const existing = saved.find((d) => String(d._id) === String(id));
     if (!existing) return null;
     Object.assign(existing, updates);
     return existing;
   };
-  const findByIdAndDelete = async () => null;
-  const countDocuments = async () => 0;
+  const findByIdAndDelete = async (id) => { calls.push(["findByIdAndDelete", id]); return null; };
+  const countDocuments = async (filter) => { calls.push(["countDocuments", filter]); return 0; };
   const deleteMany = async () => ({ deletedCount: 0 });
 
   InventoryBatch.create = create;
@@ -93,7 +103,7 @@ const stubBatchesCollection = () => {
   InventoryBatch.findByIdAndDelete = findByIdAndDelete;
   InventoryBatch.countDocuments = countDocuments;
   InventoryBatch.deleteMany = deleteMany;
-  return { saved };
+  return { saved, calls };
 };
 
 // ─── Fallback requirement 2: Mongo/Mongoose path remains when PG unavailable ─
@@ -234,6 +244,58 @@ test("fallback: Mongo path leaves no partial or duplicate rows in PostgreSQL", a
   assert.strictEqual(saved.length, 1, "create went to the Mongo model");
   const after = await rowCount();
   assert.strictEqual(after, before, "no partial/duplicate PG row on Mongo fallback");
+});
+
+// ─── Fallback requirement: the SERVICE routes every operation through the
+//     actual Mongoose model (not merely through a stub's return values) ─────
+test("fallback: the service genuinely invokes the Mongoose model end-to-end", async () => {
+  pinMongoFallback();
+  const { saved, calls } = stubBatchesCollection();
+
+  const batch = await inventoryBatchService.create({
+    item: "000000000000000000000001",
+    batchNumber: "ServiceFallback",
+    originalQuantity: 10,
+    currentQuantity: 10,
+    status: "Active",
+  });
+  assert.strictEqual(calls[0][0], "create", "create routed to Mongoose create");
+  assert.strictEqual(batch.batchNumber, "ServiceFallback");
+
+  // findById routes to the model's findById spy.
+  await inventoryBatchService.findById("000000000000000000000099");
+  assert.ok(calls.some(([name, id]) => name === "findById" && id === "000000000000000000000099"), "findById routed to Mongoose findById spy");
+
+  // findOne routes to the model's findOne spy.
+  await inventoryBatchService.findOne({ id: "000000000000000000000099" });
+  assert.ok(calls.some(([name, filter]) => name === "findOne" && filter && filter.id === "000000000000000000000099"), "findOne routed to Mongoose findOne spy");
+
+  // findMany routes to the model's find spy (thenable query chain).
+  await inventoryBatchService.findMany({ filter: { item: "000000000000000000000001" } });
+  assert.ok(calls.some(([name, filter]) => name === "find" && filter && filter.item === "000000000000000000000001"), "findMany routed to Mongoose find spy");
+
+  // findActiveByItemFifo routes to the model's find spy with the Active filter.
+  await inventoryBatchService.findActiveByItemFifo("000000000000000000000001");
+  assert.ok(
+    calls.some(([name, filter]) => name === "find" && filter && filter.item === "000000000000000000000001" && filter.status === "Active"),
+    "findActiveByItemFifo routed to Mongoose find spy",
+  );
+
+  // updateById routes to the model's findByIdAndUpdate spy and finds the saved doc.
+  const updated = await inventoryBatchService.updateById(saved[0]._id, { currentQuantity: 4 });
+  assert.strictEqual(updated.currentQuantity, 4, "updateById applied through Mongoose findByIdAndUpdate");
+
+  // count routes to the model's countDocuments spy.
+  await inventoryBatchService.count({ item: "000000000000000000000001" });
+  assert.ok(calls.some(([name]) => name === "countDocuments"), "count routed to Mongoose countDocuments spy");
+
+  // destroy routes to the model's findByIdAndDelete spy; stubbed delete
+  // returns null → false, par with Mongo findByIdAndDelete.
+  const destroyed = await inventoryBatchService.destroy("000000000000000000000001");
+  assert.strictEqual(destroyed, false);
+  assert.ok(calls.some(([name, id]) => name === "findByIdAndDelete" && id === "000000000000000000000001"), "destroy routed to Mongoose findByIdAndDelete spy");
+
+  assert.ok(calls.length >= 8, "expected at least 8 model method calls, got " + calls.length);
 });
 
 // ─── No global DB switch ────────────────────────────────────────────────────

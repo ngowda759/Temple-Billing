@@ -1,5 +1,5 @@
 const { query } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const InventoryBatch = require("../models/InventoryBatch");
 const crypto = require("crypto");
 
@@ -227,13 +227,13 @@ const buildInventoryBatchFilter = (filter = {}) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (!isDbConnected()) return InventoryBatch.findById(String(id));
+  if (!dbConfig.isDbConnected()) return InventoryBatch.findById(String(id));
   const { rows } = await query(`SELECT ${INVENTORY_BATCH_COLS.join(", ")} FROM inventory_batches WHERE id = $1 LIMIT 1`, [String(id)]);
   return toDoc(rows[0]);
 };
 
 const findOne = async (filter = {}) => {
-  if (!isDbConnected()) return InventoryBatch.findOne(filter);
+  if (!dbConfig.isDbConnected()) return InventoryBatch.findOne(filter);
   const { where, values } = buildInventoryBatchFilter(filter);
   // Mongoose findOne({}) returns the first document; we mirror that rather
   // than treating an empty filter as no-match. The tiebreak mirrors the FIFO
@@ -244,7 +244,7 @@ const findOne = async (filter = {}) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { expiryDate: 1, createdAt: 1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = InventoryBatch.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -282,7 +282,7 @@ const create = async (data) => {
   assertEnum(data.status, STATUSES, "status");
   assertPrice(data.purchasePrice, "purchasePrice");
 
-  if (!isDbConnected()) return InventoryBatch.create(data);
+  if (!dbConfig.isDbConnected()) return InventoryBatch.create(data);
 
   const id = data.id || newId();
   const row = toRow(data, id);
@@ -317,7 +317,7 @@ const updateById = async (id, updates = {}) => {
   if (updates.currentQuantity !== undefined) assertQuantity(updates.currentQuantity, "currentQuantity");
   assertPrice(updates.purchasePrice, "purchasePrice");
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return InventoryBatch.findByIdAndUpdate(String(id), updates, { new: true, runValidators: true });
   }
 
@@ -371,7 +371,7 @@ const updateById = async (id, updates = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return InventoryBatch.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return InventoryBatch.countDocuments(filter);
   const { where, values } = buildInventoryBatchFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM inventory_batches ${where}`, values);
   return rows[0]?.count || 0;
@@ -379,7 +379,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (!isDbConnected()) return Boolean(await InventoryBatch.findByIdAndDelete(String(id)));
+  if (!dbConfig.isDbConnected()) return Boolean(await InventoryBatch.findByIdAndDelete(String(id)));
   const { rows } = await query(`DELETE FROM inventory_batches WHERE id = $1 RETURNING id`, [String(id)]);
   return rows.length > 0;
 };
@@ -391,7 +391,7 @@ const destroy = async (id) => {
  */
 const findActiveByItemFifo = async (itemId) => {
   if (!itemId) return [];
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return InventoryBatch.find({ item: String(itemId), status: "Active" }).sort({ expiryDate: 1, createdAt: 1 });
   }
   const { rows } = await query(

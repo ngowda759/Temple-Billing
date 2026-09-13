@@ -215,7 +215,10 @@ test("PG path: no fake FKs to non-migrated entities; only the real inventory_ite
     assert.strictEqual(rows.length, 1);
     assert.strictEqual(rows[0].column_name, "inventory_item_id");
     assert.ok(/REFERENCES inventory_items\(id\)/.test(rows[0].def));
-    assert.ok(/ON DELETE CASCADE/i.test(rows[0].def));
+    // ON DELETE RESTRICT: Mongo leaves batches orphaned when an item is
+    // deleted, so PostgreSQL must not cascade-delete batches.
+    assert.ok(/ON DELETE RESTRICT/i.test(rows[0].def));
+    assert.ok(!/CASCADE/i.test(rows[0].def), "must not cascade");
   } finally {
     await pool.end();
   }
@@ -461,10 +464,17 @@ test("PG path: batches point at real inventory_items; invalid items are rejected
     /violates foreign key|23503/,
   );
 
-  // Deleting the item cascades to its batches (mirrors the Mongo delete which
-  // silently orphans them; PostgreSQL cleans up instead).
-  await inventoryItemRepository.destroy(item._id);
-  assert.strictEqual(await inventoryBatchRepository.findById(batch._id), null);
+  // Deleting an item that still has batches is REFUSED by the FK
+  // (ON DELETE RESTRICT). This mirrors the least behaviour-changing contract:
+  // Mongo never deletes batches when an item is removed (it leaves them
+  // orphaned), so PostgreSQL must not destroy batch data either. The delete is
+  // blocked and the batch remains.
+  await assert.rejects(
+    () => inventoryItemRepository.destroy(item._id),
+    /violates foreign key|23503|update or delete on table "inventory_items"/,
+  );
+  assert.strictEqual(await inventoryBatchRepository.findById(batch._id) !== null, true, "batch must remain after the refused delete");
+  assert.strictEqual((await inventoryBatchRepository.findById(batch._id)).item, item._id);
 });
 
 // ─── findMany / filters / sorting / pagination ─────────────────────────────
@@ -530,6 +540,18 @@ test("PG path: updateById persists and re-reads changed values", async () => {
   const reread = await inventoryBatchRepository.findById(batch._id);
   assert.strictEqual(reread.batchNumber, updated.batchNumber);
   assert.strictEqual(reread.status, "Quarantine");
+
+  // The change is genuinely persisted to PostgreSQL, not merely returned by
+  // the repository layer: read the raw row.
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query("SELECT current_quantity, status, batch_number FROM inventory_batches WHERE id = $1", [batch._id]);
+    assert.strictEqual(rows[0].current_quantity.toString(), "3");
+    assert.strictEqual(rows[0].status, "Quarantine");
+    assert.strictEqual(rows[0].batch_number, updated.batchNumber);
+  } finally {
+    await pool.end();
+  }
 });
 
 test("PG path: updateById enforces enums and quantities queue", async () => {
@@ -565,6 +587,15 @@ test("PG path: destroy reports existence and removes the row", async () => {
   assert.strictEqual(await inventoryBatchRepository.findById(batch._id), null);
   assert.strictEqual(await inventoryBatchRepository.destroy(batch._id), false);
   assert.strictEqual(await inventoryBatchRepository.destroy("000000000000000000000000"), false);
+
+  // The row is genuinely gone from PostgreSQL.
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query("SELECT id FROM inventory_batches WHERE id = $1", [batch._id]);
+    assert.strictEqual(rows.length, 0);
+  } finally {
+    await pool.end();
+  }
 });
 
 test("PG path: legacy (24-hex) IDs round trip and create with the same id is idempotent", async () => {
@@ -625,5 +656,41 @@ test("PG path: MongoDB model is never touched when PG is selected", async () => 
     InventoryBatch.findByIdAndUpdate = originalFindByIdAndUpdate;
     InventoryBatch.findByIdAndDelete = originalFindByIdAndDelete;
     InventoryBatch.countDocuments = originalCountDocuments;
+  }
+});
+
+test("PG path: the datasource seam is read at call time, not captured at require time", async () => {
+  // This is the Fix 1 guarantee: inventoryBatchService/inventoryBatchRepository
+  // read dbConfig.isDbConnected() when a method runs, so swapping the function
+  // AFTER the modules are loaded deterministically routes the next call.
+  const InventoryBatch = require("../src/models/InventoryBatch");
+  const original = InventoryBatch.create;
+  let mongoCalls = 0;
+  InventoryBatch.create = async (...args) => { mongoCalls += 1; return { _id: "000000000000000000000001", ...args[0], toObject: () => args[0] }; };
+
+  try {
+    // Modules are already loaded (test file's before() hook). Flip the seam to
+    // Mongo AFTER load: the service must immediately fall back.
+    dbConfig.isDbConnected = () => false;
+    assert.strictEqual(await inventoryBatchService.usePostgres(), false);
+    await inventoryBatchService.create({ item: "000000000000000000000001", batchNumber: `Seam-${unique()}`, originalQuantity: 1, currentQuantity: 1 });
+    assert.strictEqual(mongoCalls, 1, "seam=false routes the create to the Mongoose model");
+
+    // Flip back to PostgreSQL AFTER load: the service must route to PG again.
+    dbConfig.isDbConnected = () => true;
+    assert.strictEqual(await inventoryBatchService.usePostgres(), true);
+    const item = await makeItem();
+    const batch = await inventoryBatchService.create(batchBase({ item: item._id }));
+    assert.strictEqual(mongoCalls, 1, "seam=true routes the create to PG, not Mongo");
+    const pool = new Pool({ connectionString: TEST_DB_URL });
+    try {
+      const { rows } = await pool.query("SELECT id FROM inventory_batches WHERE id = $1", [batch._id]);
+      assert.strictEqual(rows.length, 1, "seam=true create persisted a PG row");
+    } finally {
+      await pool.end();
+    }
+  } finally {
+    InventoryBatch.create = original;
+    dbConfig.isDbConnected = () => true;
   }
 });
