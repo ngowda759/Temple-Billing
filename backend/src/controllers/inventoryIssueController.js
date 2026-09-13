@@ -1,6 +1,6 @@
 const InventoryIssue = require("../models/InventoryIssue");
-const InventoryConsumption = require("../models/InventoryConsumption");
 const InventoryItem = require("../models/InventoryItem");
+const inventoryConsumptionService = require("../services/inventoryConsumptionService");
 
 // GET /api/staff/inventory-issues/:userId?
 exports.getInventoryIssues = async (req, res) => {
@@ -59,8 +59,11 @@ exports.completeUsage = async (req, res) => {
     issue.status = "Completed";
     await issue.save();
 
-    // Log consumption
-    const consumption = await InventoryConsumption.create({
+    // Log consumption. Routed through the Phase 2K service so the record is
+    // persisted to PostgreSQL when the datasource seam + PG are available and
+    // to the existing Mongoose InventoryConsumption model otherwise. No dual
+    // writes: exactly one datasource receives the record.
+    const consumption = await inventoryConsumptionService.create({
       issue: issue._id,
       item: item._id,
       itemName: item.name,
@@ -84,7 +87,16 @@ exports.completeUsage = async (req, res) => {
 // GET /api/admin/inventory/reports/consumption
 exports.getConsumptionReports = async (req, res) => {
   try {
-    const consumptions = await InventoryConsumption.find().sort({ date: -1 }).limit(100);
+    // Routed through the Phase 2K service: PostgreSQL (date DESC, limit 100)
+    // when the seam + PG are available, otherwise the Mongoose model. The
+    // repository returns the same camelCase shape the admin "Consumption
+    // Tracking" tab expects (_id, createdAt, userName, itemName, usedQuantity,
+    // unit, remarks).
+    const consumptions = await inventoryConsumptionService.findMany({
+      filter: {},
+      sort: { date: -1, createdAt: -1 },
+      limit: 100,
+    });
     return res.json({ success: true, consumptions });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
