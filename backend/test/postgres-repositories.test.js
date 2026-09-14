@@ -22,6 +22,8 @@ let purchaseOrderRepository;
 let purchaseOrderItemRepository;
 let goodsReceivedNoteRepository;
 let goodsReceivedNoteItemRepository;
+let damageNoteRepository;
+let inventoryBatchRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -97,6 +99,8 @@ test.before(async () => {
   purchaseOrderItemRepository = require("../src/repositories/purchaseOrderItemRepository");
   goodsReceivedNoteRepository = require("../src/repositories/goodsReceivedNoteRepository");
   goodsReceivedNoteItemRepository = require("../src/repositories/goodsReceivedNoteItemRepository");
+  damageNoteRepository = require("../src/repositories/damageNoteRepository");
+  inventoryBatchRepository = require("../src/repositories/inventoryBatchRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
@@ -2975,4 +2979,196 @@ test("goods received note item repository: findById/findMany/count/destroy on ch
   assert.strictEqual(destroyed, true);
   assert.strictEqual((await goodsReceivedNoteItemRepository.findByGrnId(grn._id)).length, 0);
   await cleanupGrnItem(item._id, [grn]);
+});
+
+// ─── Phase 2O: damage notes ─────────────────────────────────────────────────
+const damageBase = (overrides = {}) => ({
+  item: "0000000000000000000000aa",
+  batch: undefined,
+  quantity: 3,
+  reason: "Expired",
+  description: "Repo test damage note",
+  photoUrl: "https://example.com/photo.jpg",
+  reportedBy: "0000000000000000000000bb",
+  status: "Pending Approval",
+  approvedBy: undefined,
+  writeOffAmount: 0,
+  expenseId: undefined,
+  ...overrides,
+});
+
+const createDamageItem = async () => {
+  const created = await inventoryItemRepository.create({
+    name: `DAMAGE-Item-${unique()}`,
+    unit: "Pack",
+  });
+  assert.ok(created?._id, "inventory item row must exist for the damage FK");
+  return created;
+};
+
+const createDamageBatch = async (itemId) => {
+  const created = await inventoryBatchRepository.create({
+    item: itemId,
+    batchNumber: `DAMAGE-Batch-${unique()}`,
+    originalQuantity: 100,
+    currentQuantity: 100,
+  });
+  assert.ok(created?._id, "inventory batch row must exist for the damage FK");
+  return created;
+};
+
+const cleanupDamageRefs = async (itemId, batchId) => {
+  if (batchId) await inventoryBatchRepository.destroy(String(batchId)).catch(() => {});
+  if (itemId) await inventoryItemRepository.destroy(String(itemId)).catch(() => {});
+};
+
+test("damage note repository: create → read → update round trip", async () => {
+  const item = await createDamageItem();
+  const batch = await createDamageBatch(item._id);
+  const created = await damageNoteRepository.create(damageBase({
+    item: item._id,
+    batch: batch._id,
+    quantity: 7.5,
+    reason: "Broken/Damaged",
+    writeOffAmount: "123456789.1234",
+  }));
+  assert.match(created._id, /^[0-9a-f]{24}$/, "Mongo-compatible ObjectId id");
+  assert.strictEqual(created.id, created._id);
+  assert.strictEqual(created.item, item._id);
+  assert.strictEqual(created.batch, batch._id);
+  assert.strictEqual(created.quantity, 7.5);
+  assert.strictEqual(created.reason, "Broken/Damaged");
+  assert.strictEqual(created.photoUrl, "https://example.com/photo.jpg");
+  assert.strictEqual(created.writeOffAmount, 123456789.1234);
+  assert.ok(created.createdAt instanceof Date);
+  assert.ok(created.updatedAt instanceof Date);
+  assert.match(created.damageNumber, /^DAMAGE-\d{4}$/);
+
+  const byId = await damageNoteRepository.findById(created._id);
+  assert.strictEqual(byId.item, item._id);
+  assert.strictEqual(byId.batch, batch._id);
+  assert.strictEqual(byId.status, "Pending Approval");
+
+  const byNumber = await damageNoteRepository.findOne({ damageNumber: created.damageNumber });
+  assert.strictEqual(byNumber._id, created._id);
+  assert.strictEqual(await damageNoteRepository.findOne({ damageNumber: "NOPE" }), null);
+
+  const updated = await damageNoteRepository.updateById(created._id, {
+    status: "Approved",
+    approvedBy: "0000000000000000000000cc",
+    quantity: "10.50",
+  });
+  assert.strictEqual(updated.status, "Approved");
+  assert.strictEqual(updated.approvedBy, "0000000000000000000000cc");
+  assert.strictEqual(updated.quantity, 10.5);
+
+  await damageNoteRepository.destroy(created._id);
+  await cleanupDamageRefs(item._id, batch._id);
+});
+
+test("damage note repository: unique damageNumber and duplicate id surface real constraints", async () => {
+  const item = await createDamageItem();
+  const a = await damageNoteRepository.create(damageBase({ item: item._id, damageNumber: "DUP-CHECK" }));
+  await assert.rejects(
+    damageNoteRepository.create(damageBase({ item: item._id, damageNumber: "DUP-CHECK" })),
+    /duplicate key value violates unique constraint "damage_notes_damage_number_key"/
+  );
+  await damageNoteRepository.destroy(a._id);
+  await cleanupDamageRefs(item._id);
+});
+
+test("damage note repository: invalid enum values are rejected (no invented values)", async () => {
+  const item = await createDamageItem();
+  await assert.rejects(
+    damageNoteRepository.create(damageBase({ item: item._id, status: "Disposed" })),
+    /Invalid status/
+  );
+  // reason is enforced by the PostgreSQL CHECK constraint (the repository
+  // intentionally does not pre-assert it, mirroring Mongoose which surfaces
+  // the enum error at save time).
+  await assert.rejects(
+    damageNoteRepository.create(damageBase({ item: item._id, reason: "Flooded" })),
+    /violates check constraint "damage_notes_reason_check"/
+  );
+  await cleanupDamageRefs(item._id);
+});
+
+test("damage note repository: unknown id and missing id resolve to null/false", async () => {
+  assert.strictEqual(await damageNoteRepository.findById("000000000000000000000001"), null);
+  assert.strictEqual(await damageNoteRepository.findOne({ id: "000000000000000000000001" }), null);
+  assert.strictEqual(await damageNoteRepository.updateById("000000000000000000000001", { status: "Approved" }), null);
+  assert.strictEqual(await damageNoteRepository.count({ id: "000000000000000000000001" }), 0);
+});
+
+test("damage note repository: findMany filters, $in, date ranges and pagination", async () => {
+  const item1 = await createDamageItem();
+  const item2 = await createDamageItem();
+  const batch1 = await createDamageBatch(item1._id);
+  const reporter = crypto.randomBytes(12).toString("hex");
+  const a = await damageNoteRepository.create(damageBase({ item: item1._id, batch: batch1._id, reason: "Expired", status: "Pending Approval", reportedBy: reporter }));
+  const b = await damageNoteRepository.create(damageBase({ item: item1._id, batch: batch1._id, reason: "Spoiled", status: "Approved", approvedBy: "0000000000000000000000aa", reportedBy: reporter }));
+  const c = await damageNoteRepository.create(damageBase({ item: item2._id, reason: "Expired", status: "Rejected", reportedBy: reporter }));
+
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { item: item1._id } })).length, 2);
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { batch: batch1._id } })).length, 2);
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { reportedBy: reporter } })).length, 3);
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { status: "Approved" } })).filter((x) => x.reportedBy === reporter).length, 1);
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { id: { $in: [a._id, b._id, c._id] } } })).length, 3);
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { status: { $in: ["Approved", "Rejected"] } } })).filter((x) => x.reportedBy === reporter).length, 2);
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { item: { $in: [item1._id, item2._id] } } })).filter((x) => x.reportedBy === reporter).length, 3);
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { $and: false } })).constructor, Array, "non-object filter tolerated");
+  // createdAt <= now
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { createdAt: { $lte: new Date() } } })).filter((x) => x.reportedBy === reporter).length, 3);
+  assert.strictEqual((await damageNoteRepository.findMany({ filter: { createdAt: { $gt: new Date("1999-01-01") } } })).filter((x) => x.reportedBy === reporter).length, 3);
+  // sort + pagination
+  const sorted = await damageNoteRepository.findMany({ filter: { reportedBy: reporter }, sort: { createdAt: -1 } });
+  assert.strictEqual(sorted.length, 3);
+  const paged = await damageNoteRepository.findMany({ filter: { reportedBy: reporter }, sort: { createdAt: -1 }, limit: 2, offset: 1 });
+  assert.strictEqual(paged.length, 2);
+
+  await damageNoteRepository.destroy(a._id);
+  await damageNoteRepository.destroy(b._id);
+  await damageNoteRepository.destroy(c._id);
+  await cleanupDamageRefs(item1._id, batch1._id);
+  await cleanupDamageRefs(item2._id);
+});
+
+test("damage note repository: count uses COUNT(*) and matches filters", async () => {
+  const item = await createDamageItem();
+  const reporter = crypto.randomBytes(12).toString("hex");
+  const a = await damageNoteRepository.create(damageBase({ item: item._id, status: "Pending Approval", reportedBy: reporter }));
+  const b = await damageNoteRepository.create(damageBase({ item: item._id, status: "Approved", reportedBy: reporter }));
+  assert.strictEqual(await damageNoteRepository.count({ reportedBy: reporter }), 2);
+  assert.strictEqual(await damageNoteRepository.count({ reportedBy: reporter, status: { $in: ["Approved", "Rejected"] } }), 1);
+  assert.strictEqual(await damageNoteRepository.count({ reportedBy: reporter, status: { $in: [] } }), 0);
+  await damageNoteRepository.destroy(a._id);
+  await damageNoteRepository.destroy(b._id);
+  await cleanupDamageRefs(item._id);
+});
+
+test("damage note repository: destroy reports existence (DELETE RETURNING) and releases FKs", async () => {
+  const item = await createDamageItem();
+  const batch = await createDamageBatch(item._id);
+  const created = await damageNoteRepository.create(damageBase({ item: item._id, batch: batch._id }));
+  assert.strictEqual(await damageNoteRepository.destroy("000000000000000000000001"), false);
+  assert.strictEqual(await damageNoteRepository.destroy(created._id), true);
+  assert.strictEqual(await damageNoteRepository.destroy(created._id), false);
+  // after the note is gone both the batch and the item can be deleted
+  assert.strictEqual(await inventoryBatchRepository.destroy(batch._id), true);
+  assert.strictEqual(await inventoryItemRepository.destroy(item._id), true);
+});
+
+test("damage note repository: quantity/monetary precision passes through NUMERIC untouched", async () => {
+  const item = await createDamageItem();
+  const created = await damageNoteRepository.create(damageBase({
+    item: item._id,
+    quantity: "123456789.1234",
+    reason: "Quality Issue",
+    writeOffAmount: "1000000.99",
+  }));
+  const byId = await damageNoteRepository.findById(created._id);
+  assert.strictEqual(byId.quantity, 123456789.1234);
+  assert.strictEqual(byId.writeOffAmount, 1000000.99);
+  await damageNoteRepository.destroy(created._id);
+  await cleanupDamageRefs(item._id);
 });

@@ -211,38 +211,49 @@ exports.logKitchenProduction = async (req, res) => {
   }
 };
 
-const DamageNote = require("../models/DamageNote");
+const damageNoteService = require("../services/damageNoteService");
 const RepairTicket = require("../models/RepairTicket");
+
+// Resolves the item id of a damage note whether the model populated it (Mongo
+// populate leaves damage.item as the full InventoryItem document) or the
+// PostgreSQL repository left it as a plain id string. Both datasources
+// round-trip the same Mongo-shaped document; this helper normalizes the only
+// populated-vs-plain difference so the business logic below is
+// datasource-agnostic.
+const damageItemId = (damage) => {
+  const value = damage && damage.item;
+  return value && typeof value === "object" ? value._id || value : value;
+};
 
 exports.approveDamageNote = async (req, res) => {
   try {
     const { id } = req.params;
-    const damage = await DamageNote.findById(id).populate("item");
+    const damage = await damageNoteService.findById(id);
     if (!damage) return res.status(404).json({ success: false, message: "Damage note not found" });
 
     if (damage.status !== "Pending Approval") {
       return res.status(400).json({ success: false, message: "Only pending damage notes can be approved." });
     }
 
-    damage.status = "Approved";
-    damage.approvedBy = req.user._id;
+    const itemId = damageItemId(damage);
+    const item = await InventoryItem.findById(itemId);
+    if (!item) return res.status(404).json({ success: false, message: "Inventory item not found" });
 
-    const item = damage.item;
     await deductStock(
-      item._id,
+      itemId,
       damage.quantity,
       "Damage Note",
       req.user._id,
       `Damage approved: ${damage.reason || ''}`
     );
-    
-    const updatedItem = await InventoryItem.findById(item._id);
+
+    const updatedItem = await InventoryItem.findById(itemId);
     if (updatedItem) {
       updatedItem.damagedStock = (updatedItem.damagedStock || 0) + damage.quantity;
       await updatedItem.save();
     }
 
-    await damage.save();
+    await damageNoteService.updateById(id, { status: "Approved", approvedBy: req.user._id });
 
     // Create Account Transaction (Inventory Loss)
     await recordTransaction({
@@ -252,12 +263,12 @@ exports.approveDamageNote = async (req, res) => {
       amount: damage.writeOffAmount || (item.lastPurchasePrice * damage.quantity) || 0,
       paymentMethod: "System",
       description: `Stock write-off for damaged item: ${item.name}`,
-      referenceId: damage._id,
+      referenceId: id,
       referenceModel: "DamageNote",
       recordedBy: req.user._id
     });
 
-    res.status(200).json({ success: true, message: "Damage approved and stock reduced.", damage });
+    res.status(200).json({ success: true, message: "Damage approved and stock reduced.", damage: { ...damage, status: "Approved", approvedBy: req.user._id } });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to approve damage", error: error.message });
   }
