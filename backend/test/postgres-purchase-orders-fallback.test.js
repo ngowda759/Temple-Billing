@@ -268,6 +268,8 @@ test("fallback: Mongo fallback works when the purchase_orders table is missing",
   // irrelevant to its correctness.
   const pool = new Pool({ connectionString: TEST_DB_URL });
   try {
+    await pool.query("DROP TABLE IF EXISTS goods_received_note_items CASCADE");
+    await pool.query("DROP TABLE IF EXISTS goods_received_notes CASCADE");
     await pool.query("DROP TABLE IF EXISTS purchase_order_items CASCADE");
     await pool.query("DROP TABLE IF EXISTS purchase_orders CASCADE");
     await pool.query("DROP TABLE IF EXISTS schema_migrations");

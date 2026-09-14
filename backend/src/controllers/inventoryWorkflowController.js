@@ -1,4 +1,3 @@
-const GoodsReceivedNote = require("../models/GoodsReceivedNote");
 const PurchaseOrder = require("../models/PurchaseOrder");
 const purchaseOrderService = require("../services/purchaseOrderService");
 const InventoryItem = require("../models/InventoryItem");
@@ -6,16 +5,31 @@ const InventoryBatch = require("../models/InventoryBatch");
 const AccountTransaction = require("../models/AccountTransaction");
 const { recordTransaction } = require("../services/accountingService");
 const { addStock, deductStock } = require("../utils/inventoryHelper");
+const goodsReceivedNoteService = require("../services/goodsReceivedNoteService");
+
+// Resolves the item id of a GRN line whether the model populated it (Mongo
+// populate leaves line.item as the InventoryItem document) or the PostgreSQL
+// repository left it as a plain id string. Both datasources round-trip the
+// same Mongo-shaped document; this helper normalizes the only populated-vs-
+// plain difference so the business logic below is datasource-agnostic.
+const lineItemId = (line) => {
+  const value = line && line.item;
+  return value && typeof value === "object" ? value._id || value : value;
+};
 
 // Create GRN from PO
 exports.createGRN = async (req, res) => {
   try {
     const { purchaseOrderId, supplierId, supplierInvoiceNumber, supplierInvoiceDate, receivedItems, totalAmount, notes } = req.body;
 
-    const grnCount = await GoodsReceivedNote.countDocuments();
+    // The grnNumber is derived from the CURRENT datasource's row count so the
+    // PostgreSQL path numbers from the goods_received_notes table and the
+    // Mongo fallback numbers from countDocuments — exactly one numbering
+    // domain per persistence path.
+    const grnCount = await goodsReceivedNoteService.count({});
     const grnNumber = `GRN-${String(grnCount + 1).padStart(5, "0")}`;
 
-    const newGrn = new GoodsReceivedNote({
+    const newGrn = await goodsReceivedNoteService.create({
       grnNumber,
       purchaseOrder: purchaseOrderId,
       supplier: supplierId,
@@ -23,12 +37,10 @@ exports.createGRN = async (req, res) => {
       supplierInvoiceDate,
       receivedItems,
       totalAmount,
-      receivedBy: req.user._id,
+      receivedBy: req.user && req.user._id,
       notes,
       status: "Pending Approval"
     });
-
-    await newGrn.save();
 
     if (purchaseOrderId) {
       const po = await purchaseOrderService.findById(purchaseOrderId);
@@ -48,7 +60,7 @@ exports.createGRN = async (req, res) => {
 exports.approveGRN = async (req, res) => {
   try {
     const { id } = req.params;
-    const grn = await GoodsReceivedNote.findById(id).populate("receivedItems.item");
+    const grn = await goodsReceivedNoteService.findById(id);
     if (!grn) return res.status(404).json({ success: false, message: "GRN not found" });
 
     if (grn.status === "Approved") {
@@ -56,20 +68,21 @@ exports.approveGRN = async (req, res) => {
     }
 
     grn.status = "Approved";
-    grn.approvedBy = req.user._id;
+    grn.approvedBy = req.user && req.user._id;
 
-    for (const line of grn.receivedItems) {
-      const item = await InventoryItem.findById(line.item._id);
-      
+    for (const line of grn.receivedItems || []) {
+      const itemId = lineItemId(line);
+      const item = await InventoryItem.findById(itemId);
+
       // Update Item Total Stock
       const updatedItem = await addStock(
-        line.item._id, 
-        line.acceptedQuantity, 
-        "GRN Approved", 
-        req.user._id, 
+        itemId,
+        line.acceptedQuantity,
+        "GRN Approved",
+        req.user && req.user._id,
         `Received via GRN ${grn.grnNumber}`
       );
-      
+
       if (updatedItem) {
         updatedItem.lastPurchasePrice = line.unitPrice;
         updatedItem.lastPurchaseDate = new Date();
@@ -92,7 +105,7 @@ exports.approveGRN = async (req, res) => {
       }
     }
 
-    await grn.save();
+    await goodsReceivedNoteService.updateById(grn._id, { status: "Approved", approvedBy: grn.approvedBy });
 
     // Create Account Transaction (Inventory Purchase)
     await recordTransaction({
@@ -104,7 +117,7 @@ exports.approveGRN = async (req, res) => {
       description: `Purchase against GRN ${grn.grnNumber}`,
       referenceId: grn._id,
       referenceModel: "GoodsReceivedNote",
-      recordedBy: req.user._id
+      recordedBy: req.user && req.user._id
     });
 
     res.status(200).json({ success: true, message: "GRN Approved and Stock Updated", grn });
@@ -112,6 +125,7 @@ exports.approveGRN = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to approve GRN", error: error.message });
   }
 };
+
 
 const Recipe = require("../models/Recipe");
 const Prasadam = require("../models/Prasadam");
