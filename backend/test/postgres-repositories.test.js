@@ -20,6 +20,8 @@ let inventoryRequestRepository;
 let inventoryItemRepository;
 let purchaseOrderRepository;
 let purchaseOrderItemRepository;
+let goodsReceivedNoteRepository;
+let goodsReceivedNoteItemRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -43,6 +45,8 @@ const resetAllTables = async (databaseUrl) => {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS goods_received_note_items CASCADE");
+    await pool.query("DROP TABLE IF EXISTS goods_received_notes CASCADE");
     await pool.query("DROP TABLE IF EXISTS purchase_order_items CASCADE");
     await pool.query("DROP TABLE IF EXISTS purchase_orders CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_batches CASCADE");
@@ -91,6 +95,8 @@ test.before(async () => {
   inventoryItemRepository = require("../src/repositories/inventoryItemRepository");
   purchaseOrderRepository = require("../src/repositories/purchaseOrderRepository");
   purchaseOrderItemRepository = require("../src/repositories/purchaseOrderItemRepository");
+  goodsReceivedNoteRepository = require("../src/repositories/goodsReceivedNoteRepository");
+  goodsReceivedNoteItemRepository = require("../src/repositories/goodsReceivedNoteItemRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
@@ -2404,4 +2410,569 @@ test("purchase order item repository: findById/findMany/count/destroy on child r
   assert.strictEqual(destroyed, true);
   assert.strictEqual((await purchaseOrderItemRepository.findByPurchaseOrderId(po._id)).length, 0);
   await cleanupPoItem(item._id);
+});
+// ─── Phase 2N: Goods Received Notes ─────────────────────────────────────────
+const grnBase = (overrides = {}) => ({
+  grnNumber: `GRN-${unique()}`,
+  supplier: "0000000000000000000000aa",
+  purchaseOrder: undefined,
+  supplierInvoiceNumber: "INV-1001",
+  supplierInvoiceDate: new Date("2026-02-01T10:00:00Z"),
+  receivedItems: [
+    { item: "0000000000000000000000bb", poQuantity: 10.5, receivedQuantity: 10.5, acceptedQuantity: 10, rejectedQuantity: 0.5, unitPrice: "1000.99", batchNumber: "B-1", expiryDate: new Date("2027-02-01T00:00:00Z"), remarks: "line 1" },
+    { item: "0000000000000000000000cc", poQuantity: 2, receivedQuantity: 2, acceptedQuantity: 2, rejectedQuantity: 0, unitPrice: "0.01" },
+  ],
+  totalAmount: "123456789.1234",
+  status: "Pending Approval",
+  receivedBy: "0000000000000000000000dd",
+  notes: "Repo test GRN",
+  ...overrides,
+});
+
+// Creates a real inventory_items row (satisfying the real FK) and returns it.
+const createGrnInventoryItem = async (name) => {
+  const created = await inventoryItemRepository.create({
+    name: name || `GRN-Item-${unique()}`,
+    unit: "Pack",
+  });
+  assert.ok(created?._id, "inventory item row must exist for the GRN FK");
+  return created;
+};
+
+// Creates a real purchase_orders row (satisfying the GRN → PO FK) and returns
+// it. The PO needs its own inventory item for purchase_order_items; use the
+// same item when possible to keep cleanup simple.
+const createGrnPurchaseOrder = async (itemId) => {
+  const data = poBase({ poNumber: `PO-GRN-${unique()}`, items: [{ item: itemId, orderedQuantity: 10, unitPrice: "10.00", totalPrice: 100 }] });
+  const po = await purchaseOrderRepository.create(data);
+  assert.ok(po?._id, "purchase order row must exist for the GRN FK");
+  return po;
+};
+
+// Creates a GRN whose items reference a REAL inventory_items row.
+const createGrnWithRealItem = async (overrides = {}) => {
+  const item = await createGrnInventoryItem();
+  const data = {
+    ...grnBase({ grnNumber: `GRN-${unique()}` }),
+    receivedItems: [
+      { item: item._id, poQuantity: 10.5, receivedQuantity: 10.5, acceptedQuantity: 10, rejectedQuantity: 0.5, unitPrice: "1000.99", batchNumber: "B-1" },
+    ],
+    ...overrides,
+  };
+  delete data.purchaseOrder;
+  const grn = await goodsReceivedNoteRepository.create(data);
+  return { grn, item, po: null };
+};
+
+const grnIdsOf = (grns) => grns.map((g) => (g && g._id) || g).filter(Boolean);
+
+// ON DELETE RESTRICT on goods_received_note_items.inventory_item_id and on
+// goods_received_notes.purchase_order_id mean referencing rows block deletes.
+// Tests remove the GRNs first, then the item/PO.
+const cleanupGrnItem = async (itemId, grns) => {
+  const ids = grns ? grnIdsOf(grns) : [];
+  if (ids.length) {
+    for (const gid of ids) await goodsReceivedNoteRepository.destroy(gid).catch(() => {});
+  } else if (itemId) {
+    const pool = new Pool({ connectionString: TEST_DB_URL });
+    try {
+      const { rows } = await pool.query(
+        "SELECT DISTINCT grn_id AS g FROM goods_received_note_items WHERE inventory_item_id = $1",
+        [String(itemId)]
+      );
+      for (const r of rows) await goodsReceivedNoteRepository.destroy(r.g).catch(() => {});
+    } finally {
+      await pool.end();
+    }
+  }
+  if (itemId) await inventoryItemRepository.destroy(String(itemId)).catch(() => {});
+};
+
+const cleanupGrnPo = async (poId, grns) => {
+  for (const gid of grnIdsOf(grns)) await goodsReceivedNoteRepository.destroy(gid).catch(() => {});
+  if (poId) await purchaseOrderRepository.destroy(String(poId)).catch(() => {});
+};
+
+test("goods received note repository: create → read → update round trip with embedded receivedItems", async () => {
+  const item = await createGrnInventoryItem();
+  const created = await goodsReceivedNoteRepository.create(grnBase({
+    grnNumber: `GRN-${unique()}`,
+    receivedItems: [
+      { item: item._id, poQuantity: 10.5, receivedQuantity: 10.5, acceptedQuantity: 10, rejectedQuantity: 0.5, unitPrice: "1000.99", batchNumber: "B-1", expiryDate: new Date("2027-02-01T00:00:00Z"), remarks: "line 1" },
+    ],
+  }));
+  assert.ok(created._id);
+  assert.match(created._id, /^[0-9a-f]{24}$/);
+  assert.strictEqual(created.id, created._id);
+  assert.strictEqual(created.supplier, "0000000000000000000000aa");
+  assert.strictEqual(created.status, "Pending Approval");
+  assert.strictEqual(created.totalAmount, 123456789.1234);
+  assert.strictEqual(created.supplierInvoiceNumber, "INV-1001");
+  assert.ok(created.supplierInvoiceDate instanceof Date);
+  assert.strictEqual(created.receivedBy, "0000000000000000000000dd");
+  assert.strictEqual(created.approvedBy, undefined);
+  assert.strictEqual(created.notes, "Repo test GRN");
+  assert.strictEqual(created.receivedItems.length, 1);
+  assert.strictEqual(created.receivedItems[0].item, item._id);
+  assert.strictEqual(created.receivedItems[0].acceptedQuantity, 10);
+  assert.strictEqual(created.receivedItems[0].rejectedQuantity, 0.5);
+  assert.strictEqual(created.receivedItems[0].unitPrice, 1000.99);
+  assert.strictEqual(created.receivedItems[0].batchNumber, "B-1");
+  assert.ok(created.receivedItems[0].expiryDate instanceof Date);
+  assert.strictEqual(created.receivedItems[0].remarks, "line 1");
+  assert.ok(created.createdAt instanceof Date);
+  assert.ok(created.updatedAt instanceof Date);
+
+  const read = await goodsReceivedNoteRepository.findById(created._id);
+  assert.strictEqual(read.grnNumber, created.grnNumber);
+
+  const updated = await goodsReceivedNoteRepository.updateById(created._id, {
+    status: "Approved",
+    approvedBy: "0000000000000000000000ee",
+    notes: "updated",
+  });
+  assert.strictEqual(updated.status, "Approved");
+  assert.strictEqual(updated.approvedBy, "0000000000000000000000ee");
+  assert.strictEqual(updated.notes, "updated");
+  assert.ok(updated.updatedAt instanceof Date);
+
+  await cleanupGrnItem(item._id, [created]);
+});
+
+test("goods received note repository: every Mongo persisted field maps to the PostgreSQL row", async () => {
+  const item = await createGrnInventoryItem();
+  const supplierInvoiceDate = new Date("2026-03-01T06:30:00+05:30");
+  const expiry = new Date("2027-06-30T00:00:00Z");
+  const created = await goodsReceivedNoteRepository.create(grnBase({
+    grnNumber: `GRN-${unique()}`,
+    supplierInvoiceNumber: "INV-FULL",
+    supplierInvoiceDate,
+    receivedItems: [
+      { item: item._id, poQuantity: "1000.125", receivedQuantity: "1000.125", acceptedQuantity: "995.125", rejectedQuantity: "5", unitPrice: "10.50", batchNumber: "BATCHX", expiryDate: expiry, remarks: "full map" },
+    ],
+    receivedBy: "employee-x",
+    approvedBy: "employee-y",
+  }));
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query("SELECT * FROM goods_received_notes WHERE id = $1", [created._id]);
+    const row = rows[0];
+    assert.strictEqual(row.grn_number, created.grnNumber);
+    assert.strictEqual(row.supplier, "0000000000000000000000aa");
+    assert.strictEqual(row.supplier_invoice_number, "INV-FULL");
+    assert.strictEqual(row.supplier_invoice_date.toISOString(), supplierInvoiceDate.toISOString());
+    assert.strictEqual(row.total_amount.toString(), "123456789.1234");
+    assert.strictEqual(row.status, "Pending Approval");
+    assert.strictEqual(row.received_by, "employee-x");
+    assert.strictEqual(row.approved_by, "employee-y");
+    assert.strictEqual(row.notes, "Repo test GRN");
+    assert.ok(row.created_at instanceof Date);
+
+    const { rows: itemRows } = await pool.query(
+      "SELECT * FROM goods_received_note_items WHERE grn_id = $1 ORDER BY position",
+      [created._id]
+    );
+    assert.strictEqual(itemRows.length, 1);
+    assert.strictEqual(itemRows[0].inventory_item_id, item._id);
+    assert.strictEqual(itemRows[0].po_quantity.toString(), "1000.125");
+    assert.strictEqual(itemRows[0].received_quantity.toString(), "1000.125");
+    assert.strictEqual(itemRows[0].accepted_quantity.toString(), "995.125");
+    assert.strictEqual(itemRows[0].rejected_quantity.toString(), "5");
+    assert.strictEqual(itemRows[0].unit_price.toString(), "10.50");
+    assert.strictEqual(itemRows[0].batch_number, "BATCHX");
+    assert.strictEqual(itemRows[0].expiry_date.toISOString(), expiry.toISOString());
+    assert.strictEqual(itemRows[0].remarks, "full map");
+  } finally {
+    await pool.end();
+  }
+  await cleanupGrnItem(item._id, [created]);
+});
+
+test("goods received note repository: required fields are enforced like Mongo", async () => {
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ supplier: undefined })), /supplier is required/);
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ supplier: " " })), /supplier is required/);
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ totalAmount: undefined })), /totalAmount is required/);
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ totalAmount: "abc" })), /totalAmount must be a number/);
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ receivedItems: [{ item: undefined, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 }] })), /receivedItems\.item is required/);
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ receivedItems: [{ item: "x", receivedQuantity: undefined, acceptedQuantity: 1, unitPrice: 1 }] })), /receivedItems\.receivedQuantity is required/);
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ receivedItems: [{ item: "x", receivedQuantity: 1, acceptedQuantity: undefined, unitPrice: 1 }] })), /receivedItems\.acceptedQuantity is required/);
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ receivedItems: [{ item: "x", receivedQuantity: 1, acceptedQuantity: 1, unitPrice: undefined }] })), /receivedItems\.unitPrice is required/);
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ receivedItems: [{ item: "x", receivedQuantity: "abc", acceptedQuantity: 1, unitPrice: 1 }] })), /receivedItems\.receivedQuantity must be a number/);
+});
+
+test("goods received note repository: defaults match the Mongo schema", async () => {
+  const item = await createGrnInventoryItem();
+  const created = await goodsReceivedNoteRepository.create({
+    supplier: "0000000000000000000000aa",
+    receivedItems: [
+      { item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: "1.50" },
+    ],
+    totalAmount: 1.5,
+  });
+  assert.match(created.grnNumber, /^GRN-\d{5}$/, "grnNumber is auto-derived in GRN-00000 format");
+  assert.strictEqual(created.status, "Draft", "status default is Draft");
+  assert.strictEqual(created.purchaseOrder, undefined);
+  assert.strictEqual(created.supplierInvoiceNumber, undefined);
+  assert.strictEqual(created.supplierInvoiceDate, undefined);
+  assert.strictEqual(created.receivedBy, undefined);
+  assert.strictEqual(created.approvedBy, undefined);
+  assert.strictEqual(created.notes, undefined);
+  assert.strictEqual(created.receivedItems[0].poQuantity, 0, "poQuantity defaults to 0");
+  assert.strictEqual(created.receivedItems[0].rejectedQuantity, 0, "rejectedQuantity defaults to 0");
+  await cleanupGrnItem(item._id, [created]);
+});
+
+test("goods received note repository: status enum is preserved and invalid values are rejected", async () => {
+  const item = await createGrnInventoryItem();
+  const created = [];
+  for (const status of ["Draft", "Pending Quality Check", "Pending Approval", "Approved", "Rejected"]) {
+    const grn = await goodsReceivedNoteRepository.create(grnBase({ grnNumber: `GRN-${unique()}`, status, totalAmount: 1, receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 }] }));
+    assert.strictEqual(grn.status, status);
+    created.push(grn);
+  }
+  await assert.rejects(() => goodsReceivedNoteRepository.create(grnBase({ status: "Ordered" })), /Invalid status/);
+  await assert.rejects(() => goodsReceivedNoteRepository.updateById("000000000000000000000001", { status: "Ordered" }), /Invalid status/);
+  const grn = await goodsReceivedNoteRepository.create(grnBase({ grnNumber: `GRN-${unique()}`, totalAmount: 1, receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 }] }));
+  created.push(grn);
+  await assert.rejects(() => goodsReceivedNoteRepository.updateById(grn._id, { status: "Ordered" }), /Invalid status/);
+  await cleanupGrnItem(item._id, created);
+
+  // The DB CHECK is real, not just service-level.
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    await assert.rejects(
+      () => pool.query(
+        "INSERT INTO goods_received_notes (id, grn_number, supplier, total_amount, status) VALUES ($1, $2, 's', 1, 'Ordered')",
+        [crypto.randomBytes(12).toString("hex"), `GRN-${unique()}`]
+      ),
+      /goods_received_notes_status_check/,
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("goods received note repository: quantity/money precision round-trips exactly through NUMERIC", async () => {
+  const item = await createGrnInventoryItem();
+  const cases = [
+    { qty: "10.50", price: "0.01", total: "123456789.1234" },
+    { qty: "1000.99", price: "10.50", total: "0.01" },
+    { qty: "1000000.99", price: "1000.99", total: "10.50" },
+    { qty: "123456789.1234", price: "123456789.1234", total: "1000000.99" },
+  ];
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  const created = [];
+  try {
+    for (const c of cases) {
+      const grn = await goodsReceivedNoteRepository.create(grnBase({
+        grnNumber: `GRN-${unique()}`,
+        totalAmount: c.total,
+        receivedItems: [{ item: item._id, receivedQuantity: c.qty, acceptedQuantity: c.qty, unitPrice: c.price }],
+      }));
+      created.push(grn);
+      const { rows } = await pool.query(
+        "SELECT total_amount::text AS t FROM goods_received_notes WHERE id = $1",
+        [grn._id]
+      );
+      assert.strictEqual(rows[0].t, c.total);
+      const { rows: ir } = await pool.query(
+        "SELECT received_quantity::text AS r, accepted_quantity::text AS a, unit_price::text AS u FROM goods_received_note_items WHERE grn_id = $1",
+        [grn._id]
+      );
+      assert.strictEqual(ir[0].r, c.qty);
+      assert.strictEqual(ir[0].a, c.qty);
+      assert.strictEqual(ir[0].u, c.price);
+      const read = await goodsReceivedNoteRepository.findById(grn._id);
+      assert.strictEqual(read.totalAmount, Number(c.total));
+      assert.strictEqual(read.receivedItems[0].unitPrice, Number(c.price));
+    }
+  } finally {
+    await pool.end();
+  }
+  await cleanupGrnItem(item._id, created);
+});
+
+test("goods received note repository: dates round-trip through TIMESTAMPTZ preserving the instant", async () => {
+  const item = await createGrnInventoryItem();
+  const supplierInvoiceDate = new Date("2026-08-15T10:30:00+05:30");
+  const expiry = new Date("2027-12-31T23:59:59Z");
+  const created = await goodsReceivedNoteRepository.create(grnBase({
+    grnNumber: `GRN-${unique()}`,
+    supplierInvoiceDate,
+    receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1, expiryDate: expiry }],
+  }));
+  const read = await goodsReceivedNoteRepository.findById(created._id);
+  assert.ok(read.supplierInvoiceDate instanceof Date);
+  assert.strictEqual(read.supplierInvoiceDate.toISOString(), supplierInvoiceDate.toISOString());
+  assert.ok(read.receivedItems[0].expiryDate instanceof Date);
+  assert.strictEqual(read.receivedItems[0].expiryDate.toISOString(), expiry.toISOString());
+  assert.ok(read.createdAt instanceof Date);
+  await cleanupGrnItem(item._id, [created]);
+});
+
+test("goods received note repository: legacy IDs round-trip and create with the same id is idempotent", async () => {
+  const item = await createGrnInventoryItem();
+  const chosenId = crypto.randomBytes(12).toString("hex");
+  const first = await goodsReceivedNoteRepository.create(grnBase({ id: chosenId, grnNumber: `GRN-${unique()}`, totalAmount: 5, receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 5 }] }));
+  assert.strictEqual(first._id, chosenId);
+  const second = await goodsReceivedNoteRepository.create(grnBase({ id: chosenId, grnNumber: `GRN-${unique()}`, totalAmount: 99, receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 99 }] }));
+  assert.strictEqual(second._id, chosenId);
+  assert.strictEqual(second.totalAmount, 5, "ON CONFLICT DO NOTHING keeps the existing row");
+  await cleanupGrnItem(item._id, [first]);
+});
+
+test("goods received note repository: unique grnNumber is enforced (Mongo unique: true)", async () => {
+  const item = await createGrnInventoryItem();
+  const grn = await goodsReceivedNoteRepository.create(grnBase({ grnNumber: `GRN-UNIQ-${unique()}`, totalAmount: 1, receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 }] }));
+  await assert.rejects(
+    () => goodsReceivedNoteRepository.create(grnBase({ grnNumber: grn.grnNumber, totalAmount: 1, receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 }] })),
+    /duplicate key value violates unique constraint "goods_received_notes_grn_number_key"/
+  );
+  await cleanupGrnItem(item._id, [grn]);
+});
+
+test("goods received note repository: findOne, findMany, $in, filtering, sorting and pagination", async () => {
+  const item = await createGrnInventoryItem();
+  const supplierA = crypto.randomBytes(12).toString("hex");
+  const supplierB = crypto.randomBytes(12).toString("hex");
+  const now = Date.now();
+  const base = { supplier: supplierA, receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 }] };
+  const draft = await goodsReceivedNoteRepository.create({ ...base, grnNumber: `GRN-${unique()}`, totalAmount: 1, status: "Draft", createdAt: new Date(now - 5 * 60 * 1000) });
+  const approved = await goodsReceivedNoteRepository.create({ ...base, grnNumber: `GRN-${unique()}`, totalAmount: 2, status: "Approved", supplierInvoiceDate: new Date("2026-06-15T00:00:00Z"), createdAt: new Date(now - 4 * 60 * 1000) });
+  const rejected = await goodsReceivedNoteRepository.create({ ...base, grnNumber: `GRN-${unique()}`, totalAmount: 3, status: "Rejected", createdAt: new Date(now - 3 * 60 * 1000) });
+  const supplierBGrn = await goodsReceivedNoteRepository.create({ grnNumber: `GRN-${unique()}`, supplier: supplierB, totalAmount: 4, status: "Draft", receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 4 }], createdAt: new Date(now - 2 * 60 * 1000) });
+
+  const approvedList = await goodsReceivedNoteRepository.findMany({ filter: { supplier: supplierA, status: "Approved" } });
+  assert.ok(approvedList.some((g) => g._id === approved._id));
+  assert.ok(!approvedList.some((g) => g._id === draft._id));
+
+  const inList = await goodsReceivedNoteRepository.findMany({ filter: { supplier: supplierA, status: { $in: ["Draft", "Approved"] } } });
+  assert.ok(inList.some((g) => g._id === draft._id));
+  assert.ok(inList.some((g) => g._id === approved._id));
+  assert.ok(!inList.some((g) => g._id === rejected._id));
+
+  const idIn = await goodsReceivedNoteRepository.findMany({ filter: { id: { $in: [draft._id, approved._id] } } });
+  assert.strictEqual(idIn.length, 2);
+
+  const supplierIn = await goodsReceivedNoteRepository.findMany({ filter: { supplier: { $in: [supplierA, supplierB] } } });
+  assert.strictEqual(supplierIn.length, 4);
+
+  const dateGte = await goodsReceivedNoteRepository.findMany({
+    filter: { supplierInvoiceDate: { $gte: new Date("2026-01-01T00:00:00Z") } },
+  });
+  assert.ok(dateGte.some((g) => g._id === approved._id));
+
+  const numIn = await goodsReceivedNoteRepository.findMany({ filter: { grnNumber: { $in: [draft.grnNumber, approved.grnNumber] } } });
+  assert.strictEqual(numIn.length, 2);
+
+  const sorted = await goodsReceivedNoteRepository.findMany({ filter: { supplier: supplierA }, sort: { createdAt: -1 } });
+  assert.deepStrictEqual(sorted.map((g) => g._id), [rejected._id, approved._id, draft._id]);
+
+  const byNumber = await goodsReceivedNoteRepository.findMany({ filter: { supplier: supplierA }, sort: { grnNumber: 1 } });
+  assert.strictEqual(byNumber.length, 3);
+
+  const page1 = await goodsReceivedNoteRepository.findMany({ filter: { supplier: supplierA }, sort: { createdAt: -1 }, limit: 2 });
+  assert.strictEqual(page1.length, 2);
+  const page2 = await goodsReceivedNoteRepository.findMany({ filter: { supplier: supplierA }, sort: { createdAt: -1 }, limit: 2, offset: 2 });
+  assert.strictEqual(page2.length, 1);
+
+  const safeSort = await goodsReceivedNoteRepository.findMany({ filter: { supplier: supplierA }, sort: { badColumn: 1 } });
+  assert.strictEqual(safeSort.length, 3);
+
+  const amountRange = await goodsReceivedNoteRepository.findMany({ filter: { supplier: supplierA, totalAmount: { $gte: 2, $lte: 3 } } });
+  assert.strictEqual(amountRange.length, 2);
+
+  await cleanupGrnItem(item._id, [draft, approved, rejected, supplierBGrn]);
+});
+
+test("goods received note repository: purchase-order relationship — GRN references real purchase_orders row", async () => {
+  const item = await createGrnInventoryItem();
+  const po = await createGrnPurchaseOrder(item._id);
+  const grn = await goodsReceivedNoteRepository.create(grnBase({
+    grnNumber: `GRN-${unique()}`,
+    purchaseOrder: po._id,
+    receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 }],
+  }));
+  assert.strictEqual(grn.purchaseOrder, po._id);
+
+  const byPo = await goodsReceivedNoteRepository.findMany({ filter: { purchaseOrder: po._id } });
+  assert.ok(byPo.some((g) => g._id === grn._id));
+
+  const poIn = await goodsReceivedNoteRepository.findMany({ filter: { purchaseOrder: { $in: [po._id] } } });
+  assert.ok(poIn.some((g) => g._id === grn._id));
+
+  // The FK is real: deleting the PO while GRNs reference it is refused.
+  await assert.rejects(() => purchaseOrderRepository.destroy(po._id), /purchase_orders/);
+  await cleanupGrnPo(po._id, [grn]);
+  await cleanupGrnItem(item._id);
+});
+
+test("goods received note repository: child item ordering is preserved", async () => {
+  const item = await createGrnInventoryItem();
+  const grn = await goodsReceivedNoteRepository.create(grnBase({
+    grnNumber: `GRN-${unique()}`,
+    totalAmount: 10,
+    receivedItems: [
+      { item: item._id, receivedQuantity: 3, acceptedQuantity: 3, unitPrice: 1 },
+      { item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 },
+      { item: item._id, receivedQuantity: 2, acceptedQuantity: 2, unitPrice: 1 },
+    ],
+  }));
+  const read = await goodsReceivedNoteRepository.findById(grn._id);
+  assert.deepStrictEqual(read.receivedItems.map((i) => i.receivedQuantity), [3, 1, 2]);
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query(
+      "SELECT received_quantity::text AS q FROM goods_received_note_items WHERE grn_id = $1 ORDER BY position, created_at, id",
+      [grn._id]
+    );
+    assert.deepStrictEqual(rows.map((r) => Number(r.q)), [3, 1, 2]);
+  } finally {
+    await pool.end();
+  }
+  await cleanupGrnItem(item._id, [grn]);
+});
+
+test("goods received note repository: atomic creation — a failing child item leaves no rows", async () => {
+  const item = await createGrnInventoryItem();
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  const grnCount = async () => (await pool.query("SELECT COUNT(*)::int AS n FROM goods_received_notes")).rows[0].n;
+  const itemCount = async () => (await pool.query("SELECT COUNT(*)::int AS n FROM goods_received_note_items")).rows[0].n;
+  try {
+    const beforeGrn = await grnCount();
+    const beforeItems = await itemCount();
+
+    await assert.rejects(
+      () => goodsReceivedNoteRepository.create(grnBase({
+        grnNumber: `GRN-${unique()}`,
+        totalAmount: 5,
+        receivedItems: [
+          { item: item._id, receivedQuantity: 5, acceptedQuantity: 5, unitPrice: 1 },
+          { item: item._id, receivedQuantity: 2, acceptedQuantity: 2, rejectedQuantity: -1, unitPrice: 1 },
+        ],
+      })),
+      /receivedItems\.rejectedQuantity/
+    );
+    assert.strictEqual(await grnCount(), beforeGrn, "no goods_received_notes row remains");
+    assert.strictEqual(await itemCount(), beforeItems, "no goods_received_note_items rows remain");
+
+    await assert.rejects(
+      () => goodsReceivedNoteRepository.create(grnBase({
+        grnNumber: `GRN-${unique()}`,
+        totalAmount: 8,
+        receivedItems: [
+          { item: item._id, receivedQuantity: 5, acceptedQuantity: 5, unitPrice: 1 },
+          { item: "0000000000000000000000ff", receivedQuantity: 3, acceptedQuantity: 3, unitPrice: 1 },
+        ],
+      })),
+      /inventory_item_id/
+    );
+    assert.strictEqual(await grnCount(), beforeGrn, "no goods_received_notes row remains after FK failure");
+    assert.strictEqual(await itemCount(), beforeItems, "no goods_received_note_items rows remain after FK failure");
+  } finally {
+    await pool.end();
+  }
+  await cleanupGrnItem(item._id);
+});
+
+test("goods received note repository: atomic item replacement — a failing replacement leaves the original items", async () => {
+  const item = await createGrnInventoryItem();
+  const { grn } = await createGrnWithRealItem({ totalAmount: 5 });
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const before = (await pool.query("SELECT COUNT(*)::int AS n FROM goods_received_note_items WHERE grn_id = $1", [grn._id])).rows[0].n;
+    assert.ok(before >= 1);
+    await assert.rejects(
+      () => goodsReceivedNoteRepository.replaceItems(grn._id, [
+        { item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 },
+        { item: item._id, receivedQuantity: 1, acceptedQuantity: 1, rejectedQuantity: -1, unitPrice: 1 },
+      ]),
+      /receivedItems\.rejectedQuantity/
+    );
+    const after = await goodsReceivedNoteRepository.findById(grn._id);
+    assert.strictEqual(after.receivedItems.length, before, "original items survive a failed replacement");
+  } finally {
+    await pool.end();
+  }
+  await cleanupGrnItem(item._id, [grn]);
+});
+
+test("goods received note repository: count uses COUNT(*) and filter counts match", async () => {
+  const item = await createGrnInventoryItem();
+  const supplier = crypto.randomBytes(12).toString("hex");
+  const total = await goodsReceivedNoteRepository.count({});
+  const grn = await goodsReceivedNoteRepository.create({ ...grnBase({ supplier, status: "Draft", totalAmount: 1, receivedItems: [{ item: item._id, receivedQuantity: 1, acceptedQuantity: 1, unitPrice: 1 }] }), grnNumber: `GRN-${unique()}` });
+  const draftCount = await goodsReceivedNoteRepository.count({ supplier, status: "Draft" });
+  assert.strictEqual(draftCount, 1);
+  const allCount = await goodsReceivedNoteRepository.count({ supplier });
+  assert.strictEqual(allCount, 1);
+  const totalAfter = await goodsReceivedNoteRepository.count({});
+  assert.strictEqual(totalAfter, total + 1);
+  await cleanupGrnItem(item._id, [grn]);
+});
+
+test("goods received note repository: updateById on a missing id returns null and empty updates are no-ops", async () => {
+  assert.strictEqual(await goodsReceivedNoteRepository.updateById("000000000000000000000001", { status: "Approved" }), null);
+  const { grn } = await createGrnWithRealItem();
+  const noop = await goodsReceivedNoteRepository.updateById(grn._id, {});
+  assert.strictEqual(noop._id, grn._id);
+  await cleanupGrnItem(noop.receivedItems[0].item, [grn]);
+});
+
+test("goods received note repository: destroy reports existence and cascades child items (ON DELETE CASCADE)", async () => {
+  const { grn, item } = await createGrnWithRealItem();
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const childCount = async () => (await pool.query("SELECT COUNT(*)::int AS n FROM goods_received_note_items WHERE grn_id = $1", [grn._id])).rows[0].n;
+    assert.strictEqual(await goodsReceivedNoteRepository.destroy("000000000000000000000001"), false);
+    assert.ok((await childCount()) >= 1, "child rows exist before delete");
+    assert.strictEqual(await goodsReceivedNoteRepository.destroy(grn._id), true);
+    assert.strictEqual(await goodsReceivedNoteRepository.destroy(grn._id), false);
+    assert.strictEqual(await goodsReceivedNoteRepository.findById(grn._id), null);
+    assert.strictEqual(await childCount(), 0, "ON DELETE CASCADE removes the embedded items with the GRN");
+  } finally {
+    await pool.end();
+  }
+  await cleanupGrnItem(item._id);
+});
+
+test("goods received note repository: updateById with receivedItems does not silently drop child rows (item-only via replaceItems)", async () => {
+  const item = await createGrnInventoryItem();
+  const { grn } = await createGrnWithRealItem({ totalAmount: 10 });
+  const updated = await goodsReceivedNoteRepository.updateById(grn._id, { notes: "still has items" });
+  assert.strictEqual(updated.receivedItems.length >= 1, true, "scalar update keeps child rows loaded");
+  assert.strictEqual(updated.notes, "still has items");
+
+  await goodsReceivedNoteRepository.replaceItems(grn._id, [
+    { item: item._id, receivedQuantity: 7, acceptedQuantity: 7, unitPrice: "2.50", rejectedQuantity: 0.5 },
+  ]);
+  const replaced = await goodsReceivedNoteRepository.findById(grn._id);
+  assert.strictEqual(replaced.receivedItems.length, 1);
+  assert.strictEqual(replaced.receivedItems[0].receivedQuantity, 7);
+  assert.strictEqual(replaced.receivedItems[0].rejectedQuantity, 0.5);
+  await cleanupGrnItem(item._id, [grn]);
+});
+
+test("goods received note item repository: findById/findMany/count/destroy on child rows", async () => {
+  const { grn, item } = await createGrnWithRealItem({ grnNumber: `GRN-${unique()}`, totalAmount: 10 });
+  const child = await goodsReceivedNoteItemRepository.findByGrnId(grn._id);
+  assert.strictEqual(child.length, 1);
+  assert.strictEqual(child[0].item, item._id);
+
+  const byId = await goodsReceivedNoteItemRepository.findById(child[0]._id);
+  assert.strictEqual(byId.receivedQuantity, 10.5);
+  assert.strictEqual(byId.acceptedQuantity, 10);
+  assert.strictEqual(byId.unitPrice, 1000.99);
+
+  const viaFindMany = await goodsReceivedNoteItemRepository.findMany({ filter: { grnId: grn._id } });
+  assert.strictEqual(viaFindMany.length, 1);
+  const viaItemFilter = await goodsReceivedNoteItemRepository.findMany({ filter: { inventoryItemId: item._id } });
+  assert.ok(viaItemFilter.length >= 1);
+
+  assert.strictEqual(await goodsReceivedNoteItemRepository.count({ grnId: grn._id }), 1);
+
+  const destroyed = await goodsReceivedNoteItemRepository.destroy(child[0]._id);
+  assert.strictEqual(destroyed, true);
+  assert.strictEqual((await goodsReceivedNoteItemRepository.findByGrnId(grn._id)).length, 0);
+  await cleanupGrnItem(item._id, [grn]);
 });

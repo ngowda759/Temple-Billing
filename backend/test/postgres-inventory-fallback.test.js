@@ -176,6 +176,8 @@ test("fallback: Mongo fallback works when the inventory_items table is missing",
     await pool.query("DROP TABLE IF EXISTS inventory_consumptions CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_items CASCADE");
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS goods_received_note_items CASCADE");
+    await pool.query("DROP TABLE IF EXISTS goods_received_notes CASCADE");
   } finally {
     await pool.end();
   }
