@@ -23,6 +23,7 @@ let purchaseOrderItemRepository;
 let goodsReceivedNoteRepository;
 let goodsReceivedNoteItemRepository;
 let damageNoteRepository;
+let assetRepository;
 let inventoryBatchRepository;
 
 const TEST_DB_URL =
@@ -47,6 +48,8 @@ const resetAllTables = async (databaseUrl) => {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS asset_maintenance_history CASCADE");
+    await pool.query("DROP TABLE IF EXISTS assets CASCADE");
     await pool.query("DROP TABLE IF EXISTS goods_received_note_items CASCADE");
     await pool.query("DROP TABLE IF EXISTS goods_received_notes CASCADE");
     await pool.query("DROP TABLE IF EXISTS purchase_order_items CASCADE");
@@ -100,6 +103,7 @@ test.before(async () => {
   goodsReceivedNoteRepository = require("../src/repositories/goodsReceivedNoteRepository");
   goodsReceivedNoteItemRepository = require("../src/repositories/goodsReceivedNoteItemRepository");
   damageNoteRepository = require("../src/repositories/damageNoteRepository");
+  assetRepository = require("../src/repositories/assetRepository");
   inventoryBatchRepository = require("../src/repositories/inventoryBatchRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
@@ -3171,4 +3175,236 @@ test("damage note repository: quantity/monetary precision passes through NUMERIC
   assert.strictEqual(byId.writeOffAmount, 1000000.99);
   await damageNoteRepository.destroy(created._id);
   await cleanupDamageRefs(item._id);
+});
+// ─── Phase 2P: assets ───────────────────────────────────────────────────────
+const assetBase = (overrides = {}) => ({
+  assetId: `AST-${unique()}`,
+  name: `Asset ${unique()}`,
+  category: "Electrical",
+  qrCode: "",
+  purchaseDate: new Date("2024-01-15T00:00:00.000Z"),
+  supplier: undefined,
+  invoiceNumber: "",
+  warranty: "",
+  assignedLocation: "Main Temple",
+  status: "Active",
+  purchaseCost: 0,
+  serialNumber: "",
+  maintenanceHistory: [],
+  ...overrides,
+});
+
+test("asset repository: create → read → update round trip (PG path)", async () => {
+  const created = await assetRepository.create(assetBase({
+    assetId: "AST-ROUNDTRIP",
+    name: "Copper Lamp",
+    category: "Utensils",
+    purchaseCost: "123456789.1234",
+    purchaseDate: "2024-01-15T00:00:00.000Z",
+    maintenanceHistory: [
+      { repairDate: "2024-06-01T00:00:00.000Z", description: "Polished", cost: "250.50", vendor: "Vendor A" },
+      { repairDate: "2025-01-01T00:00:00.000Z", description: "Rewired", cost: "100.00", vendor: "Vendor B" },
+    ],
+  }));
+  assert.match(created._id, /^[0-9a-f]{24}$/, "Mongo-compatible ObjectId id");
+  assert.strictEqual(created.id, created._id);
+  assert.strictEqual(created.assetId, "AST-ROUNDTRIP");
+  assert.strictEqual(created.name, "Copper Lamp");
+  assert.strictEqual(created.category, "Utensils");
+  assert.strictEqual(created.qrCode, "");
+  assert.ok(created.purchaseDate instanceof Date);
+  assert.strictEqual(created.supplier, undefined);
+  assert.strictEqual(created.invoiceNumber, "");
+  assert.strictEqual(created.warranty, "");
+  assert.strictEqual(created.assignedLocation, "Main Temple");
+  assert.strictEqual(created.status, "Active");
+  assert.strictEqual(created.purchaseCost, 123456789.1234);
+  assert.strictEqual(created.serialNumber, "");
+  assert.strictEqual(created.maintenanceHistory.length, 2, "embedded history normalized into child rows");
+  assert.strictEqual(created.maintenanceHistory[0].cost, 250.5);
+  assert.strictEqual(created.maintenanceHistory[1].vendor, "Vendor B");
+  assert.ok(created.createdAt instanceof Date);
+  assert.ok(created.updatedAt instanceof Date);
+
+  const byId = await assetRepository.findById(created._id);
+  assert.strictEqual(byId.assetId, "AST-ROUNDTRIP");
+  assert.strictEqual(byId.maintenanceHistory.length, 2);
+  assert.strictEqual(byId.maintenanceHistory[0].repairDate.toISOString(), "2024-06-01T00:00:00.000Z");
+  assert.strictEqual(byId.maintenanceHistory[1].description, "Rewired");
+
+  const byAssetId = await assetRepository.findOne({ assetId: "AST-ROUNDTRIP" });
+  assert.strictEqual(byAssetId._id, created._id);
+  assert.strictEqual(await assetRepository.findOne({ assetId: "NOPE" }), null);
+
+  const updated = await assetRepository.updateById(created._id, {
+    status: "Under Repair",
+    purchaseCost: "1000.99",
+    assignedLocation: "Store Room",
+    maintenanceHistory: undefined,
+  });
+  assert.strictEqual(updated.status, "Under Repair");
+  assert.strictEqual(updated.purchaseCost, 1000.99);
+  assert.strictEqual(updated.assignedLocation, "Store Room");
+  assert.strictEqual(updated.maintenanceHistory.length, 2, "update without maintenanceHistory preserves existing child rows");
+
+  assert.strictEqual(await assetRepository.destroy(created._id), true);
+  assert.strictEqual(await assetRepository.destroy(created._id), false);
+});
+
+test("asset repository: unique assetId and duplicate id surface real constraints", async () => {
+  const a = await assetRepository.create(assetBase({ assetId: "AST-DUP" }));
+  // duplicate assetId → the PG unique constraint surfaces (Mongo unique index)
+  await assert.rejects(
+    assetRepository.create(assetBase({ assetId: "AST-DUP" })),
+    /duplicate key value violates unique constraint "assets_asset_id_key"/
+  );
+  // explicit duplicate id is a silent no-op (ON CONFLICT (id) DO NOTHING, same
+  // convention as every other Phase 2 repository)
+  const sameId = await assetRepository.create({ ...assetBase({ assetId: "AST-DUP-2" }), id: a._id });
+  assert.strictEqual(sameId._id, a._id);
+  assert.strictEqual(sameId.assetId, "AST-DUP", "first row wins");
+  await assetRepository.destroy(a._id);
+});
+
+test("asset repository: invalid enum values are rejected (no invented values)", async () => {
+  await assert.rejects(
+    assetRepository.create(assetBase({ status: "Scrapped" })),
+    /Invalid status/
+  );
+  await assert.rejects(
+    assetRepository.create(assetBase({ category: "Vehicles" })),
+    /Invalid category/
+  );
+});
+
+test("asset repository: required fields are enforced like the Mongo schema", async () => {
+  await assert.rejects(assetRepository.create(assetBase({ assetId: undefined })), /assetId is required/);
+  await assert.rejects(assetRepository.create(assetBase({ assetId: "" })), /assetId is required/);
+  await assert.rejects(assetRepository.create(assetBase({ name: undefined })), /name is required/);
+  await assert.rejects(assetRepository.create(assetBase({ name: "  " })), /name is required/);
+});
+
+test("asset repository: defaults match the Mongo schema", async () => {
+  const created = await assetRepository.create({
+    assetId: `AST-${unique()}`,
+    name: "Default Fields",
+  });
+  assert.strictEqual(created.category, "Other", "category default 'Other'");
+  assert.strictEqual(created.qrCode, "", "qrCode default ''");
+  assert.strictEqual(created.purchaseDate, undefined, "purchaseDate default null/absent");
+  assert.strictEqual(created.invoiceNumber, "", "invoiceNumber default ''");
+  assert.strictEqual(created.warranty, "", "warranty default ''");
+  assert.strictEqual(created.assignedLocation, "Main Temple", "assignedLocation default 'Main Temple'");
+  assert.strictEqual(created.status, "Active", "status default 'Active'");
+  assert.strictEqual(created.purchaseCost, 0, "purchaseCost default 0");
+  assert.strictEqual(created.serialNumber, "", "serialNumber default ''");
+  assert.deepStrictEqual(created.maintenanceHistory, [], "maintenanceHistory default []");
+  await assetRepository.destroy(created._id);
+});
+
+test("asset repository: dates round-trip through TIMESTAMPTZ and purchaseCost precision passes through NUMERIC", async () => {
+  const created = await assetRepository.create(assetBase({
+    purchaseDate: new Date("2023-12-31T23:59:59.999Z"),
+    purchaseCost: "0.01",
+  }));
+  const byId = await assetRepository.findById(created._id);
+  assert.strictEqual(byId.purchaseDate.toISOString(), "2023-12-31T23:59:59.999Z");
+  assert.strictEqual(byId.purchaseCost, 0.01);
+  await assetRepository.destroy(created._id);
+
+  const values = ["0.01", "10.50", "1000.99", "1000000.99", "123456789.1234", "-5"];
+  for (const v of values) {
+    const a = await assetRepository.create(assetBase({ purchaseCost: v }));
+    const read = await assetRepository.findById(a._id);
+    assert.strictEqual(read.purchaseCost, Number(v), `purchaseCost ${v} round-trips exactly`);
+    await assetRepository.destroy(a._id);
+  }
+});
+
+test("asset repository: unknown id and missing id resolve to null/false", async () => {
+  assert.strictEqual(await assetRepository.findById("000000000000000000000001"), null);
+  assert.strictEqual(await assetRepository.findOne({ id: "000000000000000000000001" }), null);
+  assert.strictEqual(await assetRepository.updateById("000000000000000000000001", { status: "Under Repair" }), null);
+  assert.strictEqual(await assetRepository.count({ id: "000000000000000000000001" }), 0);
+  assert.strictEqual(await assetRepository.destroy("000000000000000000000001"), false);
+});
+
+test("asset repository: findMany filters, $in, warranty cron filter, date ranges and pagination", async () => {
+  const supplierId = crypto.randomBytes(12).toString("hex");
+  const a = await assetRepository.create(assetBase({ assetId: `AST-${unique()}`, category: "Electrical", status: "Active", assignedLocation: "Main Temple", supplier: supplierId }));
+  const b = await assetRepository.create(assetBase({ assetId: `AST-${unique()}`, category: "Furniture", status: "Under Repair", assignedLocation: "Store Room" }));
+  const c = await assetRepository.create(assetBase({ assetId: `AST-${unique()}`, category: "Electrical", status: "Retired", assignedLocation: "Annexe", warranty: "Ends 2025", serialNumber: "SN-C" }));
+
+  assert.strictEqual((await assetRepository.findMany({ filter: { category: "Electrical" } })).length, 2);
+  assert.strictEqual((await assetRepository.findMany({ filter: { status: "Under Repair" } })).length, 1);
+  assert.strictEqual((await assetRepository.findMany({ filter: { assignedLocation: "Main Temple" } })).length, 1);
+  assert.strictEqual((await assetRepository.findMany({ filter: { assignedLocation: "Annexe" } })).length, 1);
+  assert.strictEqual((await assetRepository.findMany({ filter: { supplier: supplierId } })).length, 1);
+  assert.strictEqual((await assetRepository.findMany({ filter: { serialNumber: "SN-C" } })).length, 1);
+  assert.strictEqual((await assetRepository.findMany({ filter: { id: { $in: [a._id, b._id] } } })).length, 2);
+  assert.strictEqual((await assetRepository.findMany({ filter: { status: { $in: ["Under Repair", "Retired"] } } })).length, 2);
+  assert.strictEqual((await assetRepository.findMany({ filter: { category: { $in: ["Electrical", "Furniture"] } } })).length, 3);
+  assert.strictEqual((await assetRepository.findMany({ filter: { status: { $in: [] } } })).length, 0, "$in: [] matches nothing");
+  // app.js warranty-expiry cron: Asset.find({ warranty: { $exists: true, $ne: null } })).
+  // Every asset stores warranty TEXT NOT NULL DEFAULT '' — under Mongo's $ne:null
+  // semantics an empty-string warranty is NOT null, so ALL assets match (the PG
+  // `warranty IS NOT NULL` translation behaves identically to the Mongo query).
+  assert.strictEqual((await assetRepository.findMany({ filter: { warranty: { $exists: true, $ne: null } } })).length, 3);
+  // date ranges
+  assert.strictEqual((await assetRepository.findMany({ filter: { purchaseDate: { $lte: new Date() } } })).length, 3);
+  assert.strictEqual((await assetRepository.findMany({ filter: { createdAt: { $gt: new Date("1999-01-01") } } })).length, 3);
+  // sort + pagination
+  const sorted = await assetRepository.findMany({ filter: {}, sort: { name: 1 } });
+  assert.strictEqual(sorted.length, 3);
+  const paged = await assetRepository.findMany({ filter: {}, sort: { name: 1 }, limit: 2, offset: 1 });
+  assert.strictEqual(paged.length, 2);
+  const hostile = await assetRepository.findMany({ filter: {}, sort: { "x; DROP TABLE assets--": -1 } });
+  assert.strictEqual(hostile.length, 3, "hostile sort key falls back safely");
+
+  await assetRepository.destroy(a._id);
+  await assetRepository.destroy(b._id);
+  await assetRepository.destroy(c._id);
+});
+
+test("asset repository: count uses COUNT(*) and matches filters", async () => {
+  const base = await assetRepository.count({});
+  const a = await assetRepository.create(assetBase({ status: "Active" }));
+  const b = await assetRepository.create(assetBase({ status: "Under Repair" }));
+  assert.strictEqual(await assetRepository.count({}), base + 2);
+  assert.strictEqual(await assetRepository.count({ status: "Active" }), 1);
+  assert.strictEqual(await assetRepository.count({ status: { $in: ["Active", "Under Repair"] } }), 2);
+  assert.strictEqual(await assetRepository.count({ status: { $in: ["Retired"] } }), 0);
+  assert.strictEqual(await assetRepository.count({ status: { $in: [] } }), 0);
+  await assetRepository.destroy(a._id);
+  await assetRepository.destroy(b._id);
+});
+
+test("asset repository: destroy reports existence (DELETE RETURNING) and cascades maintenance history", async () => {
+  const created = await assetRepository.create(assetBase({
+    maintenanceHistory: [{ cost: "50", description: "serviced", vendor: "V" }],
+  }));
+  assert.strictEqual(await assetRepository.destroy(created._id), true);
+  assert.strictEqual(await assetRepository.destroy(created._id), false);
+});
+
+test("asset repository: addMaintenanceRecord appends to the embedded array (completeRepair writer)", async () => {
+  const created = await assetRepository.create(assetBase({}));
+  assert.deepStrictEqual(created.maintenanceHistory, []);
+  const entry = await assetRepository.addMaintenanceRecord(created._id, {
+    repairDate: new Date("2025-03-01T00:00:00.000Z"),
+    description: "Fan replaced",
+    cost: "750.25",
+    vendor: "Electrician Shop",
+  });
+  assert.strictEqual(entry.description, "Fan replaced");
+  const reloaded = await assetRepository.findById(created._id);
+  assert.strictEqual(reloaded.maintenanceHistory.length, 1);
+  assert.strictEqual(reloaded.maintenanceHistory[0].cost, 750.25);
+  assert.strictEqual(reloaded.maintenanceHistory[0].vendor, "Electrician Shop");
+  assert.strictEqual(reloaded.maintenanceHistory[0].repairDate.toISOString(), "2025-03-01T00:00:00.000Z");
+  await assetRepository.addMaintenanceRecord(created._id, { cost: "5", description: "second" });
+  const again = await assetRepository.findById(created._id);
+  assert.strictEqual(again.maintenanceHistory.length, 2, "appends in array order");
+  assert.strictEqual(again.maintenanceHistory[1].description, "second");
+  await assetRepository.destroy(created._id);
 });
