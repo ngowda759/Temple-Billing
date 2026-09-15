@@ -25,6 +25,8 @@ let goodsReceivedNoteItemRepository;
 let damageNoteRepository;
 let assetRepository;
 let inventoryBatchRepository;
+let repairRequestRepository;
+let repairTicketRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -70,6 +72,9 @@ const resetAllTables = async (databaseUrl) => {
     await pool.query("DROP TABLE IF EXISTS account_heads CASCADE");
     await pool.query("DROP TABLE IF EXISTS employees CASCADE");
     await pool.query("DROP TABLE IF EXISTS users CASCADE");
+    await pool.query("DROP TABLE IF EXISTS repair_ticket_spare_parts CASCADE");
+    await pool.query("DROP TABLE IF EXISTS repair_tickets CASCADE");
+    await pool.query("DROP TABLE IF EXISTS repair_requests CASCADE");
     await pool.query("DROP TABLE IF EXISTS donations CASCADE");
   } finally {
     await pool.end();
@@ -105,6 +110,8 @@ test.before(async () => {
   damageNoteRepository = require("../src/repositories/damageNoteRepository");
   assetRepository = require("../src/repositories/assetRepository");
   inventoryBatchRepository = require("../src/repositories/inventoryBatchRepository");
+  repairRequestRepository = require("../src/repositories/repairRequestRepository");
+  repairTicketRepository = require("../src/repositories/repairTicketRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
@@ -3407,4 +3414,77 @@ test("asset repository: addMaintenanceRecord appends to the embedded array (comp
   assert.strictEqual(again.maintenanceHistory.length, 2, "appends in array order");
   assert.strictEqual(again.maintenanceHistory[1].description, "second");
   await assetRepository.destroy(created._id);
+});
+
+// ─── Phase 2Q: repair repositories ─────────────────────────────────────────
+test("repair request repository: create/read/update/delete round-trip with Mongo field names", async () => {
+  const created = await repairRequestRepository.create({
+    asset: crypto.randomBytes(12).toString("hex"),
+    description: "Repair repo round-trip",
+    vendor: "Vendor A",
+    cost: "1200.75",
+    invoiceNumber: "INV-9",
+    status: "Pending",
+  });
+  assert.match(created._id, /^[0-9a-f]{24}$/);
+  assert.strictEqual(created.cost, 1200.75);
+  assert.strictEqual(created.status, "Pending");
+
+  const read = await repairRequestRepository.findById(created._id);
+  assert.strictEqual(read.vendor, "Vendor A");
+  assert.strictEqual(read.invoiceNumber, "INV-9");
+
+  const updated = await repairRequestRepository.updateById(created._id, { status: "Completed", cost: "50.25" });
+  assert.strictEqual(updated.status, "Completed");
+  assert.strictEqual(updated.cost, 50.25);
+
+  assert.strictEqual(await repairRequestRepository.destroy(created._id), true);
+  assert.strictEqual(await repairRequestRepository.findById(created._id), null);
+});
+
+test("repair ticket repository: embedded spare parts round-trip in array order and cascade on delete", async () => {
+  const created = await repairTicketRepository.create({
+    ticketNumber: `TKT-REPO-${unique()}`,
+    asset: crypto.randomBytes(12).toString("hex"),
+    reportedBy: crypto.randomBytes(12).toString("hex"),
+    issueDescription: "Repo ticket",
+    priority: "Critical",
+    sparePartsUsed: [
+      { item: crypto.randomBytes(12).toString("hex"), quantity: "1.25" },
+      { item: crypto.randomBytes(12).toString("hex"), quantity: 4 },
+    ],
+  });
+  assert.strictEqual(created.priority, "Critical");
+  assert.strictEqual(created.sparePartsUsed.length, 2);
+  assert.strictEqual(created.sparePartsUsed[0].quantity, 1.25);
+  assert.strictEqual(created.sparePartsUsed[1].quantity, 4);
+
+  const read = await repairTicketRepository.findById(created._id);
+  assert.deepStrictEqual(
+    read.sparePartsUsed.map((p) => p.quantity),
+    [1.25, 4],
+    "array order preserved"
+  );
+
+  const updated = await repairTicketRepository.updateById(created._id, {
+    status: "Completed",
+    sparePartsUsed: [{ item: crypto.randomBytes(12).toString("hex"), quantity: "0.5" }],
+  });
+  assert.strictEqual(updated.status, "Completed");
+  assert.strictEqual(updated.sparePartsUsed.length, 1, "embedded array replaced, not appended");
+
+  assert.strictEqual(await repairTicketRepository.destroy(created._id), true);
+  assert.strictEqual(await repairTicketRepository.destroy(created._id), false);
+});
+
+test("repair repositories: no dual writes — Mongoose is never connected on the PG path", async () => {
+  const mongooseLib = require("mongoose");
+  const before = await repairRequestRepository.count({});
+  await repairRequestRepository.create({
+    asset: crypto.randomBytes(12).toString("hex"),
+    description: "no dual write",
+    cost: "1",
+  });
+  assert.strictEqual(await repairRequestRepository.count({}), before + 1, "exactly one PG row");
+  assert.strictEqual(mongooseLib.connection.readyState, 0, "mongoose never connected");
 });

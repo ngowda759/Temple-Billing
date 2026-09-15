@@ -1,13 +1,14 @@
-const RepairTicket = require("../models/RepairTicket");
+const Employee = require("../models/Employee");
 const Supplier = require("../models/Supplier");
 const assetService = require("../services/assetService");
+const repairTicketService = require("../services/repairTicketService");
 
 // Resolves the supplier of an asset on either datasource. The Mongoose
 // populate path leaves asset.supplier as the populated Supplier document (its
 // name is read directly); the plain-id path (PG rows store the Mongo supplier
 // id as TEXT, and the Mongo fallback without a populate returns the bare
 // ObjectId) resolves the Supplier by id from the Mongo collection — suppliers
-// stay Mongo-backed this phase, so the same collection serves both paths.
+// stay Mongo-backed, so the same collection serves both paths.
 // Unresolvable suppliers return 'N/A', exactly the populate-null contract the
 // route had before this migration.
 const supplierName = async (asset) => {
@@ -20,6 +21,35 @@ const supplierName = async (asset) => {
   } catch {
     return "N/A";
   }
+};
+
+// Normalizes a repair/asset document from either datasource into a plain
+// object.
+const plain = (doc) => (doc && typeof doc.toObject === "function" ? doc.toObject() : doc);
+
+// Repairs are read through the service so they follow the selected
+// datasource (PostgreSQL when available, otherwise the existing Mongoose
+// model). The pre-migration route populated `reportedBy` / `approvedBy` with
+// the Employee name; employees stay Mongo-backed, so the referenced name is
+// resolved from the Mongo collection on both paths — preserving the exact
+// response shape AssetScanResult renders.
+const populateTicket = async (ticket) => {
+  const doc = plain(ticket);
+  if (!doc) return doc;
+  const populated = { ...doc };
+  for (const field of ["reportedBy", "approvedBy"]) {
+    const value = doc[field];
+    if (!value) continue;
+    const id = typeof value === "object" ? value._id || value.id : value;
+    try {
+      const employee = await Employee.findById(String(id));
+      if (employee) populated[field] = plain(employee);
+    } catch {
+      // Unresolvable references keep their raw id, exactly like populate
+      // leaving the field untouched when the target is missing.
+    }
+  }
+  return populated;
 };
 
 exports.getPublicAssetDetails = async (req, res) => {
@@ -38,26 +68,30 @@ exports.getPublicAssetDetails = async (req, res) => {
       return res.status(404).json({ success: false, message: "Asset not found" });
     }
 
-    // Find maintenance history (RepairTickets) for this asset. RepairTicket
-    // stays Mongo-backed (Repairs are not part of this phase).
-    const maintenanceHistory = await RepairTicket.find({ asset: asset._id })
-      .populate("reportedBy", "name")
-      .populate("approvedBy", "name")
-      .sort({ createdAt: -1 });
+    const assetDoc = plain(asset);
+    const assetPk = assetDoc._id || assetDoc.id;
+
+    // Find maintenance history (RepairTickets) for this asset, on whichever
+    // datasource the service selects.
+    const tickets = await repairTicketService.findMany({
+      filter: { asset: assetPk },
+      sort: { createdAt: -1 },
+    });
+    const maintenanceHistory = await Promise.all(tickets.map(populateTicket));
 
     // Return combined public details
     res.json({
       success: true,
       asset: {
-        id: asset._id,
-        assetId: asset.assetId,
-        name: asset.name,
-        category: asset.category,
-        purchaseDate: asset.purchaseDate,
-        assignedLocation: asset.assignedLocation,
-        status: asset.status,
-        warranty: asset.warranty,
-        supplier: await supplierName(asset),
+        id: assetPk,
+        assetId: assetDoc.assetId,
+        name: assetDoc.name,
+        category: assetDoc.category,
+        purchaseDate: assetDoc.purchaseDate,
+        assignedLocation: assetDoc.assignedLocation,
+        status: assetDoc.status,
+        warranty: assetDoc.warranty,
+        supplier: await supplierName(assetDoc),
       },
       maintenanceHistory,
     });
