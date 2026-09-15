@@ -27,6 +27,7 @@ let assetRepository;
 let inventoryBatchRepository;
 let repairRequestRepository;
 let repairTicketRepository;
+let roomRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -50,6 +51,7 @@ const resetAllTables = async (databaseUrl) => {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS rooms CASCADE");
     await pool.query("DROP TABLE IF EXISTS asset_maintenance_history CASCADE");
     await pool.query("DROP TABLE IF EXISTS assets CASCADE");
     await pool.query("DROP TABLE IF EXISTS goods_received_note_items CASCADE");
@@ -112,6 +114,7 @@ test.before(async () => {
   inventoryBatchRepository = require("../src/repositories/inventoryBatchRepository");
   repairRequestRepository = require("../src/repositories/repairRequestRepository");
   repairTicketRepository = require("../src/repositories/repairTicketRepository");
+  roomRepository = require("../src/repositories/roomRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
@@ -3486,5 +3489,69 @@ test("repair repositories: no dual writes — Mongoose is never connected on the
     cost: "1",
   });
   assert.strictEqual(await repairRequestRepository.count({}), before + 1, "exactly one PG row");
+  assert.strictEqual(mongooseLib.connection.readyState, 0, "mongoose never connected");
+});
+
+// ─── Phase 2R: room repository ─────────────────────────────────────────────
+test("room repository: create/read/update/delete round-trip with Mongo field names", async () => {
+  const created = await roomRepository.create({
+    number: `REPO-${unique()}`,
+    type: "Deluxe",
+    block: "Block A",
+    floor: "First Floor",
+    price: "1500.75",
+    capacity: "3",
+    bedType: "King",
+    amenities: ["AC", "WiFi"],
+  });
+  assert.match(created._id, /^[0-9a-f]{24}$/);
+  assert.strictEqual(created.price, 1500.75);
+  assert.strictEqual(created.capacity, 3);
+  assert.strictEqual(created.status, "Available");
+
+  const read = await roomRepository.findById(created._id);
+  assert.strictEqual(read.block, "Block A");
+  assert.deepStrictEqual(read.amenities, ["AC", "WiFi"]);
+
+  const updated = await roomRepository.updateById(created._id, { status: "Occupied", price: "50.25" });
+  assert.strictEqual(updated.status, "Occupied");
+  assert.strictEqual(updated.price, 50.25);
+
+  assert.strictEqual(await roomRepository.destroy(created._id), true);
+  assert.strictEqual(await roomRepository.findById(created._id), null);
+});
+
+test("room repository: release clears the guest fields and returns the room to Available", async () => {
+  const created = await roomRepository.create({
+    number: `REPO-REL-${unique()}`,
+    type: "Deluxe",
+    price: "900",
+    status: "Occupied",
+    devotee: "Ram",
+    phone: "9999",
+    days: 2,
+    payMode: "UPI",
+    checkinDate: new Date("2026-01-01T00:00:00.000Z"),
+    checkoutDate: new Date("2026-01-03T00:00:00.000Z"),
+  });
+
+  const released = await roomRepository.release(created._id);
+  assert.strictEqual(released.status, "Available");
+  for (const field of ["devotee", "phone", "days", "payMode", "checkinDate", "checkoutDate"]) {
+    assert.strictEqual(released[field], undefined, `${field} cleared`);
+  }
+  assert.strictEqual(await roomRepository.release("000000000000000000000000"), null);
+  await roomRepository.destroy(created._id);
+});
+
+test("room repository: no dual writes — Mongoose is never connected on the PG path", async () => {
+  const mongooseLib = require("mongoose");
+  const before = await roomRepository.count({});
+  await roomRepository.create({
+    number: `REPO-NODUAL-${unique()}`,
+    type: "Standard",
+    price: "1",
+  });
+  assert.strictEqual(await roomRepository.count({}), before + 1, "exactly one PG row");
   assert.strictEqual(mongooseLib.connection.readyState, 0, "mongoose never connected");
 });
