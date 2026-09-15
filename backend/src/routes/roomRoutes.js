@@ -1,12 +1,12 @@
 const express = require("express");
 const router = express.Router();
-const Room = require("../models/Room");
+const roomService = require("../services/roomService");
 const Booking = require("../models/Booking");
 
 // GET all rooms
 router.get("/", async (req, res) => {
   try {
-    const rooms = await Room.find().sort({ number: 1 });
+    const rooms = await roomService.findMany({ sort: { number: 1 } });
     res.json(rooms);
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch rooms", error: err.message });
@@ -17,21 +17,25 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const { number, type, block, floor, price, capacity, bedType, amenities } = req.body;
-    const existing = await Room.findOne({ number });
+    const existing = await roomService.findOne({ number });
     if (existing) {
       return res.status(400).json({ message: "Room number already exists" });
     }
-    const room = new Room({ number, type, block, floor, price, capacity, bedType, amenities });
-    await room.save();
+    const room = await roomService.create({ number, type, block, floor, price, capacity, bedType, amenities });
     res.status(201).json(room);
   } catch (err) {
+    // Mirror the Mongo 11000 duplicate-key contract on the PostgreSQL path so a
+    // concurrent insert still surfaces the same 400 the API has always returned.
+    if (err.code === 11000 || /unique constraint "rooms_number_key"/.test(String(err.message))) {
+      return res.status(400).json({ message: "Room number already exists" });
+    }
     res.status(500).json({ message: "Failed to create room", error: err.message });
   }
 });
 
 // Shared helper: allot a room and save a Booking record
 async function allotRoom({ roomNumber, devoteeName, phone, days, payMode, checkinDate, checkoutDate }) {
-  const room = await Room.findOne({ number: roomNumber });
+  const room = await roomService.findOne({ number: roomNumber });
   if (!room) throw { status: 404, message: "Room not found" };
   if (room.status !== "Available") throw { status: 400, message: `Room ${roomNumber} is not available` };
 
@@ -44,14 +48,15 @@ async function allotRoom({ roomNumber, devoteeName, phone, days, payMode, checki
   const totalAmount = room.price * diffDays;
 
   // Mark room as Occupied
-  room.devotee = devoteeName;
-  room.phone = phone;
-  room.days = diffDays;
-  room.payMode = payMode || "UPI";
-  room.checkinDate = checkin;
-  room.checkoutDate = checkout;
-  room.status = "Occupied";
-  await room.save();
+  const updated = await roomService.updateById(room._id, {
+    devotee: devoteeName,
+    phone: phone,
+    days: diffDays,
+    payMode: payMode || "UPI",
+    checkinDate: checkin,
+    checkoutDate: checkout,
+    status: "Occupied",
+  });
 
   // Create a Booking record for history
   const booking = new Booking({
@@ -69,7 +74,7 @@ async function allotRoom({ roomNumber, devoteeName, phone, days, payMode, checki
   });
   await booking.save();
 
-  return { room, booking };
+  return { room: updated || room, booking };
 }
 
 // POST book a room (devotee self-booking)
@@ -99,7 +104,7 @@ router.post("/allot", async (req, res) => {
 // POST checkout a room — marks room Available & booking Completed
 router.post("/checkout/:roomNumber", async (req, res) => {
   try {
-    const room = await Room.findOne({ number: req.params.roomNumber });
+    const room = await roomService.findOne({ number: req.params.roomNumber });
     if (!room) return res.status(404).json({ message: "Room not found" });
 
     // Mark any active booking for this room as Completed
@@ -111,16 +116,9 @@ router.post("/checkout/:roomNumber", async (req, res) => {
       { $set: { status: "Completed", completedAt: new Date() } }
     );
 
-    room.status = "Available";
-    room.devotee = undefined;
-    room.phone = undefined;
-    room.days = undefined;
-    room.payMode = undefined;
-    room.checkinDate = undefined;
-    room.checkoutDate = undefined;
-    await room.save();
+    const released = await roomService.release(room._id);
 
-    res.json({ message: "Checkout successful", room });
+    res.json({ message: "Checkout successful", room: released });
   } catch (err) {
     res.status(500).json({ message: "Failed to checkout room", error: err.message });
   }
@@ -129,17 +127,18 @@ router.post("/checkout/:roomNumber", async (req, res) => {
 // PATCH toggle maintenance status
 router.patch("/maintenance/:roomNumber", async (req, res) => {
   try {
-    const room = await Room.findOne({ number: req.params.roomNumber });
+    const room = await roomService.findOne({ number: req.params.roomNumber });
     if (!room) return res.status(404).json({ message: "Room not found" });
+    let status;
     if (room.status === "Maintenance") {
-      room.status = "Available";
+      status = "Available";
     } else if (room.status === "Available") {
-      room.status = "Maintenance";
+      status = "Maintenance";
     } else {
       return res.status(400).json({ message: "Cannot toggle maintenance on an occupied room" });
     }
-    await room.save();
-    res.json({ message: "Room status updated", room });
+    const updated = await roomService.updateById(room._id, { status });
+    res.json({ message: "Room status updated", room: updated });
   } catch (err) {
     res.status(500).json({ message: "Failed to update room status", error: err.message });
   }
@@ -148,7 +147,7 @@ router.patch("/maintenance/:roomNumber", async (req, res) => {
 // DELETE a room by room number
 router.delete("/:roomNumber", async (req, res) => {
   try {
-    const room = await Room.findOneAndDelete({ number: req.params.roomNumber });
+    const room = await roomService.findOneAndDelete({ number: req.params.roomNumber });
     if (!room) return res.status(404).json({ message: "Room not found" });
     res.json({ message: "Room deleted successfully" });
   } catch (err) {

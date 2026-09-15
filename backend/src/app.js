@@ -26,7 +26,7 @@ const poojaRoutes = require("./routes/poojaRoutes");
 const poojaBookingRoutes = require("./routes/poojaBookingRoutes");
 const auditLogRoutes = require("./routes/auditLogRoutes");
 const publicRoutes = require("./routes/publicRoutes");
-const Room = require("./models/Room");
+const roomService = require("./services/roomService");
 
 const app = express();
 const { isPostgresConnected } = require("./config/postgres");
@@ -86,36 +86,29 @@ setInterval(async () => {
 
     // 1. Process automatic checkouts
     // Find occupied rooms whose checkout time has passed
-    const roomsToCheckout = await Room.find({
-      status: "Occupied",
-      checkoutDate: { $lte: now }
+    const roomsToCheckout = await roomService.findMany({
+      filter: { status: "Occupied", checkoutDate: { $lte: now } },
     });
 
     for (const room of roomsToCheckout) {
       console.log(`[Auto-Checkout] Room ${room.number} checkout time reached.`);
-      room.status = "Available";
-      room.devotee = undefined;
-      room.phone = undefined;
-      room.days = undefined;
-      room.payMode = undefined;
-      room.checkinDate = undefined;
-      room.checkoutDate = undefined;
-      await room.save();
+      await roomService.release(room._id);
     }
 
     // 2. Process automatic checkins
     // Find available rooms that have devotee details set and checkin time has reached (but checkout time has not)
-    const roomsToCheckin = await Room.find({
-      status: "Available",
-      checkinDate: { $lte: now },
-      checkoutDate: { $gt: now },
-      devotee: { $exists: true, $ne: null }
+    const roomsToCheckin = await roomService.findMany({
+      filter: {
+        status: "Available",
+        checkinDate: { $lte: now },
+        checkoutDate: { $gt: now },
+        devotee: { $exists: true, $ne: null },
+      },
     });
 
     for (const room of roomsToCheckin) {
       console.log(`[Auto-Checkin] Room ${room.number} checkin time reached.`);
-      room.status = "Occupied";
-      await room.save();
+      await roomService.updateById(room._id, { status: "Occupied" });
     }
 
   } catch (err) {

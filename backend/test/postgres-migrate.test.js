@@ -31,7 +31,8 @@ const poolQuery = async (databaseUrl, sql) => {
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
-  // Phase 2A–2P tables must be dropped too so a fresh run applies the latest DDL.
+  // Phase 2A–2R tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS rooms CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS asset_maintenance_history CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS assets CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS damage_notes CASCADE");
@@ -68,7 +69,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 18 migration\(s\)\./);
+  assert.match(output, /Applied 19 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -90,6 +91,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "016_create_damage_notes.sql",
     "017_create_assets.sql",
     "018_create_repairs.sql",
+    "019_create_rooms.sql",
   ]);
 });
 
@@ -102,7 +104,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -137,6 +139,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "016_create_damage_notes.sql",
       "017_create_assets.sql",
       "018_create_repairs.sql",
+      "019_create_rooms.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -405,7 +408,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 18 migration\(s\)\./);
+  assert.match(output, /Applied 19 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -444,7 +447,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -469,7 +472,7 @@ test("rollback of the Phase 2J inventory_logs migration can be removed and reapp
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -542,7 +545,7 @@ test("rollback of the Phase 2K inventory_consumptions migration can be removed a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT kcu.column_name, pg_get_constraintdef(oid) AS def FROM pg_constraint c
@@ -760,7 +763,7 @@ test("rollback of the Phase 2L inventory_requests migration can be removed and r
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 
   const indexes = await poolQuery(databaseUrl, `
     SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'
@@ -830,7 +833,7 @@ test("previous migrations are unchanged (git diff on migrations dir is empty of 
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 18 migration\(s\)\./);
+  assert.match(output, /Applied 19 migration\(s\)\./);
 });
 
 test("Phase 2M purchase_orders migration creates the Mongo-mapped columns, enum CHECK, constraints and real FKs", async () => {
@@ -959,7 +962,7 @@ test("rollback of the Phase 2M purchase_orders migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1153,7 +1156,7 @@ test("rollback of the Phase 2N goods_received_notes migration can be removed and
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1312,7 +1315,7 @@ test("rollback of the Phase 2O damage_notes migration can be removed and reappli
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 
   // Re-apply regenerates the table, both real FKs, the enum CHECKs, the
   // unique damage_number and the justified indexes.
@@ -1490,7 +1493,7 @@ test("rollback of the Phase 2P assets migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.assets') AS t");
   assert.ok(tbl[0].t, "assets rebuilt after re-run");
@@ -1709,7 +1712,7 @@ test("rollback of the Phase 2Q repairs migration can be removed and reapplied", 
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 18);
+  assert.strictEqual(rows.length, 19);
 
   for (const table of ["repair_requests", "repair_tickets", "repair_ticket_spare_parts"]) {
     const tbl = await poolQuery(databaseUrl, `SELECT to_regclass('public.${table}') AS t`);
@@ -1813,6 +1816,168 @@ test("Phase 2Q repair_ticket_spare_parts FK enforces valid/invalid references an
     await pool.query("DELETE FROM repair_tickets WHERE id = $1", [ticketId]);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM repair_ticket_spare_parts WHERE ticket_id = $1", [ticketId]);
     assert.strictEqual(rows[0].n, 0, "child rows removed with the parent");
+  } finally {
+    await pool.end();
+  }
+});
+
+test("rollback of the Phase 2R rooms migration can be removed and reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // Simulate rolling back only migration 019: drop the rooms table (and its
+  // tracking record). Every earlier table stays in place, so a re-run must
+  // re-apply only 019 and rebuild rooms with its constraint and indexes.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS rooms CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '019_create_rooms.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*019_create_rooms\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+
+  const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
+  assert.strictEqual(rows.length, 19);
+
+  const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.rooms') AS t");
+  assert.ok(tbl[0].t, "rooms rebuilt after re-run");
+
+  const uniques = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'rooms'::regclass AND contype = 'u'`);
+  assert.strictEqual(uniques.length, 1, "re-applied migration rebuilds the unique constraint");
+  assert.match(uniques[0].def, /UNIQUE \(number\)/);
+
+  const { output: second } = runMigrate(databaseUrl);
+  assert.match(second, /No pending migrations\./);
+});
+
+test("rooms migration creates the Mongo-mapped columns, CHECKs, UNIQUE and real indexes", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const cols = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'rooms' ORDER BY column_name`);
+  const col = (name) => cols.find((c) => c.column_name === name);
+
+  // Every persisted Mongo Room field has an explicit column.
+  for (const name of ["id", "number", "type", "block", "floor", "price", "capacity",
+    "bed_type", "amenities", "status", "devotee", "phone", "days", "pay_mode",
+    "checkin_date", "checkout_date", "created_at", "updated_at"]) {
+    assert.ok(col(name), `rooms.${name} exists`);
+  }
+  assert.strictEqual(cols.length, 18, "no invented columns beyond the mapped fields");
+
+  // Types.
+  assert.strictEqual(col("id").data_type, "text");
+  assert.strictEqual(col("id").is_nullable, "NO");
+  assert.strictEqual(col("number").data_type, "text");
+  assert.strictEqual(col("number").is_nullable, "NO");
+  assert.strictEqual(col("type").data_type, "text");
+  assert.strictEqual(col("type").is_nullable, "NO");
+  assert.strictEqual(col("block").is_nullable, "YES");
+  assert.strictEqual(col("floor").is_nullable, "YES");
+  assert.strictEqual(col("price").data_type, "numeric");
+  assert.strictEqual(col("price").is_nullable, "NO");
+  assert.strictEqual(col("capacity").data_type, "numeric");
+  assert.strictEqual(col("capacity").column_default, "2");
+  assert.strictEqual(col("bed_type").column_default, "'Double'::text");
+  assert.strictEqual(col("amenities").data_type, "ARRAY");
+  assert.strictEqual(col("status").column_default, "'Available'::text");
+  assert.strictEqual(col("devotee").is_nullable, "YES");
+  assert.strictEqual(col("phone").is_nullable, "YES");
+  assert.strictEqual(col("checkin_date").data_type, "timestamp with time zone");
+  assert.strictEqual(col("checkin_date").is_nullable, "YES");
+  assert.strictEqual(col("checkout_date").data_type, "timestamp with time zone");
+  assert.strictEqual(col("checkout_date").is_nullable, "YES");
+  assert.strictEqual(col("created_at").data_type, "timestamp with time zone");
+  assert.strictEqual(col("updated_at").data_type, "timestamp with time zone");
+
+  // No monetary column may use float/real/double precision.
+  const floats = await poolQuery(databaseUrl, `
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'rooms' AND data_type IN ('real', 'double precision')`);
+  assert.strictEqual(floats.length, 0, "no floating-point columns");
+
+  // CHECKs: status enum + price >= 0 only (capacity/days have no min in Mongo).
+  const checks = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'rooms'::regclass AND contype = 'c'`);
+  assert.ok(checks.some((r) => /status.*'Available'.*'Occupied'.*'Maintenance'/.test(r.def)), "status CHECK");
+  // PostgreSQL renders this as CHECK ((price >= (0)::numeric)).
+  assert.ok(checks.some((r) => /price >= \(?0\)?/.test(r.def)), "price >= 0 CHECK");
+  assert.strictEqual(checks.length, 2, "only the two Mongo-derived CHECKs");
+  assert.ok(!checks.some((r) => /capacity.*>=/.test(r.def)), "capacity has no min in Mongo, so no CHECK");
+  assert.ok(!checks.some((r) => /days.*>=/.test(r.def)), "days has no min in Mongo, so no CHECK");
+
+  // Exactly one UNIQUE constraint, on number.
+  const uniques = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'rooms'::regclass AND contype = 'u'`);
+  assert.strictEqual(uniques.length, 1);
+  assert.match(uniques[0].def, /UNIQUE \(number\)/);
+
+  // No foreign keys at all — Rooms references no PostgreSQL row.
+  const fks = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'rooms'::regclass AND contype = 'f'`);
+  assert.strictEqual(fks.length, 0, "rooms has no foreign keys");
+
+  // Indexes justified by real query patterns.
+  const indexes = await poolQuery(databaseUrl, `
+    SELECT indexdef FROM pg_indexes WHERE tablename = 'rooms'`);
+  const defs = indexes.map((r) => r.indexdef);
+  assert.ok(defs.some((d) => /UNIQUE INDEX.*\(number\)/.test(d)), "unique number index");
+  assert.ok(defs.some((d) => /\(status\)/.test(d)), "status index");
+  assert.ok(defs.some((d) => /\(checkin_date\)/.test(d)), "checkin_date index");
+  assert.ok(defs.some((d) => /\(checkout_date\)/.test(d)), "checkout_date index");
+  assert.ok(defs.some((d) => /\(created_at DESC\)/.test(d)), "created_at DESC index");
+  // Exactly the primary key, the unique number index and the four justified
+  // non-unique indexes — no speculative index exists.
+  assert.strictEqual(defs.length, 6, "only the justified indexes (PK + 1 unique + 4 non-unique)");
+  assert.ok(defs.some((d) => /CREATE UNIQUE INDEX rooms_pkey ON public\.rooms USING btree \(id\)/.test(d)), "primary key index");
+});
+
+test("rooms unique constraint and CHECKs reject invalid rows on the PostgreSQL layer", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  const id = () => crypto.randomBytes(12).toString("hex");
+  try {
+    await pool.query(
+      "INSERT INTO rooms (id, number, type, price) VALUES ($1, 'R-UNIQ', 'Std', 100)",
+      [id()]
+    );
+    await assert.rejects(
+      pool.query("INSERT INTO rooms (id, number, type, price) VALUES ($1, 'R-UNIQ', 'Std', 100)", [id()]),
+      /rooms_number_key/
+    );
+    await assert.rejects(
+      pool.query("INSERT INTO rooms (id, number, type, price) VALUES ($1, 'R-NEG', 'Std', -1)", [id()]),
+      /rooms_price_check/
+    );
+    await assert.rejects(
+      pool.query("INSERT INTO rooms (id, number, type, price, status) VALUES ($1, 'R-STS', 'Std', 1, 'Free')", [id()]),
+      /rooms_status_check/
+    );
+
+    // Defaults applied by the column definitions.
+    const { rows } = await pool.query("SELECT capacity, bed_type, amenities, status FROM rooms WHERE number = 'R-UNIQ'");
+    assert.strictEqual(Number(rows[0].capacity), 2);
+    assert.strictEqual(rows[0].bed_type, "Double");
+    assert.deepStrictEqual(rows[0].amenities, []);
+    assert.strictEqual(rows[0].status, "Available");
+
+    // price keeps exact NUMERIC scale (no float rounding).
+    await pool.query("INSERT INTO rooms (id, number, type, price) VALUES ($1, 'R-SCALE', 'Std', 123456.7891)", [id()]);
+    const scale = await pool.query("SELECT price::text AS p FROM rooms WHERE number = 'R-SCALE'");
+    assert.strictEqual(Number(scale.rows[0].p), 123456.7891);
   } finally {
     await pool.end();
   }
