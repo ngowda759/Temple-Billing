@@ -212,7 +212,45 @@ exports.logKitchenProduction = async (req, res) => {
 };
 
 const damageNoteService = require("../services/damageNoteService");
-const RepairTicket = require("../models/RepairTicket");
+const repairTicketService = require("../services/repairTicketService");
+const assetService = require("../services/assetService");
+
+// Repair tickets are read/written through the service so they follow the
+// selected datasource (PostgreSQL when available, otherwise the existing
+// Mongoose model). Both datasources return the same Mongo-shaped document;
+// the only difference is that references stay plain id strings on the
+// PostgreSQL path, so the populated `asset` / `sparePartsUsed.item` shape the
+// pre-migration `populate` produced is reassembled here.
+
+// Normalizes a repair/asset document from either datasource into a plain
+// object so responses are identical on the PostgreSQL path and the Mongo
+// fallback path (Mongoose document).
+const plain = (doc) => (doc && typeof doc.toObject === "function" ? doc.toObject() : doc);
+
+const populateTicket = async (ticket) => {
+  const doc = plain(ticket);
+  if (!doc) return doc;
+  const populated = { ...doc };
+
+  const assetValue = doc.asset;
+  if (assetValue) {
+    const assetId = typeof assetValue === "object" ? assetValue._id || assetValue.id : assetValue;
+    const asset = await assetService.findById(assetId);
+    if (asset) populated.asset = plain(asset);
+  }
+
+  if (Array.isArray(doc.sparePartsUsed)) {
+    populated.sparePartsUsed = await Promise.all(doc.sparePartsUsed.map(async (part) => {
+      const value = part && part.item;
+      if (!value) return part;
+      const itemId = typeof value === "object" ? value._id || value.id : value;
+      const item = await InventoryItem.findById(itemId);
+      return { ...part, item: item ? plain(item) : value };
+    }));
+  }
+
+  return populated;
+};
 
 // Resolves the item id of a damage note whether the model populated it (Mongo
 // populate leaves damage.item as the full InventoryItem document) or the
@@ -278,33 +316,36 @@ exports.completeRepairTicket = async (req, res) => {
   try {
     const { id } = req.params;
     const { vendorBillAmount, vendorBillPhoto, resolutionNotes } = req.body;
-    
-    const repair = await RepairTicket.findById(id).populate("asset").populate("sparePartsUsed.item");
+
+    const repair = await repairTicketService.findById(id);
     if (!repair) return res.status(404).json({ success: false, message: "Repair ticket not found" });
 
-    repair.status = "Completed";
-    repair.vendorBillAmount = vendorBillAmount || repair.vendorBillAmount;
-    repair.vendorBillPhoto = vendorBillPhoto || repair.vendorBillPhoto;
-    repair.resolutionNotes = resolutionNotes || repair.resolutionNotes;
-    
-    await repair.save();
+    const updates = {
+      status: "Completed",
+      vendorBillAmount: vendorBillAmount || repair.vendorBillAmount,
+      vendorBillPhoto: vendorBillPhoto || repair.vendorBillPhoto,
+      resolutionNotes: resolutionNotes || repair.resolutionNotes,
+    };
+
+    const updated = await repairTicketService.updateById(id, updates);
+    if (!updated) return res.status(404).json({ success: false, message: "Repair ticket not found" });
 
     // Create Account Transaction (Repair Expense)
-    if (repair.vendorBillAmount > 0) {
+    if (updated.vendorBillAmount > 0) {
       await recordTransaction({
         transactionType: "Debit",
         source: "Repair",
         category: "Repair & Maintenance Expense",
-        amount: repair.vendorBillAmount,
+        amount: updated.vendorBillAmount,
         paymentMethod: "Cash",
-        description: `Repair completed for Asset: ${repair.ticketNumber}`,
-        referenceId: repair._id,
+        description: `Repair completed for Asset: ${updated.ticketNumber}`,
+        referenceId: updated._id,
         referenceModel: "RepairTicket",
         recordedBy: req.user._id
       });
     }
 
-    res.status(200).json({ success: true, message: "Repair ticket completed.", repair });
+    res.status(200).json({ success: true, message: "Repair ticket completed.", repair: await populateTicket(updated) });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to complete repair", error: error.message });
   }

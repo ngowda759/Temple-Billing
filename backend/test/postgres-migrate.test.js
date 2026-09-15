@@ -57,6 +57,9 @@ const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS account_heads CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS employees CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS users CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_ticket_spare_parts CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_tickets CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_requests CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS donations CASCADE");
 };
 
@@ -65,7 +68,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 17 migration\(s\)\./);
+  assert.match(output, /Applied 18 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -86,6 +89,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "015_create_goods_received_notes.sql",
     "016_create_damage_notes.sql",
     "017_create_assets.sql",
+    "018_create_repairs.sql",
   ]);
 });
 
@@ -98,7 +102,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 17);
+  assert.strictEqual(rows.length, 18);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -132,6 +136,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "015_create_goods_received_notes.sql",
       "016_create_damage_notes.sql",
       "017_create_assets.sql",
+      "018_create_repairs.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -393,11 +398,14 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS account_heads CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS employees CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS users CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_ticket_spare_parts CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_tickets CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_requests CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS donations CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 17 migration\(s\)\./);
+  assert.match(output, /Applied 18 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -436,7 +444,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 17);
+  assert.strictEqual(rows.length, 18);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -461,7 +469,7 @@ test("rollback of the Phase 2J inventory_logs migration can be removed and reapp
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 17);
+  assert.strictEqual(rows.length, 18);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -534,7 +542,7 @@ test("rollback of the Phase 2K inventory_consumptions migration can be removed a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 17);
+  assert.strictEqual(rows.length, 18);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT kcu.column_name, pg_get_constraintdef(oid) AS def FROM pg_constraint c
@@ -752,7 +760,7 @@ test("rollback of the Phase 2L inventory_requests migration can be removed and r
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 17);
+  assert.strictEqual(rows.length, 18);
 
   const indexes = await poolQuery(databaseUrl, `
     SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'
@@ -822,7 +830,7 @@ test("previous migrations are unchanged (git diff on migrations dir is empty of 
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 17 migration\(s\)\./);
+  assert.match(output, /Applied 18 migration\(s\)\./);
 });
 
 test("Phase 2M purchase_orders migration creates the Mongo-mapped columns, enum CHECK, constraints and real FKs", async () => {
@@ -951,7 +959,7 @@ test("rollback of the Phase 2M purchase_orders migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 17);
+  assert.strictEqual(rows.length, 18);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1145,7 +1153,7 @@ test("rollback of the Phase 2N goods_received_notes migration can be removed and
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 17);
+  assert.strictEqual(rows.length, 18);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1304,7 +1312,7 @@ test("rollback of the Phase 2O damage_notes migration can be removed and reappli
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 17);
+  assert.strictEqual(rows.length, 18);
 
   // Re-apply regenerates the table, both real FKs, the enum CHECKs, the
   // unique damage_number and the justified indexes.
@@ -1482,7 +1490,7 @@ test("rollback of the Phase 2P assets migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 17);
+  assert.strictEqual(rows.length, 18);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.assets') AS t");
   assert.ok(tbl[0].t, "assets rebuilt after re-run");
@@ -1547,6 +1555,269 @@ test("failed Phase 2P migration rolls back cleanly — no partial assets table, 
   const { output: noPending } = runMigrate(databaseUrl);
   assert.match(noPending, /No pending migrations\./);
 });
+
+// ─── Phase 2Q: repairs ─────────────────────────────────────────────────────
+test("Phase 2Q repairs migration creates Mongo-mapped columns, enum CHECKs, unique ticket_number and the cascade child FK", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // repair_requests — every persisted RepairRequest field, nothing invented.
+  const reqCols = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'repair_requests' ORDER BY column_name`);
+  const reqCol = (name) => reqCols.find((c) => c.column_name === name);
+  assert.ok(reqCol("id") && reqCol("id").data_type === "text" && reqCol("id").is_nullable === "NO", "id TEXT PK");
+  assert.ok(reqCol("asset_id") && reqCol("asset_id").data_type === "text" && reqCol("asset_id").is_nullable === "YES", "asset ref plain TEXT, no invented NOT NULL");
+  assert.ok(reqCol("description") && reqCol("description").data_type === "text" && reqCol("description").is_nullable === "NO", "description required");
+  assert.ok(reqCol("vendor") && reqCol("vendor").column_default === "''::text", "vendor default ''");
+  assert.ok(reqCol("cost") && reqCol("cost").data_type === "numeric" && reqCol("cost").column_default === "0", "cost NUMERIC default 0");
+  assert.ok(reqCol("invoice_number") && reqCol("invoice_number").column_default === "''::text", "invoiceNumber default ''");
+  assert.ok(reqCol("status") && reqCol("status").column_default === "'Pending'::text", "status default 'Pending'");
+  assert.ok(reqCol("completion_date") && reqCol("completion_date").data_type === "timestamp with time zone" && reqCol("completion_date").is_nullable === "YES", "completionDate TIMESTAMPTZ nullable");
+  assert.ok(reqCol("created_by") && reqCol("created_by").data_type === "text" && reqCol("created_by").is_nullable === "YES", "createdBy plain TEXT (Mongo String, not an ObjectId ref)");
+  assert.ok(reqCol("created_at") && reqCol("created_at").data_type === "timestamp with time zone" && reqCol("created_at").column_default === "now()");
+  assert.ok(reqCol("updated_at") && reqCol("updated_at").data_type === "timestamp with time zone");
+  assert.strictEqual(reqCols.length, 11, "11 columns — every persisted RepairRequest field mapped");
+
+  const reqChecks = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'repair_requests'::regclass AND contype = 'c'`);
+  const reqDefs = reqChecks.map((r) => r.def);
+  assert.ok(reqDefs.some((d) => /'Pending'.*'In Progress'.*'Completed'.*'Cancelled'/.test(d)), "4-value status enum preserved exactly");
+  assert.ok(!reqDefs.some((d) => /cost\s*>=/.test(d)), "cost has no min in Mongo — no invented CHECK");
+
+  // RepairRequest declares no unique index in Mongo — none invented.
+  const reqUniques = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'repair_requests'::regclass AND contype = 'u'`);
+  assert.strictEqual(reqUniques.length, 0, "repair_requests has no invented unique constraint");
+
+  // repair_tickets — every persisted RepairTicket field.
+  const tktCols = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'repair_tickets' ORDER BY column_name`);
+  const tktCol = (name) => tktCols.find((c) => c.column_name === name);
+  assert.ok(tktCol("id") && tktCol("id").data_type === "text" && tktCol("id").is_nullable === "NO");
+  assert.ok(tktCol("ticket_number") && tktCol("ticket_number").data_type === "text" && tktCol("ticket_number").is_nullable === "NO", "ticketNumber required");
+  assert.ok(tktCol("asset_id") && tktCol("asset_id").data_type === "text" && tktCol("asset_id").is_nullable === "NO", "asset required");
+  assert.ok(tktCol("reported_by") && tktCol("reported_by").data_type === "text" && tktCol("reported_by").is_nullable === "NO", "reportedBy required");
+  assert.ok(tktCol("issue_description") && tktCol("issue_description").is_nullable === "NO", "issueDescription required");
+  assert.ok(tktCol("status") && tktCol("status").column_default === "'Reported'::text");
+  assert.ok(tktCol("priority") && tktCol("priority").column_default === "'Medium'::text");
+  assert.ok(tktCol("vendor") && tktCol("vendor").is_nullable === "YES", "vendor optional (Mongo-backed supplier ref)");
+  assert.ok(tktCol("vendor_bill_amount") && tktCol("vendor_bill_amount").data_type === "numeric" && tktCol("vendor_bill_amount").column_default === "0");
+  assert.ok(tktCol("vendor_bill_photo") && tktCol("vendor_bill_photo").is_nullable === "YES");
+  assert.ok(tktCol("repair_expense_id") && tktCol("repair_expense_id").is_nullable === "YES", "repairExpenseId plain TEXT, no FK");
+  assert.ok(tktCol("approved_by") && tktCol("approved_by").is_nullable === "YES");
+  assert.ok(tktCol("resolution_notes") && tktCol("resolution_notes").is_nullable === "YES");
+  assert.ok(tktCol("created_at") && tktCol("created_at").data_type === "timestamp with time zone");
+  assert.ok(tktCol("updated_at") && tktCol("updated_at").data_type === "timestamp with time zone");
+  assert.strictEqual(tktCols.length, 15, "15 columns — every persisted RepairTicket field mapped");
+  assert.ok(!tktCols.some((c) => c.column_name === "sparepartsused"),
+    "embedded sparePartsUsed normalized away from repair_tickets — no JSONB column");
+
+  const tktChecks = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'repair_tickets'::regclass AND contype = 'c'`);
+  const tktDefs = tktChecks.map((r) => r.def);
+  assert.ok(tktDefs.some((d) => /'Reported'.*'Pending Approval'.*'Approved'.*'In Progress'.*'Completed'.*'Rejected'.*'Closed'/.test(d)), "7-value status enum preserved exactly");
+  assert.ok(tktDefs.some((d) => /'Low'.*'Medium'.*'High'.*'Critical'/.test(d)), "4-value priority enum preserved exactly");
+  assert.ok(!tktDefs.some((d) => /vendor_bill_amount\s*>=/.test(d)), "no invented monetary min CHECK");
+
+  const tktUniques = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'repair_tickets'::regclass AND contype = 'u'`);
+  assert.ok(tktUniques.some((r) => /UNIQUE \(ticket_number\)/.test(r.def)), "ticketNumber unique (Mongo unique: true)");
+
+  // repair_ticket_spare_parts — the normalized embedded array.
+  const partCols = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'repair_ticket_spare_parts' ORDER BY column_name`);
+  const partCol = (name) => partCols.find((c) => c.column_name === name);
+  assert.ok(partCol("id") && partCol("id").data_type === "text" && partCol("id").is_nullable === "NO");
+  assert.ok(partCol("ticket_id") && partCol("ticket_id").is_nullable === "NO", "owning ticket required");
+  assert.ok(partCol("position") && partCol("position").data_type === "integer" && partCol("position").column_default === "0", "position preserves array order");
+  assert.ok(partCol("inventory_item_id") && partCol("inventory_item_id").is_nullable === "YES", "embedded item ref optional, plain TEXT");
+  assert.ok(partCol("quantity") && partCol("quantity").data_type === "numeric" && partCol("quantity").column_default === "1", "quantity NUMERIC default 1");
+  assert.strictEqual(partCols.length, 7, "7 columns — every persisted embedded field mapped");
+
+  // FKs: exactly ONE real FK in the whole phase — the child parent link.
+  const fks = await poolQuery(databaseUrl, `
+    SELECT conrelid::regclass::text AS tbl, pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE contype = 'f'
+      AND conrelid IN ('repair_requests'::regclass, 'repair_tickets'::regclass, 'repair_ticket_spare_parts'::regclass)`);
+  assert.strictEqual(fks.length, 1, "exactly one real FK — no fake/speculative FKs");
+  assert.strictEqual(fks[0].tbl, "repair_ticket_spare_parts");
+  assert.ok(/REFERENCES repair_tickets\(id\).*ON DELETE CASCADE/.test(fks[0].def), "child FK CASCADE mirrors the embedded-array lifecycle");
+
+  // Indexes justified by real queries.
+  const idx = await poolQuery(databaseUrl, `
+    SELECT indexdef FROM pg_indexes WHERE tablename IN ('repair_requests', 'repair_tickets', 'repair_ticket_spare_parts')
+      AND indexdef NOT LIKE '%pkey%' AND indexdef NOT LIKE '%ticket_number_key%'`);
+  const idxDefs = idx.map((r) => r.indexdef);
+  assert.ok(idxDefs.some((d) => /repair_requests.*\(asset_id\)/.test(d)), "per-asset request lookups");
+  assert.ok(idxDefs.some((d) => /repair_requests.*\(status\)/.test(d)), "status filtering");
+  assert.ok(idxDefs.some((d) => /repair_requests.*\(created_at DESC\)/.test(d)), "getAllRepairs sort");
+  assert.ok(idxDefs.some((d) => /repair_tickets.*\(asset_id\)/.test(d)), "public per-asset maintenance history");
+  assert.ok(idxDefs.some((d) => /repair_tickets.*\(status\)/.test(d)));
+  assert.ok(idxDefs.some((d) => /repair_tickets.*\(priority\)/.test(d)));
+  assert.ok(idxDefs.some((d) => /repair_tickets.*\(reported_by\)/.test(d)));
+  assert.ok(idxDefs.some((d) => /repair_tickets.*\(created_at DESC\)/.test(d)));
+  assert.ok(idxDefs.some((d) => /repair_ticket_spare_parts.*\(ticket_id,\s*"?position"?\)/.test(d)), "child load order");
+
+  // NUMERIC precision round-trips at the physical layer (no floats).
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    for (const v of ["0.01", "10.50", "1000.99", "1000000.99", "123456789.1234"]) {
+      const r = await pool.query(
+        "INSERT INTO repair_requests (id, asset_id, description, cost) VALUES ($1, $2, 'p', $3) RETURNING cost::text AS c",
+        [crypto.randomBytes(12).toString("hex"), crypto.randomBytes(12).toString("hex"), v]
+      );
+      assert.strictEqual(r.rows[0].c, v, `cost ${v} round-trips exactly`);
+    }
+    const t = await pool.query(
+      `INSERT INTO repair_tickets (id, ticket_number, asset_id, reported_by, issue_description, vendor_bill_amount)
+       VALUES ($1, 'TKT-MIG-1', $2, $3, 'p', $4) RETURNING vendor_bill_amount::text AS c`,
+      [crypto.randomBytes(12).toString("hex"), crypto.randomBytes(12).toString("hex"), crypto.randomBytes(12).toString("hex"), "123456789.1234"]
+    );
+    assert.strictEqual(t.rows[0].c, "123456789.1234");
+  } finally {
+    await pool.end();
+  }
+});
+
+test("rollback of the Phase 2Q repairs migration can be removed and reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // Simulate rolling back only migration 018: drop the repair tables (and the
+  // tracking record). All earlier tables stay in place, so a re-run must
+  // re-apply only 018 and rebuild all three tables + the child FK.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_ticket_spare_parts CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_tickets CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_requests CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '018_create_repairs.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*018_create_repairs\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+
+  const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
+  assert.strictEqual(rows.length, 18);
+
+  for (const table of ["repair_requests", "repair_tickets", "repair_ticket_spare_parts"]) {
+    const tbl = await poolQuery(databaseUrl, `SELECT to_regclass('public.${table}') AS t`);
+    assert.ok(tbl[0].t, `${table} rebuilt after re-run`);
+  }
+  const fk = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'repair_ticket_spare_parts'::regclass AND contype = 'f'`);
+  assert.strictEqual(fk.length, 1, "re-applied migration rebuilds the child FK");
+
+  const { output: second } = runMigrate(databaseUrl);
+  assert.match(second, /No pending migrations\./);
+});
+
+test("a deliberately failed Phase 2Q repairs migration rolls back fully", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const broken = path.join(MIGRATIONS_DIR, "994_broken_repairs_test.sql");
+  fs.writeFileSync(
+    broken,
+    "CREATE TABLE partial_repairs_test (id TEXT PRIMARY KEY, ticket_number TEXT);" +
+    "CREATE INDEX idx_partial_repairs_test ON partial_repairs_test (ticket_number);" +
+    "SELECT * FROM table_that_does_not_exist;"
+  );
+  try {
+    const res = runMigrate(databaseUrl);
+    assert.match(res.output, /Migration 994_broken_repairs_test\.sql failed/);
+    assert.strictEqual(res.status, 1);
+
+    const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations WHERE name = '994_broken_repairs_test.sql'");
+    assert.strictEqual(rows.length, 0, "failed migration must not be recorded");
+
+    const objs = await poolQuery(databaseUrl, `
+      SELECT c.relname FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname IN ('partial_repairs_test', 'idx_partial_repairs_test')`);
+    assert.strictEqual(objs.length, 0, "no partial table/index may remain");
+
+    // The real 018 tables from the successful baseline run are untouched.
+    const real = await poolQuery(databaseUrl, `
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'repair_requests' ORDER BY column_name`);
+    assert.strictEqual(real.length, 11, "repair_requests columns intact after failure");
+    const realChild = await poolQuery(databaseUrl, `
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'repair_ticket_spare_parts' ORDER BY column_name`);
+    assert.strictEqual(realChild.length, 7, "repair_ticket_spare_parts columns intact after failure");
+    const tblNow = await poolQuery(databaseUrl, "SELECT to_regclass('public.repair_tickets') AS t");
+    assert.ok(tblNow[0].t, "repair_tickets still exists after the failed migration");
+  } finally {
+    fs.unlinkSync(broken);
+  }
+
+  const { output: noPending } = runMigrate(databaseUrl);
+  assert.match(noPending, /No pending migrations\./);
+});
+
+test("Phase 2Q repair_ticket_spare_parts FK enforces valid/invalid references and CASCADE delete", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  const ticketId = crypto.randomBytes(12).toString("hex");
+  const partId = crypto.randomBytes(12).toString("hex");
+  try {
+    await pool.query(
+      `INSERT INTO repair_tickets (id, ticket_number, asset_id, reported_by, issue_description)
+       VALUES ($1, 'TKT-FK-1', $2, $3, 'fk test')`,
+      [ticketId, crypto.randomBytes(12).toString("hex"), crypto.randomBytes(12).toString("hex")]
+    );
+    await pool.query(
+      `INSERT INTO repair_ticket_spare_parts (id, ticket_id, position, inventory_item_id, quantity)
+       VALUES ($1, $2, 0, $3, 2)`,
+      [partId, ticketId, crypto.randomBytes(12).toString("hex")]
+    );
+
+    // An invalid parent reference must fail (real FK, not a loose TEXT column).
+    await assert.rejects(
+      pool.query(
+        `INSERT INTO repair_ticket_spare_parts (id, ticket_id, position, quantity)
+         VALUES ($1, 'does-not-exist', 0, 1)`,
+        [crypto.randomBytes(12).toString("hex")]
+      ),
+      /violates foreign key constraint/
+    );
+
+    // repair_requests.asset_id / repair_tickets.asset_id intentionally carry NO
+    // FK, so a non-existent asset reference is accepted (Mongo keeps the repair
+    // when the asset is gone) — no destructive cascade is introduced.
+    await pool.query(
+      `INSERT INTO repair_requests (id, asset_id, description) VALUES ($1, 'ghost-asset', 'no fk')`,
+      [crypto.randomBytes(12).toString("hex")]
+    );
+
+    // Deleting the ticket cascades exactly the child rows.
+    await pool.query("DELETE FROM repair_tickets WHERE id = $1", [ticketId]);
+    const { rows } = await pool.query("SELECT count(*)::int AS n FROM repair_ticket_spare_parts WHERE ticket_id = $1", [ticketId]);
+    assert.strictEqual(rows[0].n, 0, "child rows removed with the parent");
+  } finally {
+    await pool.end();
+  }
+});
+
 test("SELECT 1 succeeds against test database", async () => {
   const rows = await poolQuery(TEST_DB_URL, "SELECT 1 AS ok");
   assert.strictEqual(rows[0].ok , 1);

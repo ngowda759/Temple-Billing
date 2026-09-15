@@ -1,6 +1,6 @@
-const RepairRequest = require("../models/RepairRequest");
 const AccountTransaction = require("../models/AccountTransaction");
 const assetService = require("../services/assetService");
+const repairRequestService = require("../services/repairRequestService");
 
 const clean = (val) => String(val || "").trim();
 
@@ -75,11 +75,34 @@ exports.deleteAsset = async (req, res) => {
   }
 };
 
+// Repair requests are read/written through the service so they follow the
+// selected datasource (PostgreSQL when available, otherwise the existing
+// Mongoose model). Both datasources return the same Mongo-shaped document;
+// the only difference is that references stay plain id strings on the
+// PostgreSQL path, so the populated `asset` shape the admin UI expects is
+// reassembled here.
+
+// Normalizes a repair/asset document from either datasource into a plain
+// object so responses are identical on the PostgreSQL path (plain repository
+// object) and the Mongo fallback path (Mongoose document).
+const plain = (doc) => (doc && typeof doc.toObject === "function" ? doc.toObject() : doc);
+
+const withPopulatedAsset = async (repair) => {
+  const doc = plain(repair);
+  if (!doc) return doc;
+  const value = doc.asset;
+  if (!value) return doc;
+  const id = typeof value === "object" ? value._id || value.id : value;
+  const asset = await assetService.findById(id);
+  return { ...doc, asset: asset ? plain(asset) : value };
+};
+
 // Repairs
 exports.getAllRepairs = async (req, res) => {
   try {
-    const repairs = await RepairRequest.find().populate("asset").sort({ createdAt: -1 });
-    res.json({ success: true, repairs });
+    const repairs = await repairRequestService.findMany({ sort: { createdAt: -1 } });
+    const populated = await Promise.all(repairs.map(withPopulatedAsset));
+    res.json({ success: true, repairs: populated });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -90,7 +113,7 @@ exports.createRepair = async (req, res) => {
     const { asset, description, vendor, cost, invoiceNumber } = req.body;
     if (!asset || !description) return res.status(400).json({ success: false, message: "Asset and description required" });
 
-    const repair = await RepairRequest.create({
+    const repair = await repairRequestService.create({
       asset,
       description: clean(description),
       vendor: clean(vendor),
@@ -107,51 +130,57 @@ exports.createRepair = async (req, res) => {
 
 exports.completeRepair = async (req, res) => {
   try {
-    const repair = await RepairRequest.findById(req.params.id).populate("asset");
+    const repair = await repairRequestService.findById(req.params.id);
     if (!repair) return res.status(404).json({ success: false, message: "Repair request not found" });
 
     if (repair.status === "Completed") {
       return res.status(400).json({ success: false, message: "Repair is already marked as completed." });
     }
 
-    repair.status = "Completed";
-    repair.completionDate = req.body.completionDate ? new Date(req.body.completionDate) : new Date();
-    if (req.body.cost) repair.cost = Number(req.body.cost);
-    if (req.body.invoiceNumber) repair.invoiceNumber = clean(req.body.invoiceNumber);
-    const paymentMethod = clean(req.body.paymentMethod) || "System";
-    const remarks = clean(req.body.remarks);
-    await repair.save();
-
-    // Update maintenance history on the asset. The repair itself stays
-    // Mongo-backed (RepairRequest is not part of this phase); only the asset
-    // write is routed through the assetService so it lands on the same
-    // datasource the asset was created on.
     const assetId = repair.asset && typeof repair.asset === "object"
       ? repair.asset._id || repair.asset.id
       : repair.asset;
+    // Resolve the referenced asset on whichever datasource it lives on so the
+    // maintenance record and the accounting description keep the populated
+    // asset name the pre-migration flow read.
+    const asset = assetId ? await assetService.findById(assetId) : null;
+
+    const completionDate = req.body.completionDate ? new Date(req.body.completionDate) : new Date();
+    const updates = { status: "Completed", completionDate };
+    if (req.body.cost) updates.cost = Number(req.body.cost);
+    if (req.body.invoiceNumber) updates.invoiceNumber = clean(req.body.invoiceNumber);
+
+    const paymentMethod = clean(req.body.paymentMethod) || "System";
+    const remarks = clean(req.body.remarks);
+
+    const updated = await repairRequestService.updateById(req.params.id, updates);
+    if (!updated) return res.status(404).json({ success: false, message: "Repair request not found" });
+
+    // Update maintenance history on the asset, on whichever datasource the
+    // asset lives on.
     await assetService.addMaintenanceRecord(assetId, {
-      repairDate: repair.completionDate,
-      description: repair.description + (remarks ? ` - Remarks: ${remarks}` : ""),
-      cost: repair.cost,
-      vendor: repair.vendor
+      repairDate: updated.completionDate,
+      description: updated.description + (remarks ? ` - Remarks: ${remarks}` : ""),
+      cost: updated.cost,
+      vendor: updated.vendor
     });
 
-    if (repair.cost > 0) {
+    if (updated.cost > 0) {
       const { recordTransaction } = require("../services/accountingService");
       await recordTransaction({
         transactionType: "Debit",
         source: "Repair",
         category: "Repair Expense",
-        amount: repair.cost,
+        amount: updated.cost,
         paymentMethod: paymentMethod,
-        description: `Repair completed for asset ${repair.asset.name}. Vendor: ${repair.vendor}` + (remarks ? ` - Remarks: ${remarks}` : ""),
-        referenceId: repair._id,
+        description: `Repair completed for asset ${plain(asset)?.name}. Vendor: ${updated.vendor}` + (remarks ? ` - Remarks: ${remarks}` : ""),
+        referenceId: updated._id,
         referenceModel: "RepairRequest",
         recordedBy: req.user ? req.user.id : null,
       });
     }
 
-    res.json({ success: true, repair });
+    res.json({ success: true, repair: await withPopulatedAsset(updated) });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

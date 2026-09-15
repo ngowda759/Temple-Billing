@@ -68,6 +68,9 @@ const resetAllTables = async (databaseUrl) => {
     await pool.query("DROP TABLE IF EXISTS account_heads CASCADE");
     await pool.query("DROP TABLE IF EXISTS employees CASCADE");
     await pool.query("DROP TABLE IF EXISTS users CASCADE");
+    await pool.query("DROP TABLE IF EXISTS repair_ticket_spare_parts CASCADE");
+    await pool.query("DROP TABLE IF EXISTS repair_tickets CASCADE");
+    await pool.query("DROP TABLE IF EXISTS repair_requests CASCADE");
     await pool.query("DROP TABLE IF EXISTS donations CASCADE");
     await pool.query("DROP TABLE IF EXISTS pg_health");
   } finally {
