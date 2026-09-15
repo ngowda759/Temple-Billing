@@ -14,492 +14,310 @@ The application minimizes manual paperwork, improves transparency in temple acco
 - Improve transparency and operational efficiency
 
 ## Technology Stack
+
 ### Frontend
-- React.js
-- HTML5
-- CSS3
-- Tailwind CSS
+- React 19 (Vite 8)
+- React Router 7
+- Tailwind CSS 3
+- Axios
+- Recharts, `jspdf` / `jspdf-autotable`, `xlsx`, `html2canvas`, `qrcode.react`
+- `@vladmandic/face-api` (staff face-recognition attendance)
+- `react-toastify`, `framer-motion`, `react-icons`
 
 ### Backend
 - Node.js
-- Express
+- Express 5
+- JWT (`jsonwebtoken`) authentication with bcrypt password hashing
+- `razorpay` (online payments)
+- `nodemailer` (email notifications)
+- `pdfkit` (server-side receipt/document generation)
+- `node-cron` (scheduled notification jobs)
 
 ### Database
-- MongoDB / MySQL
+- **MongoDB (Mongoose)** — the live source of truth for all business data today.
+- **PostgreSQL (`pg`)** — an incremental, additive persistence layer being adopted entity by entity. See [PostgreSQL migration](#postgresql-migration).
+- MySQL is **not** used anywhere in the system.
 
 ## System Modules
+The backend is organised as one route file per feature area under
+`backend/src/routes/`. The modules below correspond to those files.
+
 ### 1. Admin Module
-The Admin Module is the central control unit of the Temple Billing System. It manages temple services, donations, billing, inventory, staff, and reports.
+Central control unit for temple services, donations, billing, inventory, staff, and reports.
 
 Functions:
-- Admin Login/Logout
-- Manage Temple Services
-- Manage Staff & Employees
-- Monitor Donations & Collections
-- Generate Reports
-- Configure System Settings
+- Admin login/logout and role-based access
+- Manage temple services, staff, and employees
+- Monitor donations and collections
+- Generate reports
+- Configure system settings
 
 Features:
-- Dashboard analytics
-- Revenue monitoring
-- Service management
-- Billing management
-- Staff monitoring
+- Dashboard analytics and revenue monitoring
+- Billing, service, and staff management
+- Inventory ERP (items, batches, suppliers, purchase orders, GRNs, assets, repairs)
 
-Admin Dashboard:
-- Total Donations
-- Daily Collection
-- Pooja Bookings
-- Prasadam Sales
-- Pending Payments
-- Inventory Status
-
-Admin Workflow:
-1. Admin logs into system
-2. Monitors temple activities
-3. Manages bookings and donations
-4. Generates reports and analytics
-
-Database Tables/Collections:
-- admins
-- services
-- donations
-- reports
+Backend routes: `adminInventoryRoutes.js`, `adminPrasadamOrdersRoutes.js`, `auditLogRoutes.js`
+Frontend pages: `frontend/src/pages/admin/`
 
 ### 2. Devotee Management Module
-This module manages devotee registration and records.
+Manages devotee registration and records.
 
 Functions:
-- Register Devotees
-- Update Devotee Information
-- Track Booking History
-- Maintain Donation Records
-
-Features:
-- Digital devotee profiles
-- Booking history tracking
-- Donation tracking
-- Personalized notifications
+- Register devotees (email-verification-link flow)
+- Update devotee information
+- Track booking and donation history
+- Deliver personalised notifications
 
 Devotee Details:
-- Devotee Name
-- Contact Number
-- Address
-- Booking History
-- Donation History
+- Name, email, phone, address, place
+- Booking history and donation history
 
-Devotee Workflow:
-1. Devotee registered
-2. Services booked
-3. Donations recorded
-4. Notifications sent
-
-Devotee Dashboard:
-- Booking Status
-- Donation History
-- Payment Receipts
-- Festival Notifications
-
-Database Tables/Collections:
-- devotees
-- devotee_profiles
-- donation_history
+Backend routes: `devoteeRoutes.js` (mounted at both `/api/devotee` and `/api/devotees`)
+Frontend pages: `frontend/src/pages/devotee/`
 
 ### 3. Pooja Booking Module
-This module manages pooja and seva booking operations.
+Manages pooja and seva booking operations.
 
 Functions:
-- Book Poojas
-- Schedule Sevas
-- Generate Booking Receipts
-- Track Booking Status
+- Book poojas
+- Schedule sevas
+- Generate booking receipts
+- Track booking status
 
 Features:
-- Online pooja booking
-- Slot scheduling
+- Online pooja booking with slot scheduling
 - QR code booking confirmation
-- Automated reminders
+- Material requirement snapshots and inventory request generation
 
-Pooja Categories:
-- Archana
-- Abhisheka
-- Homa
-- Special Seva
-- Festival Pooja
-
-Booking Workflow:
-1. Devotee selects pooja
-2. Date and slot selected
-3. Payment processed
-4. Receipt generated
-
-Booking Dashboard:
-- Today's Bookings
-- Upcoming Poojas
-- Completed Services
-- Booking Revenue
-
-Database Tables/Collections:
-- pooja_bookings
-- seva_schedule
-- booking_receipts
+Backend routes: `poojaRoutes.js`, `poojaBookingRoutes.js`, `poojaSettingsRoutes.js`
+Backend models: `Pooja.js`, `PoojaBooking.js`, `PoojaMaterialRequirement.js`
 
 ### 4. Donation Management Module
-This module manages temple donations and sponsorships.
+Manages temple donations and sponsorships.
 
 Functions:
-- Accept Donations
-- Generate Donation Receipts
-- Track Donation History
-- Manage Sponsorship Programs
+- Accept donations (including Razorpay UPI/online)
+- Generate donation receipts
+- Track donation history
+- Manage sponsorship/campaign metadata
 
-Features:
-- Online donation support
-- Donation categorization
-- Receipt generation
-- Donation analytics
-
-Donation Categories:
-- General Donation
-- Annadanam
-- Temple Construction Fund
-- Festival Donation
-
-Donation Workflow:
-1. Donation submitted
-2. Payment processed
-3. Receipt generated
-4. Donation recorded
-
-Donation Dashboard:
-- Daily Donations
-- Monthly Revenue
-- Top Donors
-- Donation Categories
-
-Database Tables/Collections:
-- donations
-- sponsors
-- donation_receipts
+Backend routes: `donationRoutes.js`
+Backend models: `Donation.js`, `Event.js`
 
 ### 5. Billing & Payment Module
-This module handles billing and payment processing.
+Handles billing and payment processing.
 
 Functions:
-- Generate Bills
-- Process Payments
-- Generate Receipts
-- Track Transactions
+- Generate bills and bill items
+- Process payments (cash, UPI, card, bank transfer, Razorpay)
+- Generate receipts
+- Track transactions
 
-Features:
-- QR-based payment support
-- PDF receipt generation
-- Multiple payment methods
-- Fast billing process
+Backend routes: `billRoutes.js`
+Backend models: `Bill.js`
+Ledger integration: `backend/src/services/accountingService.js`
 
-Payment Methods:
-- Cash
-- UPI
-- Debit/Credit Card
-- Net Banking
-
-Billing Components:
-- Pooja Charges
-- Prasadam Charges
-- Donation Amount
-- Special Service Charges
-
-Billing Workflow:
-1. Service selected
-2. Bill generated automatically
-3. Payment processed
-4. Receipt printed/generated
-
-Billing Dashboard:
-- Daily Transactions
-- Revenue Summary
-- Payment History
-- Pending Payments
-
-Database Tables/Collections:
-- bills
-- payments
-- transactions
-
-### 6. Prasadam & Inventory Management Module
-This module manages prasadam sales and temple inventory.
+### 6. Prasadam & Inventory ERP Module
+Manages prasadam sales and temple inventory.
 
 Functions:
-- Add/Edit/Delete Inventory Items
-- Manage Prasadam Stock
-- Track Item Usage
-- Generate Inventory Reports
+- Add/edit/delete inventory items and suppliers
+- Manage prasadam stock, batches, and consumption
+- Raise and approve inventory requests
+- Purchase orders, goods received notes, damage notes, assets, and repairs
+- Generate inventory reports
 
-Features:
-- Stock monitoring
-- Low stock alerts
-- Inventory tracking
-- Expiry tracking support
-
-Inventory Categories:
-- Prasadam
-- Flowers
-- Oil
-- Pooja Materials
-- Temple Supplies
-
-Inventory Workflow:
-1. Stock added
-2. Items sold or used
-3. Inventory updated
-4. Reports generated automatically
-
-Inventory Dashboard:
-- Available Stock
-- Low Stock Alerts
-- Daily Usage
-- Inventory Value
-
-Database Tables/Collections:
-- inventory
-- prasadam_sales
-- stock_logs
+Backend routes: `adminInventoryRoutes.js`, `prasadamRoutes.js`, `adminPrasadamOrdersRoutes.js`
+Backend models: `InventoryItem.js`, `InventoryBatch.js`, `InventoryLog.js`,
+`InventoryConsumption.js`, `InventoryRequest.js`, `InventoryIssue.js`,
+`PurchaseOrder.js`, `GoodsReceivedNote.js`, `DamageNote.js`, `Asset.js`,
+`RepairRequest.js`, `RepairTicket.js`, `Supplier.js`, `RestockHistory.js`,
+`Prasadam.js`, `PrasadamOrder.js`, `Recipe.js`
 
 ### 7. Employee & Staff Management Module
-This module manages temple staff and employee records.
+Manages temple staff and employee records.
 
 Functions:
-- Add/Edit/Delete Employees
-- Manage Attendance
-- Assign Duties
-- Salary Management
+- Add/edit/delete employees
+- Manage attendance (including face-recognition and geo-location)
+- Assign duties and shifts
+- Leave and payroll management
+- Task assignment and transfers
 
-Features:
-- Attendance tracking
-- Payroll management
-- Shift scheduling
-- Employee performance monitoring
-
-Employee Roles:
-- Priest
-- Accountant
-- Cashier
-- Temple Staff
-
-Employee Workflow:
-1. Employee registered
-2. Attendance tracked
-3. Duties assigned
-4. Salary processed
-
-Employee Dashboard:
-- Attendance Summary
-- Salary Details
-- Shift Timings
-- Leave Requests
-
-Database Tables/Collections:
-- employees
-- attendance
-- payroll
-- shifts
+Backend routes: `employeeRoutes.js`, `attendanceRoutes.js`, `attendanceLocationRoutes.js`,
+`attendanceSettingsRoutes.js`, `leaveRoutes.js`, `shiftRoutes.js`, `payrollRoutes.js`,
+`staffRoutes.js`, `transferRoutes.js`
+Backend models: `Employee.js`, `Attendance.js`, `AttendanceLocation.js`,
+`AttendanceSetting.js`, `Leave.js`, `Shift.js`, `ShiftAssignment.js`,
+`PayrollRecord.js`, `Task.js`, `TransferRequest.js`, `Instruction.js`
 
 ### 8. Festival & Event Management Module
-This module manages temple festivals and special events.
+Manages temple festivals and special events.
 
 Functions:
-- Create Festival Events
-- Manage Special Bookings
-- Track Festival Donations
-- Generate Event Reports
+- Create festival events
+- Manage special bookings
+- Track festival donations and registrations
+- Generate event reports
 
-Features:
-- Event scheduling
-- Crowd management support
-- Festival booking management
-- Special notification system
-
-Festival Workflow:
-1. Festival created
-2. Devotees book services
-3. Donations collected
-4. Reports generated
-
-Festival Dashboard:
-- Upcoming Festivals
-- Event Bookings
-- Festival Revenue
-- Crowd Statistics
-
-Database Tables/Collections:
-- festivals
-- event_bookings
-- festival_donations
+Backend routes: `eventRoutes.js`
+Backend models: `Event.js`
 
 ### 9. Notification Module
-This module sends alerts and notifications to devotees and staff.
+Sends alerts and notifications to devotees and staff.
 
 Functions:
-- Booking Confirmations
-- Payment Notifications
-- Festival Announcements
-- Reminder Alerts
+- Booking confirmations
+- Payment notifications
+- Festival announcements and invitations (with attachments)
+- Reminder alerts
 
 Features:
-- SMS notifications
-- Email integration
-- Push notifications
-- Real-time alerts
+- Email delivery via Nodemailer (`backend/src/utils/communicationService.js`)
+- In-app database notifications (`backend/src/models/Notification.js`)
+- Scheduled daily jobs (warranty expiry, upcoming poojas) via `node-cron` in `backend/src/app.js`
+- SMS is a stubbed channel — see [Known gaps](#known-gaps)
 
-Notification Types:
-- Booking Confirmation
-- Donation Receipt
-- Festival Reminder
-- Payment Confirmation
-
-Notification Workflow:
-1. Event triggered
-2. Notification generated
-3. User receives alert
-
-Database Tables/Collections:
-- notifications
-- alerts
-- message_logs
+Backend routes: `notificationRoutes.js`
+Backend services: `backend/src/utils/notificationService.js`
 
 ### 10. Report & Analytics Module
-This module generates financial and operational reports.
+Generates financial and operational reports.
 
 Functions:
-- Donation Reports
-- Billing Reports
-- Festival Reports
-- Inventory Reports
+- Donation, billing, festival, and inventory reports
+- Financial statements and profit/loss
+- Audit logs
 
 Features:
-- Graphical dashboards
-- PDF/Excel export
-- Revenue tracking
-- Financial analytics
+- Charts and dashboards (Recharts)
+- PDF/Excel export on the frontend
 
-Report Types:
-- Daily Collection Report
-- Donation Summary
-- Pooja Booking Report
-- Inventory Usage Report
-
-Analytics Dashboard:
-- Revenue Growth
-- Donation Trends
-- Festival Collections
-- Inventory Usage Statistics
-
-Report Workflow:
-1. Financial and service data collected
-2. Reports generated automatically
-3. Admin exports reports
-
-Database Tables/Collections:
-- reports
-- analytics
-- financial_summary
+Backend routes: `accountRoutes.js`, `auditLogRoutes.js`,
+`adminInventoryRoutes.js` (report endpoints), `priestRoutes.js` (completed-services reporting)
 
 ### 11. Authentication & Security Module
-This module provides secure access and protects temple financial data.
+Provides secure access and protects temple financial data.
 
 Functions:
-- User Authentication
-- Password Encryption
-- Session Management
-- Role-Based Authorization
+- User authentication (email/password and Google login)
+- Password encryption and reset
+- Session management
+- Role-based authorization
 
 Features:
-- JWT Authentication
-- bcrypt password hashing
-- Protected APIs
-- Secure login system
+- JWT authentication (`Authorization: Bearer <token>`, 7-day expiry)
+- bcrypt password hashing (10 rounds)
+- Protected APIs via `authenticate` / `authorizeRoles` middleware
+- Email-verification-link registration flow (15-minute token)
+- Account status gating (`accountEnabled`, employee access status)
 
-User Roles:
-- Admin
-- Accountant
-- Priest
-- Cashier
-- Staff
+User Roles (`backend/src/models/User.js`): `admin`, `accountant`, `cashier`,
+`priest`, `staff`, `devotee`. Some routers also accept `superadmin` / `manager`
+role strings; keep this in mind when auditing role checks.
 
-Security Measures:
-- Encrypted passwords
-- Token-based authentication
-- Input validation
-- Session timeout
-
-Authentication Workflow:
-1. User enters credentials
-2. System verifies user
-3. JWT token generated
-4. Secure session created
-
-Database Tables/Collections:
-- users
-- roles
-- sessions
+Backend routes: `authRoutes.js`
+Backend middleware: `backend/src/middleware/authMiddleware.js`
 
 ### 12. Receipt & Document Management Module
-This module manages temple receipts and financial documents.
+Manages temple receipts and financial documents.
 
 Functions:
-- Generate Receipts
-- Store Payment Records
-- Download Reports
-- Manage Financial Documents
+- Generate receipts (booking, donation, bill)
+- Store payment records
+- Download reports
+- Manage financial documents
 
 Features:
-- PDF receipt generation
-- Digital document storage
-- Secure file access
+- PDF receipt generation (`backend/src/utils/pdfGenerator.js` with `pdfkit`)
+- Client-side PDF/Excel export (`jspdf`, `xlsx`)
 - Receipt history tracking
 
-Document Types:
-- Donation Receipts
-- Booking Receipts
-- Festival Reports
-- Financial Statements
+## PostgreSQL Migration
 
-Receipt Workflow:
-1. Payment completed
-2. Receipt generated
-3. Stored digitally
-4. Download/share enabled
+The backend runs on MongoDB today and is migrating to PostgreSQL **entity by entity,
+additively**, so that an unavailable PostgreSQL never takes the app down.
 
-Receipt Dashboard:
-- Recent Receipts
-- Download History
-- Financial Statements
-- Receipt Search
+- Phase 1 established the connection pool, migration runner, and `/api/health` probe.
+- Phases 2A–2Q have added PostgreSQL tables, repositories, and services for many entities.
+- Each migrated entity keeps its Mongoose model as a **fallback**; there are **no dual writes**.
 
-Database Tables/Collections:
-- receipts
-- documents
-- uploaded_files
+Start here: [`docs/postgres-migration.md`](docs/postgres-migration.md) — the migration
+index with the full phase list, current status, and links to per-entity documentation.
+
+## Project Structure
+```
+.
+├── backend/                 # Node.js + Express API
+│   ├── scripts/             # One-off data migration scripts (MongoDB)
+│   ├── src/
+│   │   ├── config/          # Mongo + PostgreSQL connection configuration
+│   │   ├── controllers/     # Express request handlers
+│   │   ├── db/              # SQL migrations and the migration runner
+│   │   ├── middleware/      # Auth / role authorization
+│   │   ├── models/          # Mongoose models (current source of truth)
+│   │   ├── repositories/    # PostgreSQL data access (dual-path with Mongoose)
+│   │   ├── routes/          # One router per feature area
+│   │   ├── services/        # Datasource-aware business logic
+│   │   ├── store/           # File-based fallback stores (offline mode)
+│   │   └── utils/           # Email/SMS, PDF, notifications, accounting helpers
+│   └── test/                # node:test PostgreSQL path/fallback tests
+├── frontend/                # React + Vite SPA
+│   └── src/
+│       ├── components/      # Shared and feature components
+│       ├── context/         # Auth and theme providers
+│       ├── layouts/         # Admin / staff / priest / devotee layouts
+│       ├── pages/           # Route-level screens per role
+│       ├── services/        # Axios API clients
+│       └── utils/
+└── docs/                    # PostgreSQL migration documentation
+```
+
+## Run
+1. Copy `backend/.env.example` to `backend/.env` and fill in the values.
+   - `MONGODB_URI` is required.
+   - `JWT_SECRET`, `EMAIL_*`, and Razorpay keys are used when present.
+   - `DATABASE_URL` (or `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD`) enables PostgreSQL.
+     PostgreSQL is only attempted when real connection configuration is present.
+2. Install dependencies (npm workspaces):
+   - `npm run install:all`
+3. Apply PostgreSQL migrations (only needed if PostgreSQL is configured):
+   - `npm run db:migrate --workspace backend`
+4. Start the backend:
+   - `npm run dev:backend` (nodemon, port 5000)
+5. Start the frontend:
+   - `npm run dev:frontend` (Vite, port 5173)
+
+Useful endpoints/scripts:
+- `GET /api/health` →
+  `{ "status": "ok", "service": "temple-billing-backend", "postgres": "connected" | "unavailable" }`
+- `npm run db:verify --workspace backend` → checks PostgreSQL connectivity
+- `npm test --workspace backend` → PostgreSQL path + fallback tests (requires a test database)
+
+## Known gaps
+Documented here so contributors do not assume capabilities that do not exist yet.
+
+- **SMS delivery is stubbed.** `sendSMS` in `backend/src/utils/communicationService.js`
+  only logs; there is no Twilio/SNS integration.
+- **Email credentials are committed in source.** `communicationService.js` contains a
+  hard-coded fallback Gmail address and app password. These should be removed and read
+  from the environment only.
+- Several API base URLs are hard-coded to `http://localhost:5000` in `frontend/src/services/`
+  and in notification email templates rather than using an environment variable.
+- Migration phases 2A–2H and 2N do not have dedicated `docs/` files; they are summarised
+  in the migration index.
 
 ## Future Enhancements
 - Mobile application integration
 - Online live darshan support
 - QR code temple entry system
 - AI-based crowd management
-- Voice-enabled booking system
 - Online prasadam delivery
 - Cloud-based temple accounting
 - Multi-language support
-- Face recognition for staff attendance
 - AI chatbot for devotee assistance
 
-## Structure
-- `backend` (Node.js + Express + Mongoose)
-- `frontend` (React + Vite)
-
-## Run
-1. Copy `backend/.env.example` to `backend/.env`
-2. Start backend:
-   - `npm run dev:backend`
-3. Start frontend:
-   - `npm run dev:frontend`
+Face recognition for staff attendance is already implemented
+(`frontend/src/components/admin/employee/FaceRegistration.jsx`,
+`frontend/src/pages/staff/StaffAttendanceFlow.jsx`).

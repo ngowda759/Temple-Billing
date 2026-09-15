@@ -1,225 +1,324 @@
 # Priest Dashboard - Setup & Implementation Guide
 
 ## Overview
-A comprehensive priest dashboard has been created for the Sri Shanti Mahadev Mandir temple billing system. This dashboard appears after a priest logs in and displays personalized information for that specific priest.
 
-## Features Implemented
+A priest dashboard for the Sri Shanti Mahadev Mandir temple billing system. It
+appears after a priest logs in and displays information scoped to that priest.
 
-### 1. **Welcome Header**
-- Displays personalized greeting with priest's name
-- Shows current date and day
-- Professional header design
+The dashboard is backed by **live API calls**, not demo data.
 
-### 2. **Statistics Cards**
-- **Today's Pooja**: Number of poojas scheduled for today
-- **Upcoming Pooja**: Number of poojas scheduled for upcoming days
-- **Completed Today**: Number of services completed today
-- **Pending Services**: Number of services pending
-- **Total Devotees**: Total devotees registered in the system
+## Features
 
-### 3. **Today's Schedule**
-- Detailed table showing all services for today
-- Columns: Time, Pooja/Service, Devotee, Status
-- Color-coded status indicators:
-  - ✅ Completed (Green)
-  - ⏳ In Progress (Amber)
-  - 📅 Upcoming (Blue)
-  - ⏹️ Pending (Red)
+### 1. Welcome header
+- Personalised greeting: `Welcome back, {user?.name}! 🙏`
+- Current date rendered client-side
 
-### 4. **Today's Seva Duties**
-- List of important duties to be performed
-- Time slots for each duty
-- Detailed descriptions of each duty
-- Icons for visual distinction
+### 2. Statistics cards
+Cards are clickable and navigate to the matching section:
+- **Today's Poojas** → `/priest/my-duties`
+- **Upcoming Poojas** → `/priest/my-duties`
+- **Completed Today** → `/priest/completed-services`
+- Other cards (pending services, total devotees) render as metrics
 
-### 5. **Upcoming Poojas Section**
-- Shows next scheduled poojas
-- Includes date/time and devotee name
-- Quick access to view all upcoming poojas
+### 3. Today's Schedule
+Table of services for today with Time, Pooja/Service, Devotee, and Status.
+Colour-coded statuses: Completed (green), In Progress (amber), Upcoming (blue),
+Pending (rose), with a neutral fallback.
 
-### 6. **Completed Services Section**
-- Shows services completed by the priest
-- Historical data for verification and records
+### 4. Today's Seva Duties
+List of duties with time slots, descriptions, and icons.
 
-### 7. **Announcements Section**
-- Important announcements and notifications
-- Festival notifications (e.g., Brahmotsavam 2025)
-- Meeting schedules
-- Special events
+### 5. Upcoming Poojas
+Next scheduled poojas with date/time and devotee name, linking to the full list.
 
-### 8. **Quick Actions**
-- View Assigned Poojas
-- Update Service Status
-- View Devotees
-- Easy access to common functions
+### 6. Completed Services
+Historical completed services with search, status filter, sort, date range, and
+pagination (`CompletedServices` component inside `PriestDashboard.jsx`).
 
-## File Structure
+### 7. Announcements
+Important announcements and notifications. A "view all" link navigates to
+`/priest/notifications`.
+
+### 8. Quick Actions
+Shortcuts to duties and other common functions.
+
+### 9. Additional sections
+
+Sidebar entries (`frontend/src/data/priestSidebarData.js`): Dashboard, My Duties,
+Duty Transfer Requests, Inventory Requests, Attendance, Leave Requests,
+Apply Leave, Notifications, Profile, Logout.
+
+Additional sections reachable by route/dashboard links but **not** listed in the
+sidebar (see the "Hidden routes" branch in `PriestLayout.findActiveItem`):
+**Seva Schedule**, **Completed Services**, **Special Duties**, **Festival Duties**,
+and **Settings**. `PriestLayout` still resolves their active sidebar item from
+`location.pathname`.
+
+## File structure
 
 ```
 frontend/
 ├── src/
-│   ├── pages/
-│   │   └── priest/
-│   │       ├── PriestDashboard.jsx     (Main dashboard component)
-│   │       └── PriestDashboard.css     (Dashboard styling)
-│   ├── layouts/
-│   │   └── PriestLayout.jsx            (Optional layout wrapper)
-│   ├── services/
-│   │   └── priestService.js            (API service calls)
-│   └── App.jsx                         (Routing configured)
+│   ├── pages/priest/
+│   │   ├── PriestDashboard.jsx       # Entry component; switches sections
+│   │   ├── PriestDashboard.css       # Dashboard styling
+│   │   ├── MyDuties.jsx
+│   │   ├── CompletedServices.jsx
+│   │   ├── SevaSchedule.jsx
+│   │   ├── SpecialDuties.jsx
+│   │   ├── FestivalDuties.jsx
+│   │   ├── DutyTransferRequests.jsx
+│   │   ├── PriestInventory.jsx
+│   │   ├── PriestNotifications.jsx
+│   │   └── PriestProfile.jsx
+│   ├── layouts/PriestLayout.jsx      # Sidebar + topbar shell
+│   ├── components/common/
+│   │   ├── PriestSidebar.jsx
+│   │   └── PriestTopbar.jsx
+│   ├── data/priestSidebarData.js     # Sidebar items → route paths
+│   └── services/priestService.js     # API client
+└── App.jsx                           # Routing for all /priest/* paths
 ```
 
-## How It Works
+`PriestDashboard.jsx` is a single entry component that reads the active sidebar
+item from `PriestLayout` and switches between section components. Every
+`/priest/*` route in `App.jsx` renders the same `PriestDashboard` component, and
+`PriestLayout` derives the active section from `location.pathname` via
+`findActiveItem`.
 
-### 1. **Authentication Flow**
-1. Priest logs in at `/auth-login` page
-2. Enters credentials and selects "Priest" role
-3. Backend authenticates and returns user data with role="priest"
-4. Frontend redirects to `/priest` route
-5. PriestDashboard component loads with priest's personalized data
+## How it works
 
-### 2. **User Data**
-- User information comes from `useAuth()` context
-- Priest name is displayed in the header: "Welcome back, {user?.name}! 🙏"
-- User ID can be used to fetch priest-specific data
+### Authentication flow
+1. Priest logs in at `/auth-login` (`AuthLoginPage`).
+2. Backend returns a JWT and user data including `role: "priest"`.
+3. The frontend redirects to `/priest`.
+4. `ProtectedRoute allowedRoles={["priest"]}` guards every `/priest/*` route;
+   a non-priest is redirected to `/{their-role}`, an unauthenticated visitor to `/`.
+5. `PriestDashboard` calls `GET /api/priest/dashboard` with the stored JWT.
 
-### 3. **Data Display**
-- Current dashboard shows demo data
-- Production integration will use API calls from `priestService.js`
-- Data can be real-time or cached based on requirements
+### User data
+- User information comes from `useAuth()` (`frontend/src/context/AuthContext.jsx`).
+- Name is shown in the header.
+- The backend derives the priest's identity from the JWT (`authenticate` middleware
+  sets `req.user`) and `authorizeRoles("priest")` is applied to the entire router
+  in `backend/src/routes/priestRoutes.js`.
 
-## Installation & Setup
+### Data display
+The dashboard fetches real data on mount:
 
-### 1. **Backend Endpoints Required** (if implementing live data)
+```jsx
+const fetchDashboardData = async () => {
+  try {
+    setLoading(true);
+    setError(null);
+    const data = await getPriestDashboard();
+    if (data) {
+      if (data.stats) setStats(data.stats);
+      if (data.todaySchedule) setTodaySchedule(data.todaySchedule);
+      if (data.upcomingPoojas) setUpcomingPoojas(data.upcomingPoojas);
+      if (data.completedServices) setCompletedServices(data.completedServices);
+      if (data.sevaDuties) setSevaDuties(data.sevaDuties);
+      if (data.announcements) setAnnouncements(data.announcements);
+    }
+  } catch (err) {
+    console.error("Error fetching dashboard data:", err);
+    setError("Failed to load dashboard data. Please try again.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+useEffect(() => {
+  fetchDashboardData();
+}, []);
 ```
-GET /api/priests/:priestId/dashboard         - Get dashboard stats
-GET /api/priests/:priestId/schedule/today    - Get today's schedule
-GET /api/priests/:priestId/poojas/upcoming   - Get upcoming poojas
-GET /api/priests/:priestId/services/completed - Get completed services
-GET /api/priests/:priestId/duties             - Get seva duties
-GET /api/announcements                        - Get announcements
-GET /api/devotees                             - Get devotee list
-PUT /api/poojas/:poojaId/status              - Update pooja status
-```
 
-### 2. **Frontend Setup**
+`getPriestDashboard()` takes **no arguments** — `priestService.js` reads the JWT
+from `authService.getStoredToken()` and sends it as a bearer token. The earlier
+version of this guide showed `getPriestDashboard(user.id)`, which is not the
+current signature.
+
+## Backend endpoints
+
+All are under `/api/priest` and require authentication plus the `priest` role.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/dashboard` | Stats, schedule, upcoming, completed, duties, announcements |
+| GET | `/today-schedule` | Today's services |
+| GET | `/upcoming-poojas` | Upcoming poojas |
+| GET | `/completed-today` | Services completed today |
+| PATCH | `/bookings/:id/status` | Change a booking status |
+| GET | `/my-duties` | Assigned duties |
+| PUT | `/my-duties/start` | Start a duty |
+| PUT | `/my-duties/complete` | Complete a duty |
+| POST | `/my-duties/transfer` | Request a duty transfer |
+| GET | `/my-duties/incoming-transfers` | Incoming transfer requests |
+| GET | `/my-duties/transfers` | Own transfer requests |
+| POST | `/my-duties/transfer/:id/respond` | Accept/reject a transfer |
+| GET | `/my-duties/available-priests` | Priests available for transfer |
+| GET | `/priests-list` | Priest list |
+| GET | `/assigned-poojas` | Assigned poojas (filter/search) |
+| PUT | `/start-pooja/:id` | Start a pooja |
+| PUT | `/complete-pooja/:id` | Complete a pooja |
+| PUT | `/pending-pooja/:id` | Mark a pooja pending |
+| GET | `/seva-schedule` | Seva schedule |
+| GET | `/seva-instructions` | Seva instructions |
+| GET | `/material-checklist` | Material checklist |
+| GET | `/completed-services` | Completed services (query-param filtering) |
+| GET | `/special-duties` | Special duties |
+| PUT | `/accept-duty/:id` | Accept a special duty |
+| PUT | `/reject-duty/:id` | Reject a special duty |
+| PUT | `/complete-duty/:id` | Complete a special duty |
+| GET | `/festival-duties` | Festival duties |
+| PUT | `/festival-duty-attendance/:id` | Mark festival duty attendance |
+| PUT | `/festival-duty-complete/:id` | Complete a festival duty |
+| GET | `/notifications` | Priest notifications |
+| PUT | `/notifications/read/:id` | Mark one notification read |
+| PUT | `/notifications/read-all` | Mark all read |
+| GET/PUT | `/profile` | Read/update priest profile |
+| GET/PUT | `/settings` | Read/update priest settings |
+| GET | `/inventory/catalog` | Inventory catalog for requests |
+| POST/GET | `/inventory-requests` | Create/list own inventory requests |
+| GET | `/inventory-requests/:userId` | Requests for a user |
+| GET | `/inventory-issues`, `/inventory-issues/:userId` | Issued inventory |
+| POST | `/inventory-issues/:id/complete` | Complete usage of an issue |
+
+## Frontend routes
+
+Defined in `frontend/src/App.jsx`, all guarded by
+`<ProtectedRoute allowedRoles={["priest"]}>` and all rendering `PriestDashboard`:
+
+`/priest`, `/priest/attendance`, `/priest/apply-leave`, `/priest/leave-requests`,
+`/priest/seva-schedule`, `/priest/completed-services`, `/priest/special-duties`,
+`/priest/festival-duties`, `/priest/notifications`, `/priest/profile`,
+`/priest/settings`, `/priest/my-duties`, `/priest/transfer-requests`,
+`/priest/inventory-requests`.
+
+## Setup
+
 ```bash
 cd frontend
-npm install  # Ensure react-icons, axios are installed
-npm run dev  # Run development server
+npm install     # react-icons, axios, react-router-dom, etc.
+npm run dev     # Vite dev server on port 5173
 ```
 
-### 3. **Test the Dashboard**
-1. Start the backend server
-2. Start the frontend development server
-3. Navigate to http://localhost:5173/auth-login
-4. Use priest credentials to login
-5. You should be redirected to `/priest` dashboard
+Test the dashboard:
+1. Start the backend (`npm run dev:backend`, port 5000).
+2. Start the frontend (`npm run dev:frontend`, port 5173).
+3. Open `http://localhost:5173/auth-login` and log in with priest credentials.
+4. You are redirected to `/priest`.
 
-## Component Integration
+## Using the service layer
 
-### Using the PriestService
 ```javascript
 import { getPriestDashboard, getPriestTodaySchedule } from "../../services/priestService";
 
-// In a useEffect hook
 useEffect(() => {
   const fetchData = async () => {
     try {
-      const dashboardData = await getPriestDashboard(user.id);
+      const dashboardData = await getPriestDashboard();
       setStats(dashboardData.stats);
-      const schedule = await getPriestTodaySchedule(user.id);
+      const schedule = await getPriestTodaySchedule();
       setTodaySchedule(schedule);
     } catch (error) {
       console.error("Error fetching data:", error);
     }
   };
   fetchData();
-}, [user.id]);
+}, []);
 ```
 
-## Customization
+`priestService.js` exposes roughly 40 functions covering the endpoints above
+(`getPriestDashboard`, `getPriestTodaySchedule`, `getMyDuties`, `startMyDuty`,
+`requestTransfer`, `getSevaSchedule`, `getSpecialDuties`, `getFestivalDuties`,
+`getProfile`, `updateProfile`, `getSettings`, `updateSettings`, and so on).
 
-### 1. **Change Colors**
-Modify the Tailwind classes in PriestDashboard.jsx:
-- Primary color: `orange-500` → Change to your preferred color
-- Secondary color: `purple-500` → Change to your preferred color
-- Accent colors in stat cards can be customized
+## Customisation
 
-### 2. **Add More Sections**
-Create new components and import them into PriestDashboard.jsx
+### Colours
+Adjust Tailwind classes in `PriestDashboard.jsx`:
+- Primary: `orange-500` → your preferred colour
+- Secondary: `purple-500`
+- Stat-card accent colours
 
-### 3. **Dark Mode**
-Dark mode toggle is available and fully implemented using Tailwind CSS classes
+### Adding sections
+Create a component and add a `case` to the `switch (activeItem)` block in
+`PriestDashboard.jsx`, plus a matching item in
+`frontend/src/data/priestSidebarData.js` and a route in `App.jsx`.
 
-### 4. **Responsive Design**
-Dashboard is fully responsive:
-- Mobile: Single column layout
-- Tablet: 2-3 column layout
-- Desktop: Full multi-column layout
+### Dark mode
+Provided by `ThemeContext` and toggled through `PriestTopbar`. `PriestLayout`
+applies the `dark` class and the section components receive a `darkMode` prop.
 
-## Dark Mode Toggle
+### Responsive design
+Single-column on mobile, 2–3 columns on tablet, full multi-column on desktop.
+The sidebar collapses and has a mobile drawer.
 
-The dashboard includes a dark mode toggle in the topbar. Users can:
-1. Click the dark mode icon in the topbar
-2. Toggle between light and dark themes
-3. Theme preference is maintained during the session
+## Styling details
 
-## Styling Details
+Tailwind classes used by the shell and cards:
+- `bg-[#f5f3ef]` — light background
+- `bg-[#0f172a]` — dark background
+- `border-[#ece8e1]` — light border
+- `border-[#374151]` — dark border
+- `text-[#1d1b19]` — light text
+- `text-slate-100` — dark text
 
-### Tailwind Classes Used
-- `bg-[#f5f3ef]` - Light background
-- `bg-[#0f172a]` - Dark background
-- `border-[#ece8e1]` - Light border
-- `border-[#374151]` - Dark border
-- `text-[#1d1b19]` - Light text
-- `text-slate-100` - Dark text
+`PriestDashboard.css` also defines `.stat-card`, `.schedule-table`,
+`.status-badge`, `.quick-action-btn`, and `.fade-in`, plus a `.dark-mode`
+variant set. Note that the components primarily use Tailwind utilities; the
+CSS classes are supplementary.
 
-### Responsive Classes
-- `grid-cols-1` - Mobile
-- `md:grid-cols-5` - Tablet and above
-- `lg:col-span-2` - Large screens
+## Security considerations
 
-## Security Considerations
+1. `/priest/*` routes are wrapped in `ProtectedRoute`.
+2. The backend applies `authenticate` and `authorizeRoles("priest")` to the
+   entire priest router, so role checks cannot be bypassed by calling the API directly.
+3. The backend derives priest identity from the JWT rather than trusting a
+   client-supplied `priestId`, so one priest cannot read another's schedule or duties.
+4. API calls include the bearer token via the `priestService` helper.
 
-1. **Protected Route**: `/priest` route is protected by `ProtectedRoute` component
-2. **Role Verification**: Only users with "priest" role can access
-3. **User Data**: Priest data comes from authenticated user context
-4. **API Calls**: All API calls should include authentication headers (handled by axios interceptor)
+## Future enhancements
 
-## Future Enhancements
-
-1. **Real-time Notifications**: Add WebSocket for real-time updates
-2. **Analytics**: Add charts and analytics for priest performance
-3. **Task Management**: Add task assignment and tracking
-4. **Leave Management**: Integration with leave management system
-5. **Reports**: Generate performance and duty reports
-6. **Settings**: Personal dashboard settings and preferences
-7. **Notifications Panel**: Expandable notification center
+1. Real-time notifications (WebSocket)
+2. Charts and analytics for priest performance
+3. Expanded task assignment and tracking
+4. Deeper leave-management integration
+5. Performance and duty reports
+6. Personal dashboard preferences
 
 ## Troubleshooting
 
-### Issue: Dashboard not showing priest name
-**Solution**: Verify that `useAuth()` context is properly providing user data from localStorage
+**Dashboard not showing the priest name**
+Verify `useAuth()` supplies user data from the persisted session.
 
-### Issue: Data not loading
-**Solution**: Check browser console for API errors, verify backend is running on port 5000
+**Data not loading**
+Check the browser console and confirm the backend is running on port 5000 and
+that the JWT is present and unexpired.
 
-### Issue: Styling looks broken
-**Solution**: Ensure Tailwind CSS is properly configured in `tailwind.config.js`
+**Styling broken**
+Confirm Tailwind is configured (`frontend/tailwind.config.js`,
+`frontend/postcss.config.js`).
 
-### Issue: Dark mode not working
-**Solution**: Check that darkMode state is being passed correctly to all child components
+**Dark mode not working**
+Confirm `ThemeProvider` wraps the app and `useTheme()` resolves; check that
+`PriestLayout` applies the `dark` class.
 
-## File References
+**Redirected away from `/priest`**
+`ProtectedRoute` redirects non-priest roles. Confirm the logged-in account has
+`role: "priest"` and an active status.
 
-- [PriestDashboard Component](./src/pages/priest/PriestDashboard.jsx)
-- [PriestDashboard Styles](./src/pages/priest/PriestDashboard.css)
-- [Priest Service](./src/services/priestService.js)
-- [App Routing](./src/App.jsx) - Line 490-493
-- [Auth Context](./src/context/AuthContext.jsx)
-- [Auth Service](./src/services/authService.js)
+## File references
 
-## Support
-
-For issues or questions about the priest dashboard implementation, refer to the file structure above or check the existing admin/staff dashboard implementations for reference patterns.
+- `frontend/src/pages/priest/PriestDashboard.jsx`
+- `frontend/src/pages/priest/PriestDashboard.css`
+- `frontend/src/services/priestService.js`
+- `frontend/src/layouts/PriestLayout.jsx`
+- `frontend/src/components/common/PriestSidebar.jsx`, `PriestTopbar.jsx`
+- `frontend/src/data/priestSidebarData.js`
+- `frontend/src/App.jsx`
+- `frontend/src/context/AuthContext.jsx`, `ThemeContext.jsx`
+- `frontend/src/components/common/ProtectedRoute.jsx`
+- `backend/src/routes/priestRoutes.js`
+- `backend/src/controllers/priestController.js`
