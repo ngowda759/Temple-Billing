@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 const Employee = require("../models/Employee");
 const User = require("../models/User");
-const Attendance = require("../models/Attendance");
+const attendanceService = require("../services/attendanceService");
 const Leave = require("../models/Leave");
 const Task = require("../models/Task");
 const Notification = require("../models/Notification");
@@ -358,13 +358,17 @@ exports.getEmployeeById = async (req, res) => {
       : await User.findOne({ email: employee.email }).select("name lastLogin createdAt updatedAt");
     const identifiers = [employee._id.toString(), employee.employeeId, user?._id?.toString()].filter(Boolean);
     const [attendance, leaveHistory, dutyHistory] = await Promise.all([
-      Attendance.find({
-        $or: [
-          { employeeId: { $in: identifiers } },
-          { staffId: { $in: identifiers } },
-          { staffEmail: employee.email },
-        ],
-      }).sort({ dateKey: -1 }).limit(100),
+      attendanceService.findMany({
+        filter: {
+          $or: [
+            { employeeId: { $in: identifiers } },
+            { staffId: { $in: identifiers } },
+            { staffEmail: employee.email },
+          ],
+        },
+        sort: { dateKey: -1 },
+        limit: 100,
+      }),
       Leave.find({ staffId: { $in: identifiers } }).sort({ fromDate: -1 }).limit(100),
       Task.find({
         $or: [

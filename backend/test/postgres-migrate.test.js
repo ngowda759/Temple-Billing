@@ -31,7 +31,8 @@ const poolQuery = async (databaseUrl, sql) => {
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
-  // Phase 2A–2R tables must be dropped too so a fresh run applies the latest DDL.
+  // Phase 2A–2S tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS attendance CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS rooms CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS asset_maintenance_history CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS assets CASCADE");
@@ -69,7 +70,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 19 migration\(s\)\./);
+  assert.match(output, /Applied 20 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -92,6 +93,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "017_create_assets.sql",
     "018_create_repairs.sql",
     "019_create_rooms.sql",
+    "020_create_attendance.sql",
   ]);
 });
 
@@ -104,7 +106,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -140,6 +142,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "017_create_assets.sql",
       "018_create_repairs.sql",
       "019_create_rooms.sql",
+      "020_create_attendance.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -408,7 +411,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 19 migration\(s\)\./);
+  assert.match(output, /Applied 20 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -447,7 +450,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -472,7 +475,7 @@ test("rollback of the Phase 2J inventory_logs migration can be removed and reapp
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -545,7 +548,7 @@ test("rollback of the Phase 2K inventory_consumptions migration can be removed a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT kcu.column_name, pg_get_constraintdef(oid) AS def FROM pg_constraint c
@@ -763,7 +766,7 @@ test("rollback of the Phase 2L inventory_requests migration can be removed and r
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   const indexes = await poolQuery(databaseUrl, `
     SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'
@@ -833,7 +836,7 @@ test("previous migrations are unchanged (git diff on migrations dir is empty of 
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 19 migration\(s\)\./);
+  assert.match(output, /Applied 20 migration\(s\)\./);
 });
 
 test("Phase 2M purchase_orders migration creates the Mongo-mapped columns, enum CHECK, constraints and real FKs", async () => {
@@ -962,7 +965,7 @@ test("rollback of the Phase 2M purchase_orders migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1156,7 +1159,7 @@ test("rollback of the Phase 2N goods_received_notes migration can be removed and
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1315,7 +1318,7 @@ test("rollback of the Phase 2O damage_notes migration can be removed and reappli
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   // Re-apply regenerates the table, both real FKs, the enum CHECKs, the
   // unique damage_number and the justified indexes.
@@ -1493,7 +1496,7 @@ test("rollback of the Phase 2P assets migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.assets') AS t");
   assert.ok(tbl[0].t, "assets rebuilt after re-run");
@@ -1712,7 +1715,7 @@ test("rollback of the Phase 2Q repairs migration can be removed and reapplied", 
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   for (const table of ["repair_requests", "repair_tickets", "repair_ticket_spare_parts"]) {
     const tbl = await poolQuery(databaseUrl, `SELECT to_regclass('public.${table}') AS t`);
@@ -1837,7 +1840,7 @@ test("rollback of the Phase 2R rooms migration can be removed and reapplied", as
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 19);
+  assert.strictEqual(rows.length, 20);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.rooms') AS t");
   assert.ok(tbl[0].t, "rooms rebuilt after re-run");
@@ -1986,4 +1989,245 @@ test("rooms unique constraint and CHECKs reject invalid rows on the PostgreSQL l
 test("SELECT 1 succeeds against test database", async () => {
   const rows = await poolQuery(TEST_DB_URL, "SELECT 1 AS ok");
   assert.strictEqual(rows[0].ok , 1);
+});
+
+// ─── Phase 2S: attendance migration ────────────────────────────────────────
+// Every test below opens its own pg Pool (the file has no shared import).
+test("rollback of the Phase 2S attendance migration can be removed and reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // Simulate rolling back only migration 020: drop the attendance table (and
+  // its tracking record). Every earlier table stays in place, so a re-run must
+  // re-apply only 020 and rebuild attendance with its constraints and indexes.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS attendance CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '020_create_attendance.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*020_create_attendance\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+
+  const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
+  assert.strictEqual(rows.length, 20);
+
+  const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.attendance') AS t");
+  assert.ok(tbl[0].t, "attendance rebuilt after re-run");
+
+  const uniques = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'attendance'::regclass AND contype = 'u'`);
+  assert.strictEqual(uniques.length, 1, "re-applied migration rebuilds the unique constraint");
+  assert.match(uniques[0].def, /UNIQUE \(staff_id, date_key\)/);
+
+  const { output: second } = runMigrate(databaseUrl);
+  assert.match(second, /No pending migrations\./);
+});
+
+test("attendance migration creates the Mongo-mapped columns, CHECKs, UNIQUE and real indexes", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    const cols = await pool.query(`
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_name = 'attendance' ORDER BY column_name`);
+    const byName = Object.fromEntries(cols.rows.map((r) => [r.column_name, r]));
+
+    // The exact projection: id + the 37 Mongo schema fields + the two timestamps.
+    assert.strictEqual(cols.rows.length, 40, "exactly 40 mapped columns");
+
+    const expected = {
+      id: ["text", "NO"],
+      staff_id: ["text", "NO"],
+      staff_name: ["text", "NO"],
+      employee_id: ["text", "YES"],
+      staff_email: ["text", "YES"],
+      date_key: ["text", "NO"],
+      check_in: ["text", "NO"],
+      check_out: ["text", "NO"],
+      check_in_at: ["timestamp with time zone", "YES"],
+      check_out_at: ["timestamp with time zone", "YES"],
+      shift: ["text", "NO"],
+      shift_start_time: ["text", "NO"],
+      shift_end_time: ["text", "NO"],
+      assignment_type: ["text", "NO"],
+      duty_name: ["text", "NO"],
+      duty_area: ["text", "NO"],
+      status: ["text", "NO"],
+      is_late_check_in: ["boolean", "NO"],
+      working_minutes: ["numeric", "NO"],
+      working_hours: ["text", "NO"],
+      overtime_minutes: ["numeric", "NO"],
+      overtime_hours: ["text", "NO"],
+      is_overtime: ["boolean", "NO"],
+      note: ["text", "NO"],
+      source: ["text", "NO"],
+      corrected_by: ["text", "NO"],
+      correction_date: ["timestamp with time zone", "YES"],
+      correction_reason: ["text", "NO"],
+      latitude: ["numeric", "YES"],
+      longitude: ["numeric", "YES"],
+      location_verified: ["boolean", "NO"],
+      face_verified: ["boolean", "NO"],
+      distance_from_temple: ["numeric", "YES"],
+      device_info: ["text", "NO"],
+      browser: ["text", "NO"],
+      ip_address: ["text", "NO"],
+      check_in_photo: ["text", "NO"],
+      check_out_photo: ["text", "NO"],
+      created_at: ["timestamp with time zone", "NO"],
+      updated_at: ["timestamp with time zone", "NO"],
+    };
+    for (const [name, [type, nullable]] of Object.entries(expected)) {
+      assert.ok(byName[name], `attendance.${name} exists`);
+      assert.strictEqual(byName[name].data_type, type, `attendance.${name} type`);
+      assert.strictEqual(byName[name].is_nullable, nullable, `attendance.${name} nullability`);
+    }
+
+    // date_key stays a timezone-free TEXT calendar key (never DATE/TIMESTAMPTZ).
+    assert.strictEqual(byName.date_key.data_type, "text");
+    assert.ok(
+      !/date|timestamp/i.test(byName.date_key.data_type),
+      "date_key must not become a date/timestamp column"
+    );
+
+    // No duration/coordinate column is a binary float — exact values only.
+    const floats = await pool.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'attendance' AND data_type IN ('real', 'double precision')`);
+    assert.strictEqual(floats.rows.length, 0, "no float columns on attendance");
+
+    // CHECK constraints: exactly the status enum and the date_key shape.
+    const checks = await pool.query(`
+      SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid = 'attendance'::regclass AND contype = 'c'`);
+    assert.strictEqual(checks.rows.length, 2, "exactly two CHECK constraints");
+    const statusCheck = checks.rows.find((c) => c.conname === "attendance_status_check");
+    assert.ok(statusCheck, "status CHECK exists");
+    for (const value of ["Present", "Absent", "Half Day", "Leave", "Pending",
+      "Working", "Holiday", "Late", "Weekly Off", "Compensatory Off"]) {
+      assert.ok(statusCheck.def.includes(`'${value}'`), `status enum keeps ${value}`);
+    }
+    assert.ok(checks.rows.some((c) => c.conname === "attendance_date_key_check"), "date_key shape CHECK exists");
+
+    // Exactly one UNIQUE constraint: (staff_id, date_key), mirroring the Mongo
+    // unique index. employeeId/staffEmail composites stay non-unique.
+    const uniques = await pool.query(`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid = 'attendance'::regclass AND contype = 'u'`);
+    assert.strictEqual(uniques.rows.length, 1, "exactly one UNIQUE constraint");
+    assert.match(uniques.rows[0].def, /UNIQUE \(staff_id, date_key\)/);
+
+    // No foreign keys are invented for this phase.
+    const fks = await pool.query(`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid = 'attendance'::regclass AND contype = 'f'`);
+    assert.strictEqual(fks.rows.length, 0, "attendance has no foreign keys");
+
+    const indexes = await pool.query(`
+      SELECT indexname FROM pg_indexes WHERE tablename = 'attendance' ORDER BY indexname`);
+    const names = indexes.rows.map((r) => r.indexname);
+    assert.deepStrictEqual(names, [
+      "attendance_pkey",
+      "attendance_staff_id_date_key_key",
+      "idx_attendance_date_key",
+      "idx_attendance_date_key_created_at",
+      "idx_attendance_employee_id_date_key",
+      "idx_attendance_staff_email_date_key",
+    ]);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("attendance unique constraint, CHECKs and defaults behave as the Mongo schema declares", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  const id = () => crypto.randomBytes(12).toString("hex");
+  try {
+    // Defaults match the Mongoose schema defaults exactly.
+    await pool.query(
+      "INSERT INTO attendance (id, staff_id, staff_name, date_key) VALUES ($1, 'S-1', 'Ram', '2026-01-05')",
+      [id()]
+    );
+    const { rows } = await pool.query(
+      "SELECT check_in, check_out, shift, status, is_late_check_in, working_minutes, working_hours, overtime_minutes, overtime_hours, is_overtime, note, source, corrected_by, correction_reason, location_verified, face_verified, device_info, browser, ip_address, check_in_photo, check_out_photo, check_in_at, check_out_at, correction_date, latitude, longitude, distance_from_temple FROM attendance WHERE staff_id = 'S-1'"
+    );
+    assert.strictEqual(rows[0].check_in, "--");
+    assert.strictEqual(rows[0].check_out, "--");
+    assert.strictEqual(rows[0].shift, "Morning");
+    assert.strictEqual(rows[0].status, "Absent");
+    assert.strictEqual(rows[0].is_late_check_in, false);
+    assert.strictEqual(Number(rows[0].working_minutes), 0);
+    assert.strictEqual(rows[0].working_hours, "--");
+    assert.strictEqual(Number(rows[0].overtime_minutes), 0);
+    assert.strictEqual(rows[0].overtime_hours, "--");
+    assert.strictEqual(rows[0].is_overtime, false);
+    assert.strictEqual(rows[0].note, "");
+    assert.strictEqual(rows[0].source, "manual");
+    assert.strictEqual(rows[0].corrected_by, "");
+    assert.strictEqual(rows[0].correction_reason, "");
+    assert.strictEqual(rows[0].location_verified, false);
+    assert.strictEqual(rows[0].face_verified, false);
+    assert.strictEqual(rows[0].device_info, "");
+    assert.strictEqual(rows[0].browser, "");
+    assert.strictEqual(rows[0].ip_address, "");
+    assert.strictEqual(rows[0].check_in_photo, "");
+    assert.strictEqual(rows[0].check_out_photo, "");
+    for (const col of ["check_in_at", "check_out_at", "correction_date", "latitude", "longitude", "distance_from_temple"]) {
+      assert.strictEqual(rows[0][col], null, `${col} defaults to null`);
+    }
+
+    // Unique (staff_id, date_key): the duplicate fails, a different employee or
+    // a different day succeeds.
+    await assert.rejects(
+      pool.query("INSERT INTO attendance (id, staff_id, staff_name, date_key) VALUES ($1, 'S-1', 'Ram', '2026-01-05')", [id()]),
+      /attendance_staff_id_date_key_key/
+    );
+    await pool.query("INSERT INTO attendance (id, staff_id, staff_name, date_key) VALUES ($1, 'S-1', 'Ram', '2026-01-06')", [id()]);
+    await pool.query("INSERT INTO attendance (id, staff_id, staff_name, date_key) VALUES ($1, 'S-2', 'Sita', '2026-01-05')", [id()]);
+
+    // A different employeeId/staffEmail on the same day is allowed — those
+    // composites are deliberately non-unique in Mongo too.
+    await pool.query(
+      "INSERT INTO attendance (id, staff_id, staff_name, employee_id, staff_email, date_key) VALUES ($1, 'S-3', 'Lakshman', 'EMP-3', 'a@b.com', '2026-01-05')",
+      [id()]
+    );
+
+    // Status enum rejects a value Mongo does not declare.
+    await assert.rejects(
+      pool.query("INSERT INTO attendance (id, staff_id, staff_name, date_key, status) VALUES ($1, 'S-4', 'X', '2026-01-05', 'Vacation')", [id()]),
+      /attendance_status_check/
+    );
+
+    // date_key shape is pinned to the 'YYYY-MM-DD' calendar key.
+    await assert.rejects(
+      pool.query("INSERT INTO attendance (id, staff_id, staff_name, date_key) VALUES ($1, 'S-5', 'X', '05/01/2026')", [id()]),
+      /attendance_date_key_check/
+    );
+
+    // NUMERIC keeps exact duration/coordinate values (no float rounding).
+    await pool.query(
+      "INSERT INTO attendance (id, staff_id, staff_name, date_key, working_minutes, overtime_minutes, latitude, longitude, distance_from_temple) VALUES ($1, 'S-6', 'X', '2026-01-05', 465, 90.5, 12.9715987, 77.5945627, 1234.56789)",
+      [id()]
+    );
+    const numeric = await pool.query(
+      "SELECT working_minutes::text AS w, overtime_minutes::text AS o, latitude::text AS lat, distance_from_temple::text AS d FROM attendance WHERE staff_id = 'S-6'"
+    );
+    assert.strictEqual(Number(numeric.rows[0].w), 465);
+    assert.strictEqual(Number(numeric.rows[0].o), 90.5);
+    assert.strictEqual(numeric.rows[0].lat, "12.9715987");
+    assert.strictEqual(numeric.rows[0].d, "1234.56789");
+  } finally {
+    await pool.end();
+  }
 });

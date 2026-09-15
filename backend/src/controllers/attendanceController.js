@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const Attendance = require("../models/Attendance");
+const attendanceService = require("../services/attendanceService");
 const Employee = require("../models/Employee");
 const Leave = require("../models/Leave");
 const Shift = require("../models/Shift");
@@ -528,7 +528,10 @@ const buildDashboardResponse = async (staffId, monthValue) => {
   };
 
   const [attendanceDocs, leaveDocs] = await Promise.all([
-    Attendance.find(await buildAttendanceQuery(staffId, { startKey, endKey })).sort({ dateKey: -1, createdAt: -1 }),
+    attendanceService.findMany({
+      filter: await buildAttendanceQuery(staffId, { startKey, endKey }),
+      sort: { dateKey: -1, createdAt: -1 },
+    }),
     Leave.find(await buildLeaveQuery(staffId, startKey, endKey)).sort({ fromDate: -1, createdAt: -1 }),
   ]);
   // Also load today's special assignments (for extra duty / temporary shifts)
@@ -794,7 +797,10 @@ const buildAdminAttendanceDashboard = async (monthValue, filterEmployeeId = null
 
   const [employees, attendanceDocs, leaveDocs, dutyDocs, shiftDocs] = await Promise.all([
     Employee.find(employeeQuery).sort({ name: 1 }),
-    Attendance.find({ dateKey: { $gte: startKey, $lte: endKey } }).sort({ dateKey: -1, createdAt: -1 }),
+    attendanceService.findMany({
+      filter: { dateKey: { $gte: startKey, $lte: endKey } },
+      sort: { dateKey: -1, createdAt: -1 },
+    }),
     Leave.find({
       status: "Approved",
       fromDate: { $lte: endKey },
@@ -1357,7 +1363,7 @@ exports.markAttendance = async (req, res) => {
     const isOvertime = hasOvertimeAssignment;
 
     const attendanceQuery = await buildAttendanceQuery(staffId, { dateKey });
-    let attendance = await Attendance.findOne(attendanceQuery);
+    let attendance = await attendanceService.findOne(attendanceQuery);
 
     if (normalizedAction === "check-in") {
       if (attendance?.checkIn && attendance.checkIn !== "--") {
@@ -1412,9 +1418,15 @@ exports.markAttendance = async (req, res) => {
         checkInPhoto: photo || "",
       };
 
-      attendance = attendance
-        ? await Attendance.findByIdAndUpdate(attendance._id, payload, { new: true, upsert: true })
-        : await Attendance.create(payload);
+      // The Mongoose path used findByIdAndUpdate(..., { upsert: true }); keep the
+      // same "recreate if the record vanished between the read and the write"
+      // behaviour on both datasources.
+      if (attendance) {
+        attendance = (await attendanceService.updateById(attendance._id, payload))
+          || (await attendanceService.create(payload));
+      } else {
+        attendance = await attendanceService.create(payload);
+      }
 
       await createNotification({
         title: isLate ? "Late Check-in Alert" : "Attendance Marked",
@@ -1459,43 +1471,49 @@ exports.markAttendance = async (req, res) => {
     const workingMinutes = Math.max(0, Math.round((now.getTime() - checkInAt.getTime()) / 60000));
     const workingHours = workingMinutes / 60;
 
-    attendance.checkOut = formatTimeLabel(now);
-    attendance.checkOutAt = now;
-    attendance.workingMinutes = workingMinutes;
-    attendance.workingHours = formatWorkingHours(workingMinutes);
+    const checkOutUpdates = {
+      checkOut: formatTimeLabel(now),
+      checkOutAt: now,
+      workingMinutes,
+      workingHours: formatWorkingHours(workingMinutes),
+    };
     if (photo) {
-      attendance.checkOutPhoto = photo;
+      checkOutUpdates.checkOutPhoto = photo;
     }
 
     if (workingHours >= 6) {
-      attendance.status = "Present";
+      checkOutUpdates.status = "Present";
     } else if (workingHours >= 4 && workingHours < 6) {
-      attendance.status = "Half Day";
+      checkOutUpdates.status = "Half Day";
     } else {
-      attendance.status = "Absent";
+      checkOutUpdates.status = "Absent";
     }
 
     if (attendance.isOvertime) {
       const standardWorkingMinutes = 480;
       const overtimeMinutes = Math.max(0, workingMinutes - standardWorkingMinutes);
-      attendance.overtimeMinutes = overtimeMinutes;
-      attendance.overtimeHours = formatWorkingHours(overtimeMinutes);
+      checkOutUpdates.overtimeMinutes = overtimeMinutes;
+      checkOutUpdates.overtimeHours = formatWorkingHours(overtimeMinutes);
     }
 
-    if ((attendance.status === "Present" || attendance.status === "Half Day") && clean(attendance.assignmentType) === "Emergency Duty") {
+    let earnedCompOffNote = "";
+    if ((checkOutUpdates.status === "Present" || checkOutUpdates.status === "Half Day") && clean(attendance.assignmentType) === "Emergency Duty") {
       if (employee.weeklyOff) {
         const checkOutDate = new Date(attendance.dateKey);
         const dayName = checkOutDate.toLocaleDateString('en-US', { weekday: 'long' });
         if (employee.weeklyOff === dayName) {
-          const addedCompOff = attendance.status === "Present" ? 1 : 0.5;
+          const addedCompOff = checkOutUpdates.status === "Present" ? 1 : 0.5;
           employee.compOffBalance = (employee.compOffBalance || 0) + addedCompOff;
           await employee.save();
-          attendance.note = (attendance.note ? attendance.note + " | " : "") + `Earned ${addedCompOff} Comp Off for Emergency Duty on Weekly Off.`;
+          earnedCompOffNote = `Earned ${addedCompOff} Comp Off for Emergency Duty on Weekly Off.`;
         }
       }
     }
+    if (earnedCompOffNote) {
+      checkOutUpdates.note = (attendance.note ? attendance.note + " | " : "") + earnedCompOffNote;
+    }
 
-    await attendance.save();
+    attendance = await attendanceService.updateById(attendance._id, checkOutUpdates);
     await createNotification({
       title: "Attendance Marked",
       message: `${staff.staffName} checked out from ${attendance.shift || dailyContext.shiftName || staff.shift || "Morning"} shift at ${attendance.checkOut} on ${dateKey}.`,
@@ -1528,7 +1546,7 @@ exports.updateAttendance = async (req, res) => {
       });
     }
 
-    const attendance = await Attendance.findById(id);
+    const attendance = await attendanceService.findById(id);
     if (!attendance) {
       return res.status(404).json({
         success: false,
@@ -1536,52 +1554,57 @@ exports.updateAttendance = async (req, res) => {
       });
     }
 
+    const updates = {};
+
     if (checkIn !== undefined) {
-      attendance.checkIn = clean(checkIn) || "--";
-      attendance.checkInAt = attendance.checkIn !== "--" ? parseClockTimeToDate(attendance.dateKey, attendance.checkIn) : null;
+      updates.checkIn = clean(checkIn) || "--";
+      updates.checkInAt = updates.checkIn !== "--" ? parseClockTimeToDate(attendance.dateKey, updates.checkIn) : null;
     }
 
     if (checkOut !== undefined) {
-      attendance.checkOut = clean(checkOut) || "--";
-      attendance.checkOutAt = attendance.checkOut !== "--" ? parseClockTimeToDate(attendance.dateKey, attendance.checkOut) : null;
+      updates.checkOut = clean(checkOut) || "--";
+      updates.checkOutAt = updates.checkOut !== "--" ? parseClockTimeToDate(attendance.dateKey, updates.checkOut) : null;
     }
 
     if (shift !== undefined) {
-      attendance.shift = clean(shift) || attendance.shift || "Morning";
+      updates.shift = clean(shift) || attendance.shift || "Morning";
     }
 
     if (note !== undefined) {
-      attendance.note = clean(note);
+      updates.note = clean(note);
     }
+
+    const effectiveCheckInAt = updates.checkInAt !== undefined ? updates.checkInAt : attendance.checkInAt;
+    const effectiveCheckOutAt = updates.checkOutAt !== undefined ? updates.checkOutAt : attendance.checkOutAt;
 
     if (workingMinutes !== undefined && workingMinutes !== null && workingMinutes !== "") {
       const numericMinutes = Math.max(0, Math.round(Number(workingMinutes) || 0));
-      attendance.workingMinutes = numericMinutes;
-      attendance.workingHours = formatWorkingHours(numericMinutes);
-    } else if (attendance.checkInAt && attendance.checkOutAt) {
-      const computedMinutes = Math.max(0, Math.round((attendance.checkOutAt.getTime() - attendance.checkInAt.getTime()) / 60000));
-      attendance.workingMinutes = computedMinutes;
-      attendance.workingHours = formatWorkingHours(computedMinutes);
+      updates.workingMinutes = numericMinutes;
+      updates.workingHours = formatWorkingHours(numericMinutes);
+    } else if (effectiveCheckInAt && effectiveCheckOutAt) {
+      const computedMinutes = Math.max(0, Math.round((new Date(effectiveCheckOutAt).getTime() - new Date(effectiveCheckInAt).getTime()) / 60000));
+      updates.workingMinutes = computedMinutes;
+      updates.workingHours = formatWorkingHours(computedMinutes);
     } else {
-      attendance.workingMinutes = 0;
-      attendance.workingHours = "--";
+      updates.workingMinutes = 0;
+      updates.workingHours = "--";
     }
 
     if (status !== undefined) {
-      attendance.status = clean(status) || attendance.status;
+      updates.status = clean(status) || attendance.status;
     }
 
-    attendance.correctedBy = req.user?.name || req.user?.email || "Admin";
-    attendance.correctionDate = new Date();
-    attendance.correctionReason = reason || note || "";
-    attendance.source = "admin-correction";
-    
-    await attendance.save();
+    updates.correctedBy = req.user?.name || req.user?.email || "Admin";
+    updates.correctionDate = new Date();
+    updates.correctionReason = reason || note || "";
+    updates.source = "admin-correction";
+
+    const updated = await attendanceService.updateById(id, updates);
 
     return res.json({
       success: true,
       message: "Attendance updated successfully",
-      attendance,
+      attendance: updated,
     });
   } catch (error) {
     return res.status(500).json({
