@@ -1,50 +1,59 @@
-# Devotee Notifications & Profile - Bug Fixes ✅
+# Devotee Notifications & Profile
 
-## Issues Fixed
+This document describes how devotee notification scoping and profile display
+actually work. It supersedes the earlier "bug fixes" write-up, whose code samples
+no longer matched the implementation.
 
-### 1. **❌ Problem: Seeing OTHER Devotees' Notifications**
-**Root Cause:** Notifications endpoint was returning broadcast notifications (where `audienceEmail` is null) along with personal notifications.
+## 1. Notification scoping
 
-**✅ Solution:** 
-- Updated `getNotifications()` endpoint in [backend/src/controllers/devoteeController.js](backend/src/controllers/devoteeController.js)
-- Now ONLY returns notifications where `audienceEmail` matches the logged-in devotee's email
-- Prevents unauthorized access to other users' notifications
+Devotees see their **own** notifications plus general broadcast announcements
+addressed to the devotee audience. They do **not** see other devotees'
+notifications.
 
-**Code Change:**
-```javascript
-// Before: Returns ALL broadcasts + personal notifications
-// After: Returns ONLY user-specific notifications
-const getNotifications = async (req, res) => {
-  const email = String(req.query.email || "").trim().toLowerCase();
-  
-  if (!email) {
-    return res.status(400).json({ error: "Email is required..." });
-  }
-  
-  // Strict filter: only notifications for THIS user
-  const notifications = await Notification.find({
-    audienceEmail: email,  // ← Only their own notifications
-  }).sort({ createdAt: -1 });
-  
-  return res.status(200).json({ notifications });
-};
+The filter lives in `getNotifications` in
+`backend/src/controllers/devoteeController.js`:
+
+```js
+const filters = [
+  buildEmailLookup("audienceEmail", email),
+  // General broadcast announcements not addressed to an individual devotee
+  {
+    audienceRole: { $in: ["devotee", "all"] },
+    audienceEmail: { $in: [null, "", undefined] },
+    audienceId: { $in: [null, "", undefined] },
+  },
+];
+
+if (userId) {
+  filters.push({ audienceId: userId });
+}
+
+const notifications = await Notification.find({ $or: filters }).sort({ createdAt: -1 });
 ```
 
----
+Key points the earlier document got wrong:
 
-### 2. **❌ Problem: Profile Not Showing Registered Details**
-**Root Cause:** Profile component wasn't properly displaying all registered details (phone, address, place).
+- It is **not** a strict `audienceEmail: email` equality filter. It is an `$or`
+  across personal email, personal user id, and devotee-audience broadcasts.
+- The email match uses `buildEmailLookup` (`backend/src/utils/email.js`), which
+  expands an address to aliases. A legacy `@temple.local` address is canonicalised
+  to `@gmail.com`, and lookups match both forms via `{ $in: [...] }`.
+- When **no** email is supplied, the endpoint returns only the general broadcasts —
+  it does not return every notification in the system.
+- When MongoDB is unavailable, it falls back to
+  `backend/src/store/fileNotificationStore.js`, which filters the local
+  `backend/src/data/notifications.json` file by `audienceEmail`.
 
-**✅ Solution:**
-- Enhanced profile state to include all fields: `id`, `name`, `email`, `phone`, `address`, `place`, `memberSince`
-- Improved component loading and refresh mechanism
-- Added dependency array tracking: `[user?.email]`
-- Fixed state initialization with `setProfile()` from API response
+`audienceRole`, `audienceEmail`, and `audienceId` are all declared on the
+`Notification` model (`backend/src/models/Notification.js`), along with
+`viewed`/`viewedAt` and `read`/`readAt` flags.
 
-**Updates in DevoteeProfile Component:**
-```javascript
-// Before: Only loaded name, email
-// After: Loads and displays all registration details
+## 2. Profile display and editing
+
+`frontend/src/components/DevoteeProfile.jsx` loads the devotee's details from
+`GET /api/devotee/profile?email=...` and keeps them in state:
+
+```jsx
 const [profile, setProfile] = useState({
   id: "",
   name: "",
@@ -54,34 +63,31 @@ const [profile, setProfile] = useState({
   place: "",
   memberSince: "",
 });
-
-// Proper API integration
-useEffect(() => {
-  if (user?.email) {
-    const res = await getDevoteeProfile(user.email);
-    if (res.profile) {
-      setProfile(res.profile);  // ← Now includes all fields
-    }
-  }
-}, [user?.email]);  // ← Proper dependency
 ```
 
----
+Supported behaviour:
 
-### 3. **✅ Profile Edit & Save Features**
-**What Works:**
-- ✏️ Click "Edit Profile" to enable editing
-- 📝 Edit all fields: Name, Email, Phone, Address, Place
-- 💾 Click "Save Changes" to update
-- ✅ Success message appears on save
-- ❌ Cancel button available while editing
-- 🔴 Real-time validation with error messages
-- 🔒 Read-only fields: Member Since
+- ✏️ "Edit Profile" enables editing
+- 📝 Editable fields: Name, Email, Phone, Address, Place
+- 💾 "Save Changes" calls `PUT /api/devotee/profile` and shows a success message
+- ❌ "Cancel" exits edit mode without saving
+- 🔴 Client-side validation with per-field error messages
+- 🔒 `Member Since` is read-only
+- Separate `loading` and `saving` states
 
----
+Validation rules enforced in the component:
 
-### 4. **📊 Notification Channels Display**
-Profile now clearly shows where notifications will be sent:
+| Field | Rule |
+|---|---|
+| Email | matches a standard email pattern |
+| Phone | exactly 10 digits, numbers only |
+| Address | non-empty |
+| Place | letters and spaces only |
+
+## 3. Notification channels shown in the profile
+
+The profile displays where notifications will be delivered:
+
 ```
 🔔 Your Notification Channels
 
@@ -89,106 +95,39 @@ Profile now clearly shows where notifications will be sent:
 📱 SMS/WhatsApp: +919876543210
 ```
 
----
+> Note: email delivery is real (Nodemailer). SMS delivery is currently a
+> logging stub — see `sendSMS` in `backend/src/utils/communicationService.js`.
+> The profile labels the channel as SMS/WhatsApp; no WhatsApp integration exists.
 
-## User Flow - Corrected ✅
+## Security properties
 
-### Before (❌ Broken):
-```
-Devotee A logs in
-  ↓
-Sees THEIR bookings
-  ↓
-BUT sees booking notifications from Devotee B & C (❌ WRONG!)
-  ↓
-Can't see/edit their own details
-```
+- Each devotee can only retrieve notifications addressed to their email, their
+  user id, or the general devotee audience.
+- Email lookups are normalised (trimmed, lowercased) before matching, and legacy
+  domain aliases are handled explicitly.
+- Phone, address, and place are validated on both the client and the server.
+- `getNotifications` returns generic error messages and logs details server-side.
 
-### After (✅ Fixed):
-```
-Devotee A logs in
-  ↓
-Views Profile → Shows registered details (name, email, phone, address, place)
-  ↓
-Can edit any field and save
-  ↓
-Sees ONLY their notifications
-  ↓
-When they book/donate:
-  ├→ Email sent to their address
-  ├→ SMS sent to their phone
-  └→ Only THEY see the notification
-```
+## Testing checklist
 
----
+- [ ] Register as a new devotee with all details
+- [ ] View profile — all details displayed
+- [ ] Click Edit Profile — fields become editable
+- [ ] Update a field and save, then confirm the success message
+- [ ] Reload and confirm the updated data persisted
+- [ ] Make a booking and confirm a notification appears
+- [ ] Confirm general broadcast announcements are visible
+- [ ] Register a second devotee; confirm the first devotee's view is unchanged
+- [ ] Confirm the first devotee never sees the second devotee's personal notifications
+- [ ] Make a donation; confirm the receipt email is sent only to the donor's address
 
-## Key Technical Changes
+## Files involved
 
-### Backend - Notification Filtering
-**File:** `backend/src/controllers/devoteeController.js`
+**Backend**
+- `src/controllers/devoteeController.js` — `getNotifications`, `getProfile`, `updateProfile`
+- `src/utils/email.js` — `normalizeEmail`, `getEmailAliases`, `buildEmailLookup`
+- `src/models/Notification.js` — notification schema
+- `src/store/fileNotificationStore.js` — offline fallback store
 
-```javascript
-// STRICT EMAIL-BASED FILTERING
-const notifications = await Notification.find({
-  audienceEmail: email  // ← Only this user's email
-}).sort({ createdAt: -1 });
-```
-
-### Frontend - Profile Component
-**File:** `frontend/src/components/DevoteeProfile.jsx`
-
-- Added `saving` state (separate from `loading`)
-- Added `successMessage` state for user feedback
-- Enhanced error display with ❌ icons
-- Better UX with edit/cancel buttons
-- Shows member since year
-- Displays notification channels
-
----
-
-## Security Improvements ✅
-
-### 1. Data Isolation
-- Each devotee ONLY sees their notifications
-- Email-based filtering prevents cross-user data leaks
-
-### 2. Input Validation
-- 10-digit phone validation
-- Email format validation
-- All required fields validated
-
-### 3. Error Handling
-- Proper error messages for each field
-- Success feedback on save
-
----
-
-## Testing Checklist ✅
-
-- [ ] Register as new devotee with all details
-- [ ] View profile - all details displayed
-- [ ] Click Edit Profile - fields become editable
-- [ ] Update one field and save
-- [ ] Check success message appears
-- [ ] View profile again - updated data saved
-- [ ] Make a booking - receive notification
-- [ ] Check notifications - only YOUR notifications shown
-- [ ] Create another devotee account
-- [ ] Log in as first devotee - still only YOUR notifications
-- [ ] Make donation - email sent to your address only
-
----
-
-## Files Modified
-
-1. **Backend:**
-   - `src/controllers/devoteeController.js` - Fixed `getNotifications()` filtering
-
-2. **Frontend:**
-   - `src/components/DevoteeProfile.jsx` - Enhanced profile display & editing
-
----
-
-## Status: ✅ READY FOR TESTING
-
-All fixes implemented. Notifications are now properly isolated per user, and profile management displays all registration details with full edit capability.
+**Frontend**
+- `src/components/DevoteeProfile.jsx` — profile display and editing
