@@ -1,13 +1,22 @@
-const Asset = require("../models/Asset");
 const RepairRequest = require("../models/RepairRequest");
 const AccountTransaction = require("../models/AccountTransaction");
+const assetService = require("../services/assetService");
 
 const clean = (val) => String(val || "").trim();
 
+// The Asset list/read responses pass through the service's Mongo-shaped
+// document verbatim: on the PostgreSQL path supplier is the plain supplier id
+// string, on the Mongo fallback path it stays whatever the model returns. The
+// admin frontend does not render a populated supplier in the asset list/QR
+// cards, and AssetScanResult reads supplier as a name string assembled by
+// publicAssetController below, so no populate-specific projection is needed
+// here.
+const toAssetResponse = (asset) => asset;
+
 exports.getAllAssets = async (req, res) => {
   try {
-    const assets = await Asset.find().populate("supplier").sort({ name: 1 });
-    res.json({ success: true, assets });
+    const assets = await assetService.findMany({ sort: { name: 1 } });
+    res.json({ success: true, assets: assets.map(toAssetResponse) });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -18,7 +27,7 @@ exports.createAsset = async (req, res) => {
     const { assetId, name, category, purchaseDate, supplier, invoiceNumber, warranty, assignedLocation, status, purchaseCost, serialNumber } = req.body;
     if (!clean(assetId) || !clean(name)) return res.status(400).json({ success: false, message: "Asset ID and Name are required" });
 
-    const asset = await Asset.create({
+    const asset = await assetService.create({
       assetId: clean(assetId),
       name: clean(name),
       category: clean(category),
@@ -31,27 +40,35 @@ exports.createAsset = async (req, res) => {
       purchaseCost: Number(purchaseCost) || 0,
       serialNumber: clean(serialNumber)
     });
-    res.status(201).json({ success: true, asset });
+    res.status(201).json({ success: true, asset: toAssetResponse(asset) });
   } catch (error) {
+    // Mirror the Mongo 11000 duplicate-key contract for the PG path so the
+    // route keeps returning HTTP 409 "Asset ID already exists".
     if (error.code === 11000) return res.status(409).json({ success: false, message: "Asset ID already exists" });
+    if (/unique constraint "assets_asset_id_key"/.test(error.message)) {
+      return res.status(409).json({ success: false, message: "Asset ID already exists" });
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
 exports.updateAsset = async (req, res) => {
   try {
-    const asset = await Asset.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const asset = await assetService.updateById(req.params.id, req.body);
     if (!asset) return res.status(404).json({ success: false, message: "Asset not found" });
-    res.json({ success: true, asset });
+    res.json({ success: true, asset: toAssetResponse(asset) });
   } catch (error) {
+    if (/unique constraint "assets_asset_id_key"/.test(error.message)) {
+      return res.status(409).json({ success: false, message: "Asset ID already exists" });
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
 exports.deleteAsset = async (req, res) => {
   try {
-    const asset = await Asset.findByIdAndDelete(req.params.id);
-    if (!asset) return res.status(404).json({ success: false, message: "Asset not found" });
+    const deleted = await assetService.destroy(req.params.id);
+    if (!deleted) return res.status(404).json({ success: false, message: "Asset not found" });
     res.json({ success: true, message: "Asset deleted" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -105,14 +122,19 @@ exports.completeRepair = async (req, res) => {
     const remarks = clean(req.body.remarks);
     await repair.save();
 
-    // Update maintenance history on the asset
-    repair.asset.maintenanceHistory.push({
+    // Update maintenance history on the asset. The repair itself stays
+    // Mongo-backed (RepairRequest is not part of this phase); only the asset
+    // write is routed through the assetService so it lands on the same
+    // datasource the asset was created on.
+    const assetId = repair.asset && typeof repair.asset === "object"
+      ? repair.asset._id || repair.asset.id
+      : repair.asset;
+    await assetService.addMaintenanceRecord(assetId, {
       repairDate: repair.completionDate,
       description: repair.description + (remarks ? ` - Remarks: ${remarks}` : ""),
       cost: repair.cost,
       vendor: repair.vendor
     });
-    await repair.asset.save();
 
     if (repair.cost > 0) {
       const { recordTransaction } = require("../services/accountingService");

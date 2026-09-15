@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 
 const MIGRATIONS_DIR = path.join(__dirname, "..", "src", "db", "migrations");
@@ -30,7 +31,9 @@ const poolQuery = async (databaseUrl, sql) => {
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
-  // Phase 2A–2N tables must be dropped too so a fresh run applies the latest DDL.
+  // Phase 2A–2P tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS asset_maintenance_history CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS assets CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS damage_notes CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS purchase_order_items CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS purchase_orders CASCADE");
@@ -62,7 +65,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 16 migration\(s\)\./);
+  assert.match(output, /Applied 17 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -82,6 +85,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "014_create_purchase_orders.sql",
     "015_create_goods_received_notes.sql",
     "016_create_damage_notes.sql",
+    "017_create_assets.sql",
   ]);
 });
 
@@ -94,7 +98,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 16);
+  assert.strictEqual(rows.length, 17);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -127,6 +131,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "014_create_purchase_orders.sql",
       "015_create_goods_received_notes.sql",
       "016_create_damage_notes.sql",
+      "017_create_assets.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -392,7 +397,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 16 migration\(s\)\./);
+  assert.match(output, /Applied 17 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -431,7 +436,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 16);
+  assert.strictEqual(rows.length, 17);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -456,7 +461,7 @@ test("rollback of the Phase 2J inventory_logs migration can be removed and reapp
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 16);
+  assert.strictEqual(rows.length, 17);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -529,7 +534,7 @@ test("rollback of the Phase 2K inventory_consumptions migration can be removed a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 16);
+  assert.strictEqual(rows.length, 17);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT kcu.column_name, pg_get_constraintdef(oid) AS def FROM pg_constraint c
@@ -747,7 +752,7 @@ test("rollback of the Phase 2L inventory_requests migration can be removed and r
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 16);
+  assert.strictEqual(rows.length, 17);
 
   const indexes = await poolQuery(databaseUrl, `
     SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'
@@ -817,7 +822,7 @@ test("previous migrations are unchanged (git diff on migrations dir is empty of 
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 16 migration\(s\)\./);
+  assert.match(output, /Applied 17 migration\(s\)\./);
 });
 
 test("Phase 2M purchase_orders migration creates the Mongo-mapped columns, enum CHECK, constraints and real FKs", async () => {
@@ -946,7 +951,7 @@ test("rollback of the Phase 2M purchase_orders migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 16);
+  assert.strictEqual(rows.length, 17);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1140,7 +1145,7 @@ test("rollback of the Phase 2N goods_received_notes migration can be removed and
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 16);
+  assert.strictEqual(rows.length, 17);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1299,7 +1304,7 @@ test("rollback of the Phase 2O damage_notes migration can be removed and reappli
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 16);
+  assert.strictEqual(rows.length, 17);
 
   // Re-apply regenerates the table, both real FKs, the enum CHECKs, the
   // unique damage_number and the justified indexes.
@@ -1358,6 +1363,190 @@ test("a deliberately failed Phase 2O damage_notes migration rolls back fully", a
   assert.match(noPending, /No pending migrations\./);
 });
 
+test("assets migration creates NUMERIC monetary columns, enum CHECKs, unique asset_id and cascade FK", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const assets = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'assets' ORDER BY column_name`);
+  const col = (name) => assets.find((c) => c.column_name === name);
+  assert.ok(col("id") && col("id").data_type === "text", "id TEXT PK (Mongo-compatible ObjectId)");
+  assert.ok(col("asset_id") && col("asset_id").data_type === "text" && col("asset_id").is_nullable === "NO", "assetId required");
+  assert.ok(col("name") && col("name").data_type === "text" && col("name").is_nullable === "NO", "name required");
+  assert.ok(col("category") && col("category").column_default === "'Other'::text", "category default 'Other'");
+  assert.ok(col("qr_code") && col("qr_code").column_default === "''::text", "qrCode default ''");
+  assert.ok(col("purchase_date") && col("purchase_date").data_type === "timestamp with time zone", "purchaseDate TIMESTAMPTZ");
+  assert.ok(col("purchase_date").is_nullable === "YES", "purchaseDate nullable (Mongo default null)");
+  assert.ok(col("supplier") && col("supplier").is_nullable === "YES", "supplier nullable and Mongo-backed");
+  assert.ok(col("invoice_number") && col("invoice_number").column_default === "''::text", "invoiceNumber default ''");
+  assert.ok(col("warranty") && col("warranty").column_default === "''::text", "warranty default '' (String, not Date)");
+  assert.ok(col("assigned_location") && col("assigned_location").column_default === "'Main Temple'::text", "assignedLocation default 'Main Temple'");
+  assert.ok(col("status") && col("status").column_default === "'Active'::text", "status default 'Active'");
+  assert.ok(col("purchase_cost") && col("purchase_cost").data_type === "numeric" && col("purchase_cost").column_default === "0", "purchaseCost NUMERIC default 0, NO min CHECK");
+  assert.ok(col("serial_number") && col("serial_number").column_default === "''::text", "serialNumber default ''");
+  assert.ok(col("created_at") && col("created_at").data_type === "timestamp with time zone");
+  assert.ok(col("updated_at") && col("updated_at").data_type === "timestamp with time zone");
+  assert.ok(!assets.some((c) => c.column_name === "maintenancehistory"),
+    "embedded maintenanceHistory normalized away from assets — no JSONB column");
+
+  const uniqueIdx = await poolQuery(databaseUrl, `
+    SELECT indexdef FROM pg_indexes
+    WHERE tablename = 'assets' AND indexname = 'assets_asset_id_key'`);
+  assert.ok(uniqueIdx[0] && /UNIQUE/.test(uniqueIdx[0].indexdef), "asset_id unique (Mongo assetId unique: true)");
+  assert.ok(!uniqueIdx[0].indexdef.includes("serial_number"), "serialNumber is NOT unique (no Mongo unique index)");
+
+  const checks = await poolQuery(databaseUrl, `
+    SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'assets'::regclass AND contype = 'c'`);
+  const defs = checks.map((r) => r.def);
+  assert.ok(defs.some((d) => /category.*'Electrical'.*'Furniture'.*'Electronics'.*'Utensils'.*'Machinery'.*'Other'/.test(d)), "category CHECK over the 6 Mongo values");
+  assert.ok(defs.some((d) => /status.*'Active'.*'Under Repair'.*'Retired'/.test(d)), "status CHECK over the 3 Mongo values");
+  assert.ok(!defs.some((d) => /purchase_cost\s*>=/.test(d)), "no invented monetary min CHECK on purchase_cost");
+
+  const mh = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'asset_maintenance_history' ORDER BY column_name`);
+  const mhCol = (name) => mh.find((c) => c.column_name === name);
+  assert.ok(mhCol("id") && mhCol("id").data_type === "text", "maintenance entry id TEXT PK");
+  assert.ok(mhCol("asset_id") && mhCol("asset_id").is_nullable === "NO", "child asset_id required");
+  assert.ok(mhCol("position") && mhCol("position").data_type === "integer" && (mhCol("position").column_default === "0" || mhCol("position").column_default === "0::integer"), "position INTEGER preserves array order");
+  assert.ok(mhCol("repair_date") && mhCol("repair_date").data_type === "timestamp with time zone", "repairDate TIMESTAMPTZ");
+  assert.ok(mhCol("description") && mhCol("description").is_nullable === "YES");
+  assert.ok(mhCol("cost") && mhCol("cost").data_type === "numeric", "maintenance cost NUMERIC");
+  assert.ok(mhCol("vendor") && mhCol("vendor").is_nullable === "YES");
+
+  const fk = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'asset_maintenance_history'::regclass AND contype = 'f'`);
+  assert.strictEqual(fk.length, 1, "asset_maintenance_history has exactly one FK");
+  assert.ok(/REFERENCES assets\(id\)/.test(fk[0].def) && /DELETE CASCADE/i.test(fk[0].def),
+    "child FK → assets(id) ON DELETE CASCADE matches the Mongo embedded-array lifecycle");
+
+  const assetsFk = await poolQuery(databaseUrl, `
+    SELECT count(*)::int AS c FROM pg_constraint
+    WHERE conrelid = 'assets'::regclass AND contype = 'f'`);
+  assert.strictEqual(assetsFk[0].c, 0, "assets has NO FK to suppliers (suppliers stay Mongo-backed)");
+
+  const idx = await poolQuery(databaseUrl, `
+    SELECT indexname FROM pg_indexes WHERE tablename = 'assets' ORDER BY indexname`);
+  const idxNames = idx.map((r) => r.indexname);
+  for (const expected of ["idx_assets_name", "idx_assets_status", "idx_assets_category", "idx_assets_assigned_location", "idx_assets_purchase_date", "idx_assets_created_at"]) {
+    assert.ok(idxNames.includes(expected), `index ${expected} present`);
+  }
+  const mhIdx = await poolQuery(databaseUrl, `
+    SELECT indexname FROM pg_indexes WHERE tablename = 'asset_maintenance_history' ORDER BY indexname`);
+  assert.ok(mhIdx.map((r) => r.indexname).includes("idx_asset_maintenance_history_asset_id"),
+    "maintenance history per-asset index present");
+});
+
+test("assets NUMERIC columns round-trip monetary precision exactly", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    for (const v of ["0.01", "10.50", "1000.99", "1000000.99", "123456789.1234"]) {
+      const r = await pool.query(
+        `INSERT INTO assets (id, asset_id, name, purchase_cost)
+         VALUES ($1, $2, $3, $4)
+         RETURNING purchase_cost::text AS c`,
+        [crypto.randomBytes(12).toString("hex"), `AST-MIG-${v}`, "Precision", v]
+      );
+      assert.strictEqual(r.rows[0].c, v, `purchase_cost ${v} round-trips exactly`);
+    }
+  } finally {
+    await pool.end();
+  }
+});
+
+test("rollback of the Phase 2P assets migration can be removed and reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // Simulate rolling back only migration 017: drop the assets tables (and the
+  // tracking record). All earlier tables stay in place, so a re-run must
+  // re-apply only 017 and rebuild both assets + asset_maintenance_history.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS asset_maintenance_history CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS assets CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '017_create_assets.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*017_create_assets\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+
+  const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
+  assert.strictEqual(rows.length, 17);
+
+  const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.assets') AS t");
+  assert.ok(tbl[0].t, "assets rebuilt after re-run");
+  const child = await poolQuery(databaseUrl, "SELECT to_regclass('public.asset_maintenance_history') AS t");
+  assert.ok(child[0].t, "asset_maintenance_history rebuilt after re-run");
+  const fk = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'asset_maintenance_history'::regclass AND contype = 'f'`);
+  assert.strictEqual(fk.length, 1, "re-applied migration rebuilds the child FK");
+
+  const { output: second } = runMigrate(databaseUrl);
+  assert.match(second, /No pending migrations\./);
+});
+
+test("failed Phase 2P migration rolls back cleanly — no partial assets table, indexes or constraints", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const assetsIdx = await poolQuery(databaseUrl, `
+    SELECT count(*)::int AS c FROM pg_indexes WHERE tablename = 'assets'`);
+  assert.ok(assetsIdx[0].c > 0, "assets indexes present in the successful baseline");
+
+  const broken = path.join(MIGRATIONS_DIR, "998_broken_assets_test.sql");
+  fs.writeFileSync(broken, `
+    CREATE TABLE partial_assets_test (id TEXT PRIMARY KEY);
+    CREATE INDEX idx_partial_assets_test ON partial_assets_test (id);
+    ALTER TABLE partial_assets_test SET SCHEMA public;
+    SELECT * FROM nonexistent_assets_table;`);
+  try {
+    const res = runMigrate(databaseUrl);
+    assert.match(res.output, /Migration 998_broken_assets_test\.sql failed/);
+    assert.strictEqual(res.status, 1);
+
+    const objs = await poolQuery(databaseUrl, `
+      SELECT c.relname FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname IN ('partial_assets_test', 'idx_partial_assets_test')`);
+    assert.strictEqual(objs.length, 0, "no partial table/index may remain");
+    const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.partial_assets_test') AS t");
+    assert.strictEqual(tbl[0].t, null, "no partial table may remain");
+
+    // The real 017 assets tables from the successful baseline run are untouched.
+    const real = await poolQuery(databaseUrl, `
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'assets' ORDER BY column_name`);
+    assert.strictEqual(real.length, 15, "assets columns intact after failure");
+    const realChild = await poolQuery(databaseUrl, `
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'asset_maintenance_history' ORDER BY column_name`);
+    assert.strictEqual(realChild.length, 9, "asset_maintenance_history columns intact after failure");
+    const tblNow = await poolQuery(databaseUrl, "SELECT to_regclass('public.assets') AS t");
+    assert.ok(tblNow[0].t, "assets still exists after the failed migration");
+    const idxNow = await poolQuery(databaseUrl, `
+      SELECT count(*)::int AS c FROM pg_indexes WHERE tablename = 'assets'`);
+    assert.strictEqual(idxNow[0].c, assetsIdx[0].c, "no extra/removed indexes on assets after failure");
+  } finally {
+    fs.unlinkSync(broken);
+  }
+
+  const { output: noPending } = runMigrate(databaseUrl);
+  assert.match(noPending, /No pending migrations\./);
+});
 test("SELECT 1 succeeds against test database", async () => {
   const rows = await poolQuery(TEST_DB_URL, "SELECT 1 AS ok");
   assert.strictEqual(rows[0].ok , 1);
