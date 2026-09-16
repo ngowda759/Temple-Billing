@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const Employee = require("../models/Employee");
-const Attendance = require("../models/Attendance");
+const attendanceService = require("../services/attendanceService");
 const Leave = require("../models/Leave");
 const Task = require("../models/Task");
 const PayrollRecord = require("../models/PayrollRecord");
@@ -261,7 +261,10 @@ const loadPayrollContext = async (monthValue) => {
 
   const [employees, attendanceDocs, leaveDocs, taskDocs, payrollRecords] = await Promise.all([
     Employee.find({ role: { $ne: "admin" }, status: { $in: ["Active", "On Leave"] } }).sort({ name: 1 }),
-    Attendance.find({ dateKey: { $gte: startKey, $lte: endKey } }),
+    attendanceService.findMany({
+      filter: { dateKey: { $gte: startKey, $lte: endKey } },
+      sort: { dateKey: -1, createdAt: -1 },
+    }),
     Leave.find({ status: "Approved", fromDate: { $lte: endKey }, toDate: { $gte: startOfYear } }),
     Task.find({
       $or: [{ dateKey: { $gte: startKey, $lte: endKey } }, { dueDate: { $gte: startKey, $lte: endKey } }],
@@ -382,7 +385,10 @@ exports.payEmployeePayroll = async (req, res) => {
     const startKey = toDateKey(monthRange.startDate);
     const endKey = toDateKey(monthRange.endDate);
     const [attendanceDocs, leaveDocs, taskDocs, existingRecord] = await Promise.all([
-      Attendance.find({ dateKey: { $gte: startKey, $lte: endKey } }),
+      attendanceService.findMany({
+      filter: { dateKey: { $gte: startKey, $lte: endKey } },
+      sort: { dateKey: -1, createdAt: -1 },
+    }),
       Leave.find({ status: "Approved", fromDate: { $lte: endKey }, toDate: { $gte: startKey } }),
       Task.find({
         $or: [{ dateKey: { $gte: startKey, $lte: endKey } }, { dueDate: { $gte: startKey, $lte: endKey } }],

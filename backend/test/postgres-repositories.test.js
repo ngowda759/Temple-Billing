@@ -28,6 +28,7 @@ let inventoryBatchRepository;
 let repairRequestRepository;
 let repairTicketRepository;
 let roomRepository;
+let attendanceRepository;
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -51,6 +52,7 @@ const resetAllTables = async (databaseUrl) => {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query("DROP TABLE IF EXISTS schema_migrations");
+    await pool.query("DROP TABLE IF EXISTS attendance CASCADE");
     await pool.query("DROP TABLE IF EXISTS rooms CASCADE");
     await pool.query("DROP TABLE IF EXISTS asset_maintenance_history CASCADE");
     await pool.query("DROP TABLE IF EXISTS assets CASCADE");
@@ -115,6 +117,7 @@ test.before(async () => {
   repairRequestRepository = require("../src/repositories/repairRequestRepository");
   repairTicketRepository = require("../src/repositories/repairTicketRepository");
   roomRepository = require("../src/repositories/roomRepository");
+  attendanceRepository = require("../src/repositories/attendanceRepository");
   process.env.DATABASE_URL = TEST_DB_URL;
   delete process.env.PGHOST;
   delete process.env.PGPORT;
@@ -3553,5 +3556,60 @@ test("room repository: no dual writes — Mongoose is never connected on the PG 
     price: "1",
   });
   assert.strictEqual(await roomRepository.count({}), before + 1, "exactly one PG row");
+  assert.strictEqual(mongooseLib.connection.readyState, 0, "mongoose never connected");
+});
+
+// ─── Phase 2S: attendance repository ───────────────────────────────────────
+test("attendance repository: create/read/update round-trip with Mongo field names", async () => {
+  const created = await attendanceRepository.create({
+    staffId: `REPO-${unique()}`,
+    staffName: "Repo Staff",
+    employeeId: "EMP-REPO",
+    staffEmail: "repo@example.com",
+    dateKey: "2026-02-10",
+    checkIn: "09:00 AM",
+    checkInAt: new Date("2026-02-10T03:30:00.000Z"),
+    shift: "Morning",
+    status: "Pending",
+    workingMinutes: "120",
+    latitude: "12.9715987",
+    longitude: "77.5945627",
+    locationVerified: true,
+  });
+
+  assert.match(created._id, /^[0-9a-f]{24}$/);
+  assert.strictEqual(created.staffName, "Repo Staff");
+  assert.strictEqual(created.workingMinutes, 120);
+  assert.strictEqual(created.status, "Pending");
+  assert.strictEqual(created.latitude, 12.9715987);
+
+  const read = await attendanceRepository.findById(created._id);
+  assert.strictEqual(read.checkIn, "09:00 AM");
+  assert.strictEqual(read.checkInAt.getTime(), new Date("2026-02-10T03:30:00.000Z").getTime());
+  assert.strictEqual(read.checkOut, "--", "check-out keeps its schema default");
+
+  const updated = await attendanceRepository.updateById(created._id, {
+    checkOut: "06:00 PM",
+    checkOutAt: new Date("2026-02-10T12:30:00.000Z"),
+    workingMinutes: 540,
+    workingHours: "9h 0m",
+    status: "Present",
+  });
+  assert.strictEqual(updated.status, "Present");
+  assert.strictEqual(updated.workingMinutes, 540);
+  assert.strictEqual(updated.checkIn, "09:00 AM", "check-in survives the check-out update");
+
+  assert.strictEqual(await attendanceRepository.count({ staffId: created.staffId }), 1);
+});
+
+test("attendance repository: no dual writes — Mongoose is never connected on the PG path", async () => {
+  const mongooseLib = require("mongoose");
+  const before = await attendanceRepository.count({});
+  await attendanceRepository.create({
+    staffId: `REPO-NODUAL-${unique()}`,
+    staffName: "No Dual",
+    dateKey: "2026-02-11",
+  });
+  assert.strictEqual(await attendanceRepository.count({}), before + 1, "exactly one PG row");
   assert.strictEqual(mongooseLib.connection.readyState, 0, "mongoose never connected");
 });

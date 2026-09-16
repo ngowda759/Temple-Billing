@@ -1,7 +1,7 @@
 const Employee = require("../models/Employee");
 const User = require("../models/User");
 const Leave = require("../models/Leave");
-const Attendance = require("../models/Attendance");
+const attendanceService = require("../services/attendanceService");
 const Task = require("../models/Task");
 const Shift = require("../models/Shift");
 const { createStaffNotification } = require("../utils/notificationService");
@@ -84,7 +84,7 @@ const getAttendanceForAssignment = async (employeeTargets, dateKey) => {
   }
   if (employeeTargets.emails.length) query.$or.push({ staffEmail: { $in: employeeTargets.emails } });
   if (!query.$or.length) return null;
-  return Attendance.findOne(query);
+  return attendanceService.findOne(query);
 };
 
 const buildPlannerWeek = (weekStartValue) => {

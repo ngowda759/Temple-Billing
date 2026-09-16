@@ -50,6 +50,7 @@ concerns (config, migrate, health, repositories).
 | 2O | Damage notes | `016_create_damage_notes.sql` | [phase 2O](postgres-damage-notes-phase-2o.md) |
 | 2P | Assets (+ maintenance history) | `017_create_assets.sql` | [phase 2P](postgres-assets-phase-2p.md) |
 | 2Q | Repair requests, Repair tickets (+ spare parts) | `018_create_repairs.sql` | [phase 2Q](postgres-repairs-phase-2q.md) |
+| 2S | Attendance | `020_create_attendance.sql` | [phase 2S](postgres-attendance-phase-2s.md) |
 
 Phases 2A–2H and 2N were implemented without a dedicated document. Their scope
 is summarised in [Entities without a dedicated document](#entities-without-a-dedicated-document)
@@ -232,11 +233,11 @@ Service: `goodsReceivedNoteService.js`.
 
 ## Planned next steps
 
-1. Migrate the remaining MongoDB entities: Rooms, Attendance (and attendance
-   settings/locations), Leaves, Shifts (and shift assignments), Payroll,
-   Notifications, Events, Poojas, Prasadam, Settings, Audit Logs, InventoryIssue,
-   Suppliers, Recipes, Tasks, CashClosing, SupportRequest, TransferRequest,
-   Instructions, RestockHistory, and PoojaMaterialRequirement.
+1. Migrate the remaining MongoDB entities: Attendance settings/locations,
+   Leaves, Shifts (and shift assignments), Payroll, Notifications, Events,
+   Poojas, Prasadam, Settings, Audit Logs, InventoryIssue, Suppliers, Recipes,
+   Tasks, CashClosing, SupportRequest, TransferRequest, Instructions,
+   RestockHistory, and PoojaMaterialRequirement.
 2. Backfill production data into the migrated tables.
 3. Cut over each entity to PostgreSQL as the source of truth.
 4. Remove Mongoose once every entity has moved.
