@@ -1,6 +1,6 @@
 const Employee = require("../models/Employee");
 const User = require("../models/User");
-const Leave = require("../models/Leave");
+const leaveService = require("../services/leaveService");
 const attendanceService = require("../services/attendanceService");
 const Task = require("../models/Task");
 const Shift = require("../models/Shift");
@@ -73,7 +73,7 @@ const getLeaveBlock = async (employeeTargets, dateKey) => {
   if (employeeTargets.emails.length) query.$or.push({ staffEmail: { $in: employeeTargets.emails } });
 
   if (!query.$or.length) return null;
-  return Leave.findOne(query);
+  return leaveService.findOne(query);
 };
 
 const getAttendanceForAssignment = async (employeeTargets, dateKey) => {

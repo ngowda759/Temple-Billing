@@ -1,4 +1,4 @@
-const Leave = require("../models/Leave");
+const leaveService = require("../services/leaveService");
 const Employee = require("../models/Employee");
 const Notification = require("../models/Notification");
 const { createNotification, createStaffNotification } = require("../utils/notificationService");
@@ -200,7 +200,7 @@ exports.applyLeave = async (req, res) => {
     }
 
     // ── Overlapping / Duplicate Leave Check ─────────────────────────────────
-    const overlappingLeave = await Leave.findOne({
+    const overlappingLeave = await leaveService.findOne({
       staffId,
       status: { $ne: "Rejected" },
       fromDate: { $lte: toDate },
@@ -226,11 +226,13 @@ exports.applyLeave = async (req, res) => {
     const weeklyOff = employee?.weeklyOff || null;
     const { totalQuota } = await getEmployeeYearlyQuota(staffId);
     
-    const existingLeaves = await Leave.find({
-      staffId,
-      status: { $ne: "Rejected" },
-      fromDate: { $lte: `${currentYear}-12-31` },
-      toDate: { $gte: `${currentYear}-01-01` }
+    const existingLeaves = await leaveService.findMany({
+      filter: {
+        staffId,
+        status: { $ne: "Rejected" },
+        fromDate: { $lte: `${currentYear}-12-31` },
+        toDate: { $gte: `${currentYear}-01-01` }
+      },
     });
     
     let usedDays = 0;
@@ -242,7 +244,7 @@ exports.applyLeave = async (req, res) => {
     const quotaExceeded = (usedDays + requestedDays) > totalQuota;
 
     // ── Save ─────────────────────────────────────────────────────────────────
-    const leave = await Leave.create({
+    const leave = await leaveService.create({
       staffId,
       staffName,
       reason: trimmedReason,
@@ -282,7 +284,7 @@ exports.applyLeave = async (req, res) => {
 exports.getLeaves = async (req, res) => {
   try {
     const { staffId } = req.params;
-    const leaves = await Leave.find({ staffId }).sort({ createdAt: -1 });
+    const leaves = await leaveService.findMany({ filter: { staffId }, sort: { createdAt: -1 } });
 
     return res.json(leaves);
   } catch (error) {
@@ -296,7 +298,7 @@ exports.getLeaves = async (req, res) => {
 exports.getLeaveStats = async (req, res) => {
   try {
     const { staffId } = req.params;
-    const leaves = await Leave.find({ staffId });
+    const leaves = await leaveService.findMany({ filter: { staffId } });
     const summary = buildLeaveSummary(leaves);
 
     const currentYear = new Date().getFullYear();
@@ -323,7 +325,7 @@ exports.getLeaveStats = async (req, res) => {
 
 exports.getAdminLeaveOverview = async (req, res) => {
   try {
-    const leaves = await Leave.find().sort({ createdAt: -1 });
+    const leaves = await leaveService.findMany({ sort: { createdAt: -1 } });
     const summary = buildLeaveSummary(leaves);
 
     return res.json({
@@ -370,7 +372,7 @@ exports.updateLeaveStatus = async (req, res) => {
       updatePayload.reviewedBy = "";
     }
 
-    const updatedLeave = await Leave.findByIdAndUpdate(id, updatePayload, { new: true });
+    const updatedLeave = await leaveService.updateById(id, updatePayload);
 
     if (!updatedLeave) {
       return res.status(404).json({

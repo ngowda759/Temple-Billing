@@ -31,7 +31,8 @@ const poolQuery = async (databaseUrl, sql) => {
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
-  // Phase 2A–2S tables must be dropped too so a fresh run applies the latest DDL.
+  // Phase 2A–2T tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS leaves CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS attendance CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS rooms CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS asset_maintenance_history CASCADE");
@@ -70,7 +71,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 20 migration\(s\)\./);
+  assert.match(output, /Applied 21 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -94,6 +95,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "018_create_repairs.sql",
     "019_create_rooms.sql",
     "020_create_attendance.sql",
+    "021_create_leaves.sql",
   ]);
 });
 
@@ -106,7 +108,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -143,6 +145,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "018_create_repairs.sql",
       "019_create_rooms.sql",
       "020_create_attendance.sql",
+      "021_create_leaves.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -411,7 +414,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 20 migration\(s\)\./);
+  assert.match(output, /Applied 21 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -450,7 +453,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -475,7 +478,7 @@ test("rollback of the Phase 2J inventory_logs migration can be removed and reapp
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -548,7 +551,7 @@ test("rollback of the Phase 2K inventory_consumptions migration can be removed a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT kcu.column_name, pg_get_constraintdef(oid) AS def FROM pg_constraint c
@@ -766,7 +769,7 @@ test("rollback of the Phase 2L inventory_requests migration can be removed and r
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   const indexes = await poolQuery(databaseUrl, `
     SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'
@@ -836,7 +839,7 @@ test("previous migrations are unchanged (git diff on migrations dir is empty of 
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 20 migration\(s\)\./);
+  assert.match(output, /Applied 21 migration\(s\)\./);
 });
 
 test("Phase 2M purchase_orders migration creates the Mongo-mapped columns, enum CHECK, constraints and real FKs", async () => {
@@ -965,7 +968,7 @@ test("rollback of the Phase 2M purchase_orders migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1159,7 +1162,7 @@ test("rollback of the Phase 2N goods_received_notes migration can be removed and
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1318,7 +1321,7 @@ test("rollback of the Phase 2O damage_notes migration can be removed and reappli
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   // Re-apply regenerates the table, both real FKs, the enum CHECKs, the
   // unique damage_number and the justified indexes.
@@ -1496,7 +1499,7 @@ test("rollback of the Phase 2P assets migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.assets') AS t");
   assert.ok(tbl[0].t, "assets rebuilt after re-run");
@@ -1715,7 +1718,7 @@ test("rollback of the Phase 2Q repairs migration can be removed and reapplied", 
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   for (const table of ["repair_requests", "repair_tickets", "repair_ticket_spare_parts"]) {
     const tbl = await poolQuery(databaseUrl, `SELECT to_regclass('public.${table}') AS t`);
@@ -1840,7 +1843,7 @@ test("rollback of the Phase 2R rooms migration can be removed and reapplied", as
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.rooms') AS t");
   assert.ok(tbl[0].t, "rooms rebuilt after re-run");
@@ -2009,7 +2012,7 @@ test("rollback of the Phase 2S attendance migration can be removed and reapplied
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 20);
+  assert.strictEqual(rows.length, 21);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.attendance') AS t");
   assert.ok(tbl[0].t, "attendance rebuilt after re-run");
@@ -2227,6 +2230,224 @@ test("attendance unique constraint, CHECKs and defaults behave as the Mongo sche
     assert.strictEqual(Number(numeric.rows[0].o), 90.5);
     assert.strictEqual(numeric.rows[0].lat, "12.9715987");
     assert.strictEqual(numeric.rows[0].d, "1234.56789");
+  } finally {
+    await pool.end();
+  }
+});
+
+// ─── Phase 2T: leaves migration ────────────────────────────────────────────
+test("rollback of the Phase 2T leaves migration can be removed and reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // Simulate rolling back only migration 021: drop the leaves table (and its
+  // tracking record). Every earlier table stays in place, so a re-run must
+  // re-apply only 021 and rebuild leaves with its constraints and indexes.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS leaves CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '021_create_leaves.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*021_create_leaves\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+
+  const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
+  assert.strictEqual(rows.length, 21);
+
+  const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.leaves') AS t");
+  assert.ok(tbl[0].t, "leaves rebuilt after re-run");
+
+  const checks = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'leaves'::regclass AND contype = 'c'`);
+  assert.strictEqual(checks.length, 1, "re-applied migration rebuilds the status CHECK");
+  assert.match(checks[0].def, /status/);
+
+  const indexes = await poolQuery(databaseUrl, `
+    SELECT indexname FROM pg_indexes WHERE tablename = 'leaves' ORDER BY indexname`);
+  assert.strictEqual(indexes.length, 6, "re-applied migration rebuilds the pkey and 5 indexes");
+
+  const { output: second } = runMigrate(databaseUrl);
+  assert.match(second, /No pending migrations\./);
+});
+
+test("leaves migration creates the Mongo-mapped columns, CHECK and indexes", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    const cols = await pool.query(`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'leaves' ORDER BY column_name`);
+    const byName = Object.fromEntries(cols.rows.map((r) => [r.column_name, r]));
+
+    // The exact projection: id + the 10 Mongo schema fields + the two timestamps.
+    assert.strictEqual(cols.rows.length, 13, "exactly 13 mapped columns");
+
+    const expected = {
+      // id is the Mongoose ObjectId as TEXT (the project convention).
+      id: ["text", "NO"],
+      staff_id: ["text", "NO"],
+      staff_name: ["text", "NO"],
+      reason: ["text", "NO"],
+      leave_type: ["text", "NO"],
+      // Calendar-only business dates: TEXT 'YYYY-MM-DD' keys, never DATE/TIMESTAMPTZ.
+      from_date: ["text", "NO"],
+      to_date: ["text", "NO"],
+      status: ["text", "NO"],
+      admin_reason: ["text", "NO"],
+      reviewed_by: ["text", "NO"],
+      // A real instant.
+      reviewed_at: ["timestamp with time zone", "YES"],
+      created_at: ["timestamp with time zone", "NO"],
+      updated_at: ["timestamp with time zone", "NO"],
+    };
+    for (const [name, [type, nullable]] of Object.entries(expected)) {
+      assert.ok(byName[name], `leaves.${name} exists`);
+      assert.strictEqual(byName[name].data_type, type, `leaves.${name} type`);
+      assert.strictEqual(byName[name].is_nullable, nullable, `leaves.${name} nullability`);
+    }
+
+    // The calendar dates must stay timezone-free TEXT keys, matching the string
+    // comparisons the application already relies on.
+    for (const col of ["from_date", "to_date"]) {
+      assert.strictEqual(byName[col].data_type, "text", `leaves.${col} stays TEXT`);
+      assert.ok(!/date|timestamp/i.test(byName[col].data_type),
+        `leaves.${col} must not become a date/timestamp column`);
+    }
+
+    // reviewed_at is the only nullable instant; created_at/updated_at are NOT NULL.
+    assert.strictEqual(byName.reviewed_at.is_nullable, "YES");
+
+    // Exactly one CHECK constraint: the status enum. No invented date-ordering or
+    // calendar-shape CHECKs — Mongo declares neither.
+    const checks = await pool.query(`
+      SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid = 'leaves'::regclass AND contype = 'c'`);
+    assert.strictEqual(checks.rows.length, 1, "exactly one CHECK constraint");
+    const statusCheck = checks.rows.find((c) => c.conname === "leaves_status_check");
+    assert.ok(statusCheck, "status CHECK exists");
+    for (const value of ["Pending", "Approved", "Rejected"]) {
+      assert.ok(statusCheck.def.includes(`'${value}'`), `status enum keeps ${value}`);
+    }
+    assert.ok(!statusCheck.def.includes("Cancelled"), "no invented Cancelled status");
+
+    // No UNIQUE constraint: the Leave schema declares no unique index. Overlap is
+    // a service-layer rule and must NOT become a database constraint.
+    const uniques = await pool.query(`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid = 'leaves'::regclass AND contype = 'u'`);
+    assert.strictEqual(uniques.rows.length, 0, "leaves has no UNIQUE constraint");
+
+    // No foreign keys: staffId is an untyped identifier in Mongo with no ref.
+    const fks = await pool.query(`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid = 'leaves'::regclass AND contype = 'f'`);
+    assert.strictEqual(fks.rows.length, 0, "leaves has no foreign keys");
+
+    const indexes = await pool.query(`
+      SELECT indexname FROM pg_indexes WHERE tablename = 'leaves' ORDER BY indexname`);
+    assert.deepStrictEqual(indexes.rows.map((r) => r.indexname), [
+      "idx_leaves_from_date_created_at",
+      "idx_leaves_staff_id",
+      "idx_leaves_staff_id_created_at",
+      "idx_leaves_staff_id_dates",
+      "idx_leaves_status_dates",
+      "leaves_pkey",
+    ]);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("leaves status CHECK and defaults behave as the Mongo schema declares", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  const id = () => crypto.randomBytes(12).toString("hex");
+  try {
+    // Defaults match the Mongoose schema defaults exactly.
+    await pool.query(
+      "INSERT INTO leaves (id, staff_id, staff_name, reason, from_date, to_date) VALUES ($1, 'S-1', 'Ram', 'Family function', '2026-03-05', '2026-03-07')",
+      [id()]
+    );
+    const { rows } = await pool.query(
+      "SELECT leave_type, status, admin_reason, reviewed_by, reviewed_at FROM leaves WHERE staff_id = 'S-1'"
+    );
+    assert.strictEqual(rows[0].leave_type, "General");
+    assert.strictEqual(rows[0].status, "Pending");
+    assert.strictEqual(rows[0].admin_reason, "");
+    assert.strictEqual(rows[0].reviewed_by, "");
+    assert.strictEqual(rows[0].reviewed_at, null);
+
+    // created_at/updated_at default to now().
+    const stamps = await pool.query(
+      "SELECT created_at, updated_at FROM leaves WHERE staff_id = 'S-1'"
+    );
+    assert.ok(stamps.rows[0].created_at instanceof Date);
+    assert.ok(stamps.rows[0].updated_at instanceof Date);
+
+    // Every status in the Mongo enum is accepted.
+    for (const [i, status] of ["Pending", "Approved", "Rejected"].entries()) {
+      await pool.query(
+        "INSERT INTO leaves (id, staff_id, staff_name, reason, from_date, to_date, status) VALUES ($1, $2, 'X', 'Reason', '2026-03-05', '2026-03-05', $3)",
+        [id(), `S-ENUM-${i}`, status]
+      );
+    }
+
+    // A status Mongo does not declare is rejected by the CHECK.
+    await assert.rejects(
+      pool.query("INSERT INTO leaves (id, staff_id, staff_name, reason, from_date, to_date, status) VALUES ($1, 'S-4', 'X', 'Reason', '2026-03-05', '2026-03-05', 'Cancelled')", [id()]),
+      /leaves_status_check/
+    );
+
+    // leave_type is free text in Mongo — the database must not constrain it.
+    await pool.query(
+      "INSERT INTO leaves (id, staff_id, staff_name, reason, from_date, to_date, leave_type) VALUES ($1, 'S-5', 'X', 'Reason', '2026-03-05', '2026-03-05', 'Compensatory Off')",
+      [id()]
+    );
+
+    // Overlapping leaves are ALLOWED at the database level: the application is
+    // the only thing preventing them, and Rejected/Pending rows legitimately
+    // coexist on the same days. A unique/overlap constraint here would change
+    // existing behavior.
+    await pool.query(
+      "INSERT INTO leaves (id, staff_id, staff_name, reason, from_date, to_date) VALUES ($1, 'S-6', 'X', 'First', '2026-04-01', '2026-04-05')",
+      [id()]
+    );
+    await pool.query(
+      "INSERT INTO leaves (id, staff_id, staff_name, reason, from_date, to_date) VALUES ($1, 'S-6', 'X', 'Overlapping', '2026-04-03', '2026-04-08')",
+      [id()]
+    );
+    const dupes = await pool.query("SELECT COUNT(*)::int AS n FROM leaves WHERE staff_id = 'S-6'");
+    assert.strictEqual(dupes.rows[0].n, 2, "overlapping leave rows coexist, exactly like Mongo");
+
+    // No date-ordering CHECK exists, so a reverse range is storable at the SQL
+    // layer just as it is in Mongo (the controller, not the schema, guards it).
+    await pool.query(
+      "INSERT INTO leaves (id, staff_id, staff_name, reason, from_date, to_date) VALUES ($1, 'S-7', 'X', 'Reason', '2026-05-10', '2026-05-05')",
+      [id()]
+    );
+
+    // Nullability mirrors the schema's required fields.
+    await pool.query(
+      "INSERT INTO leaves (id, staff_id, staff_name, reason, from_date, to_date) VALUES ($1, 'S-8', 'X', 'R', '2026-06-01', '2026-06-01')",
+      [id()]
+    );
+    for (const col of ["staff_id", "staff_name", "reason", "from_date", "to_date"]) {
+      await assert.rejects(
+        pool.query(`UPDATE leaves SET ${col} = NULL WHERE staff_id = 'S-8'`),
+        /null value in column/,
+        `leaves.${col} rejects NULL`
+      );
+    }
   } finally {
     await pool.end();
   }

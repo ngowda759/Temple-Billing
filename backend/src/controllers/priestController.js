@@ -8,7 +8,7 @@ const Instruction = require("../models/Instruction");
 const Employee = require("../models/Employee");
 const PriestSetting = require("../models/PriestSetting");
 const TransferRequest = require("../models/TransferRequest");
-const Leave = require("../models/Leave");
+const leaveService = require("../services/leaveService");
 
 // Helper to check if a booking date is today
 const isDateToday = (dateStr) => {
@@ -1360,7 +1360,7 @@ exports.requestTransfer = async (req, res) => {
     let conflictWarning = "";
     if (dateStr) {
       const checkDate = new Date(dateStr).toISOString().slice(0, 10);
-      const leaveCheck = await Leave.findOne({
+      const leaveCheck = await leaveService.findOne({
         staffId: requestedPriestId,
         status: "Approved",
         fromDate: { $lte: checkDate },

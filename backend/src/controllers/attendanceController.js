@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const attendanceService = require("../services/attendanceService");
 const Employee = require("../models/Employee");
-const Leave = require("../models/Leave");
+const leaveService = require("../services/leaveService");
 const Shift = require("../models/Shift");
 const Task = require("../models/Task");
 const User = require("../models/User");
@@ -532,7 +532,10 @@ const buildDashboardResponse = async (staffId, monthValue) => {
       filter: await buildAttendanceQuery(staffId, { startKey, endKey }),
       sort: { dateKey: -1, createdAt: -1 },
     }),
-    Leave.find(await buildLeaveQuery(staffId, startKey, endKey)).sort({ fromDate: -1, createdAt: -1 }),
+    leaveService.findMany({
+      filter: await buildLeaveQuery(staffId, startKey, endKey),
+      sort: { fromDate: -1, createdAt: -1 },
+    }),
   ]);
   // Also load today's special assignments (for extra duty / temporary shifts)
   const todayTasks = await Task.find(await buildTaskQuery(staffId, todayKey)).sort({ dueDate: 1, time: 1, createdAt: -1 });
@@ -801,11 +804,14 @@ const buildAdminAttendanceDashboard = async (monthValue, filterEmployeeId = null
       filter: { dateKey: { $gte: startKey, $lte: endKey } },
       sort: { dateKey: -1, createdAt: -1 },
     }),
-    Leave.find({
-      status: "Approved",
-      fromDate: { $lte: endKey },
-      toDate: { $gte: startKey },
-    }).sort({ fromDate: -1, createdAt: -1 }),
+    leaveService.findMany({
+      filter: {
+        status: "Approved",
+        fromDate: { $lte: endKey },
+        toDate: { $gte: startKey },
+      },
+      sort: { fromDate: -1, createdAt: -1 },
+    }),
     Task.find({ dueDate: todayKey }).sort({ createdAt: -1 }),
     Shift.find({ active: true }).sort({ shiftName: 1 }),
   ]);
@@ -1256,7 +1262,7 @@ exports.markAttendance = async (req, res) => {
     const staff = await resolveStaffContext({ staffId, staffName, staffEmail });
     const now = new Date();
     const dateKey = toDateKey(now);
-    const todayLeave = await Leave.findOne(await buildLeaveQuery(staffId, dateKey, dateKey));
+    const todayLeave = await leaveService.findOne(await buildLeaveQuery(staffId, dateKey, dateKey));
 
     if (todayLeave) {
       return res.status(409).json({
