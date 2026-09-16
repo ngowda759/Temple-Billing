@@ -2,8 +2,8 @@ const Employee = require("../models/Employee");
 const User = require("../models/User");
 const leaveService = require("../services/leaveService");
 const attendanceService = require("../services/attendanceService");
+const shiftService = require("../services/shiftService");
 const Task = require("../models/Task");
-const Shift = require("../models/Shift");
 const { createStaffNotification } = require("../utils/notificationService");
 const { sendEmail } = require("../utils/communicationService");
 
@@ -221,7 +221,7 @@ exports.getShiftDashboard = async (req, res) => {
     weekEnd.setDate(weekEnd.getDate() + 6);
 
     const [shifts, assignments, employees] = await Promise.all([
-      Shift.find().sort({ createdAt: -1 }),
+      shiftService.findMany({ sort: { createdAt: -1 } }),
       Task.find({ dateKey: { $gte: toDateKey(weekStart), $lte: toDateKey(weekEnd) } }).sort({ dateKey: 1, startTime: 1 }),
       Employee.find().sort({ name: 1 }),
     ]);
@@ -285,7 +285,7 @@ exports.getShiftDashboard = async (req, res) => {
 
 exports.getShifts = async (req, res) => {
   try {
-    const shifts = await Shift.find().sort({ createdAt: -1 });
+    const shifts = await shiftService.findMany({ sort: { createdAt: -1 } });
     return res.json({ success: true, shifts: shifts.map(serializeShift) });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -303,7 +303,7 @@ exports.createShift = async (req, res) => {
       return res.status(400).json({ success: false, message: "shiftName, startTime and endTime are required" });
     }
 
-    const shift = await Shift.create({
+    const shift = await shiftService.create({
       shiftName,
       startTime,
       endTime,
@@ -321,26 +321,29 @@ exports.createShift = async (req, res) => {
 
 exports.updateShift = async (req, res) => {
   try {
-    const shift = await Shift.findById(req.params.id);
+    const shift = await shiftService.findById(req.params.id);
     if (!shift) {
       return res.status(404).json({ success: false, message: "Shift not found" });
     }
 
+    const updates = {};
     ["shiftName", "startTime", "endTime", "category", "notes"].forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(req.body, field)) {
-        shift[field] = clean(req.body[field]);
+        updates[field] = clean(req.body[field]);
       }
     });
 
     if (Object.prototype.hasOwnProperty.call(req.body, "requiredStaff")) {
-      shift.requiredStaff = Number(req.body.requiredStaff) || 1;
+      updates.requiredStaff = Number(req.body.requiredStaff) || 1;
     }
     if (Object.prototype.hasOwnProperty.call(req.body, "active")) {
-      shift.active = Boolean(req.body.active);
+      updates.active = Boolean(req.body.active);
     }
 
-    await shift.save();
-    return res.json({ success: true, shift: serializeShift(shift) });
+    // Patches only the supplied fields on whichever datasource is selected: the
+    // PostgreSQL repository runs an UPDATE, Mongoose runs findByIdAndUpdate.
+    const saved = await shiftService.updateById(req.params.id, updates);
+    return res.json({ success: true, shift: serializeShift(saved) });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -348,7 +351,7 @@ exports.updateShift = async (req, res) => {
 
 exports.deleteShift = async (req, res) => {
   try {
-    const shift = await Shift.findByIdAndDelete(req.params.id);
+    const shift = await shiftService.destroy(req.params.id);
     if (!shift) {
       return res.status(404).json({ success: false, message: "Shift not found" });
     }
@@ -362,7 +365,7 @@ exports.deleteShift = async (req, res) => {
 
 exports.assignShift = async (req, res) => {
   try {
-    const shift = await Shift.findById(req.body.shiftId);
+    const shift = await shiftService.findById(req.body.shiftId);
     const employeeTargets = await findEmployeeTargets(req.body.employeeId);
     const dateKey = clean(req.body.date);
     const assignmentType = clean(req.body.assignmentType) || "Special Duty";
@@ -426,7 +429,7 @@ exports.assignShift = async (req, res) => {
     // Check overlap with default shift
     const defaultShiftName = employeeTargets.employee.defaultShift || employeeTargets.employee.shift;
     if (defaultShiftName && !isTemporaryShiftChange) {
-      const defaultShift = await Shift.findOne({ shiftName: defaultShiftName, active: true }).sort({ createdAt: -1 });
+      const defaultShift = await shiftService.findOne({ shiftName: defaultShiftName, active: true });
       if (defaultShift && defaultShift.startTime && defaultShift.endTime) {
         const defaultRange = normalizeRange(defaultShift.startTime, defaultShift.endTime);
         if (rangesOverlap(defaultRange, { start, end })) {
@@ -555,7 +558,7 @@ exports.getAvailableEmployees = async (req, res) => {
     const dailyTasks = await Task.find({ dateKey, status: { $nin: ["Cancelled", "Rejected"] } });
     
     // Get all default shifts
-    const activeShifts = await Shift.find({ active: true });
+    const activeShifts = await shiftService.findMany({ filter: { active: true } });
     const shiftMap = {};
     activeShifts.forEach((s) => { shiftMap[s.shiftName] = normalizeRange(s.startTime, s.endTime); });
 
