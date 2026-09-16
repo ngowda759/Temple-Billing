@@ -5,7 +5,7 @@ const mongoose = require("mongoose");
 const Employee = require("../models/Employee");
 const User = require("../models/User");
 const attendanceService = require("../services/attendanceService");
-const Leave = require("../models/Leave");
+const leaveService = require("../services/leaveService");
 const Task = require("../models/Task");
 const Notification = require("../models/Notification");
 const { canLoginForStatus, getRoleAccess } = require("../utils/employeeAccess");
@@ -369,7 +369,11 @@ exports.getEmployeeById = async (req, res) => {
         sort: { dateKey: -1 },
         limit: 100,
       }),
-      Leave.find({ staffId: { $in: identifiers } }).sort({ fromDate: -1 }).limit(100),
+      leaveService.findMany({
+        filter: { staffId: { $in: identifiers } },
+        sort: { fromDate: -1 },
+        limit: 100,
+      }),
       Task.find({
         $or: [
           { employeeId: { $in: identifiers } },

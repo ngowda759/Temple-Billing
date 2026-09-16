@@ -51,6 +51,7 @@ concerns (config, migrate, health, repositories).
 | 2P | Assets (+ maintenance history) | `017_create_assets.sql` | [phase 2P](postgres-assets-phase-2p.md) |
 | 2Q | Repair requests, Repair tickets (+ spare parts) | `018_create_repairs.sql` | [phase 2Q](postgres-repairs-phase-2q.md) |
 | 2S | Attendance | `020_create_attendance.sql` | [phase 2S](postgres-attendance-phase-2s.md) |
+| 2T | Leaves | `021_create_leaves.sql` | [phase 2T](postgres-leaves-phase-2t.md) |
 
 Phases 2A–2H and 2N were implemented without a dedicated document. Their scope
 is summarised in [Entities without a dedicated document](#entities-without-a-dedicated-document)
