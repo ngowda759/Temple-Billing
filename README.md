@@ -240,7 +240,7 @@ The backend runs on MongoDB today and is migrating to PostgreSQL **entity by ent
 additively**, so that an unavailable PostgreSQL never takes the app down.
 
 - Phase 1 established the connection pool, migration runner, and `/api/health` probe.
-- Phases 2A–2T have added PostgreSQL tables, repositories, and services for many entities.
+- Phases 2A–2U have added PostgreSQL tables, repositories, and services for many entities.
 - Each migrated entity keeps its Mongoose model as a **fallback**; there are **no dual writes**.
 
 Start here: [`docs/postgres-migration.md`](docs/postgres-migration.md) — the migration

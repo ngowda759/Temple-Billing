@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 const attendanceService = require("../services/attendanceService");
 const Employee = require("../models/Employee");
 const leaveService = require("../services/leaveService");
-const Shift = require("../models/Shift");
+const shiftService = require("../services/shiftService");
 const Task = require("../models/Task");
 const User = require("../models/User");
 const AttendanceSetting = require("../models/AttendanceSetting");
@@ -106,10 +106,13 @@ const resolveShiftDefinition = async (shiftName) => {
   const value = clean(shiftName);
   if (!value) return null;
 
-  return Shift.findOne({
-    shiftName: new RegExp(`^${escapeRegex(value)}$`, "i"),
-    active: true,
-  }).sort({ updatedAt: -1, createdAt: -1 });
+  return shiftService.findOne(
+    {
+      shiftName: new RegExp(`^${escapeRegex(value)}$`, "i"),
+      active: true,
+    },
+    { updatedAt: -1, createdAt: -1 }
+  );
 };
 
 // Resolves the effective shift start time using defaultShift (falls back to 09:00 AM)
@@ -813,7 +816,7 @@ const buildAdminAttendanceDashboard = async (monthValue, filterEmployeeId = null
       sort: { fromDate: -1, createdAt: -1 },
     }),
     Task.find({ dueDate: todayKey }).sort({ createdAt: -1 }),
-    Shift.find({ active: true }).sort({ shiftName: 1 }),
+    shiftService.findMany({ filter: { active: true }, sort: { shiftName: 1 } }),
   ]);
 
   const shiftByName = new Map(
