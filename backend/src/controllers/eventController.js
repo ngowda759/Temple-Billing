@@ -1,6 +1,6 @@
-const Event = require("../models/Event");
 const User = require("../models/User");
 const { createEmployeeBroadcastNotifications, createBroadcastNotifications } = require("../utils/notificationService");
+const eventPersistenceService = require("../services/eventPersistenceService");
 
 exports.createEvent = async (req, res) => {
   try {
@@ -27,7 +27,7 @@ exports.createEvent = async (req, res) => {
       }
     }
 
-    const event = await Event.create({
+    const event = await eventPersistenceService.create({
       ...req.body,
       endDate: endDate || date,
     });
@@ -68,11 +68,11 @@ exports.getEvents = async (req, res) => {
   try {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    await Event.updateMany(
+    await eventPersistenceService.updateMany(
       { date: { $lt: todayStart }, status: { $in: ["Upcoming", "Active"] } },
       { $set: { status: "Completed" } }
     );
-    const events = await Event.find().sort({ date: 1 });
+    const events = await eventPersistenceService.findMany({ sort: { date: 1 } });
     res.json(events);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -82,7 +82,7 @@ exports.getEvents = async (req, res) => {
 exports.updateEvent = async (req, res) => {
   try {
     const { id } = req.params;
-    const event = await Event.findById(id);
+    const event = await eventPersistenceService.findById(id);
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
@@ -90,30 +90,31 @@ exports.updateEvent = async (req, res) => {
 
     const { title, date, endDate, location, description, imageUrl, slots, registrations, collection, status } = req.body;
 
-    if (title != null) event.title = String(title).trim();
-    if (date) event.date = date;
+    const updates = {};
+    if (title != null) updates.title = String(title).trim();
+    if (date) updates.date = date;
     if (endDate !== undefined) {
-      event.endDate = endDate || date || event.date;
+      updates.endDate = endDate || date || event.date;
     }
-    if (location != null) event.location = String(location).trim();
-    if (description != null) event.description = String(description).trim();
-    if (imageUrl != null) event.image = String(imageUrl).trim();
-    if (slots != null) event.slots = Number(slots) || 0;
-    if (registrations != null) event.registrations = Number(registrations) || 0;
-    if (collection != null) event.collection = Number(collection) || 0;
+    if (location != null) updates.location = String(location).trim();
+    if (description != null) updates.description = String(description).trim();
+    if (imageUrl != null) updates.image = String(imageUrl).trim();
+    if (slots != null) updates.slots = Number(slots) || 0;
+    if (registrations != null) updates.registrations = Number(registrations) || 0;
+    if (collection != null) updates.collection = Number(collection) || 0;
     if (status && ["Upcoming", "Active", "Completed", "Cancelled"].includes(status)) {
-      event.status = status;
+      updates.status = status;
     }
 
-    await event.save();
+    const updated = await eventPersistenceService.updateById(id, updates);
 
     await createStaffBroadcastNotifications({
       title: "Festival Schedule Updated",
-      message: `${event.title} schedule has been updated.`,
+      message: `${updated.title} schedule has been updated.`,
       category: "festival",
     });
 
-    return res.json({ event });
+    return res.json({ event: updated });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -128,21 +129,20 @@ exports.updateEventStatus = async (req, res) => {
       return res.status(400).json({ message: "Invalid status provided" });
     }
 
-    const event = await Event.findById(id);
+    const event = await eventPersistenceService.findById(id);
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
     }
 
-    event.status = status;
-    await event.save();
+    const updated = await eventPersistenceService.updateById(id, { status });
 
     await createStaffBroadcastNotifications({
       title: "Festival Reminder",
-      message: `${event.title} is now marked as ${status.toLowerCase()}.`,
+      message: `${updated.title} is now marked as ${status.toLowerCase()}.`,
       category: "festival",
     });
 
-    return res.json({ event });
+    return res.json({ event: updated });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
