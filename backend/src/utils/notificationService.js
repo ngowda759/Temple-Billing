@@ -1,8 +1,13 @@
-const Notification = require("../models/Notification");
 const Employee = require("../models/Employee");
 const User = require("../models/User");
 
-const { isDbConnected } = require("../config/db");
+// The datasource seam is read through the config module (dbConfig.isDbConnected())
+// rather than a require-time destructure, so tests can swap the function after
+// this module is loaded. Persistence itself is delegated to
+// notificationPersistenceService, which selects PostgreSQL when it is reachable
+// and otherwise uses the existing Mongoose model.
+const dbConfig = require("../config/db");
+const notificationPersistenceService = require("../services/notificationPersistenceService");
 const fileNotificationStore = require("../store/fileNotificationStore");
 const { sendEmail } = require("./communicationService");
 
@@ -30,8 +35,8 @@ const createNotification = async ({
     read: false,
   };
 
-  if (isDbConnected()) {
-    return Notification.create(data);
+  if (dbConfig.isDbConnected()) {
+    return notificationPersistenceService.create(data);
   }
 
   // Fallback for file store when DB is disconnected
@@ -281,7 +286,7 @@ const createEmployeeBroadcastNotifications = async ({ title, message, category, 
   }));
 
   if (!docs.length) {
-    return Notification.create({
+    return notificationPersistenceService.create({
       title: String(title).trim(),
       message: String(message).trim(),
       audienceRole: "staff",
@@ -291,7 +296,7 @@ const createEmployeeBroadcastNotifications = async ({ title, message, category, 
     });
   }
 
-  return Notification.create(docs);
+  return notificationPersistenceService.create(docs);
 };
 
 const createStaffBroadcastNotifications = createEmployeeBroadcastNotifications;
@@ -342,7 +347,7 @@ const createBroadcastNotifications = async ({ title, message, category, role = "
   }));
 
   if (!docs.length) {
-    return Notification.create({
+    return notificationPersistenceService.create({
       title: String(title).trim(),
       message: String(message).trim(),
       audienceRole: role ? String(role).trim().toLowerCase() : "devotee",
@@ -352,7 +357,7 @@ const createBroadcastNotifications = async ({ title, message, category, role = "
     });
   }
 
-  return Notification.create(docs);
+  return notificationPersistenceService.create(docs);
 };
 
 module.exports = {

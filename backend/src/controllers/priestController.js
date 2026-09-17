@@ -1,6 +1,6 @@
 const Booking = require("../models/Booking");
 const Task = require("../models/Task");
-const Notification = require("../models/Notification");
+const notificationPersistenceService = require("../services/notificationPersistenceService");
 const User = require("../models/User");
 const mongoose = require("mongoose");
 const InventoryItem = require("../models/InventoryItem");
@@ -173,13 +173,17 @@ exports.getPriestDashboard = async (req, res) => {
     }));
 
     // 11. Fetch announcements
-    const notifications = await Notification.find({
-      $or: [
-        { audienceRole: "priest" },
-        { audienceId: priestId },
-        { audienceEmail: user.email }
-      ]
-    }).sort({ createdAt: -1 }).limit(10);
+    const notifications = await notificationPersistenceService.findMany({
+      filter: {
+        $or: [
+          { audienceRole: "priest" },
+          { audienceId: priestId },
+          { audienceEmail: user.email }
+        ]
+      },
+      sort: { createdAt: -1 },
+      limit: 10,
+    });
 
     const announcements = notifications.map(n => ({
       id: n._id,
@@ -938,13 +942,16 @@ exports.getNotifications = async (req, res) => {
     const priestId = req.user.id;
     const user = await User.findById(priestId);
     
-    const notifications = await Notification.find({
-      $or: [
-        { audienceId: priestId },
-        { audienceEmail: user?.email },
-        { audienceRole: "priest" }
-      ]
-    }).sort({ createdAt: -1 });
+    const notifications = await notificationPersistenceService.findMany({
+      filter: {
+        $or: [
+          { audienceId: priestId },
+          { audienceEmail: user?.email },
+          { audienceRole: "priest" }
+        ]
+      },
+      sort: { createdAt: -1 },
+    });
 
     const formatted = notifications.map(n => ({
       id: n._id,
@@ -965,14 +972,15 @@ exports.getNotifications = async (req, res) => {
 exports.readNotification = async (req, res) => {
   try {
     const { id } = req.params;
-    const notification = await Notification.findById(id);
+    const notification = await notificationPersistenceService.findById(id);
     if (!notification) return res.status(404).json({ message: "Notification not found" });
 
-    notification.read = true;
-    notification.viewed = true;
-    notification.readAt = new Date();
-    notification.viewedAt = new Date();
-    await notification.save();
+    await notificationPersistenceService.findByIdAndUpdate(id, {
+      read: true,
+      viewed: true,
+      readAt: new Date(),
+      viewedAt: new Date(),
+    });
 
     return res.status(200).json({ message: "Notification marked as read" });
   } catch (error) {
@@ -986,7 +994,7 @@ exports.readAllNotifications = async (req, res) => {
     const priestId = req.user.id;
     const user = await User.findById(priestId);
 
-    await Notification.updateMany({
+    await notificationPersistenceService.updateMany({
       $or: [
         { audienceId: priestId },
         { audienceEmail: user?.email },
@@ -1402,14 +1410,14 @@ exports.requestTransfer = async (req, res) => {
     }
     // For DefaultDuty, we don't update status in any separate model right now.
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Pooja Transfer Request",
       message: `A priest has requested to transfer a duty. Reason: ${reason}`,
       audienceRole: "admin",
       category: "transfer",
     });
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Duty Transfer Request",
       message: `You have a new duty transfer request. Reason: ${reason}`,
       audienceId: requestedPriestId,
@@ -1605,7 +1613,7 @@ exports.respondToTransfer = async (req, res) => {
     }
 
     // Generate notifications
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: `Duty Transfer ${status}`,
       message: `Your duty transfer request to ${transfer.requestedPriest.name} was ${status.toLowerCase()}.${status === "Rejected" ? ` Reason: ${rejectReason}` : ""}`,
       audienceId: transfer.originalPriest._id.toString(),
@@ -1613,7 +1621,7 @@ exports.respondToTransfer = async (req, res) => {
       category: "Duty"
     });
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: `Duty Transfer ${status}`,
       message: `Priest ${transfer.requestedPriest.name} has ${status.toLowerCase()} the duty transfer from ${transfer.originalPriest.name}.${status === "Rejected" ? ` Reason: ${rejectReason}` : ""}`,
       audienceRole: "admin",

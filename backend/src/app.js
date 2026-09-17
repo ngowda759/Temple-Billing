@@ -119,7 +119,7 @@ setInterval(async () => {
 // Daily Background Jobs for Notifications
 const cron = require("node-cron");
 const Asset = require("./models/Asset");
-const Notification = require("./models/Notification");
+const notificationPersistenceService = require("./services/notificationPersistenceService");
 const PoojaBooking = require("./models/PoojaBooking");
 
 // Run every day at 8:00 AM
@@ -142,7 +142,7 @@ cron.schedule("0 8 * * *", async () => {
       const warrantyDate = new Date(asset.warranty);
       if (!isNaN(warrantyDate.getTime())) {
         if (warrantyDate >= today && warrantyDate <= thirtyDaysFromNow) {
-          await Notification.create({
+          await notificationPersistenceService.create({
             title: "Warranty Expiring Soon",
             message: `The warranty for asset ${asset.name} (ID: ${asset.assetId}) is expiring on ${warrantyDate.toLocaleDateString()}.`,
             category: "Asset Management",
@@ -164,7 +164,7 @@ cron.schedule("0 8 * * *", async () => {
     });
 
     if (upcomingPoojas.length > 0) {
-      await Notification.create({
+      await notificationPersistenceService.create({
         title: "Upcoming Poojas Tomorrow",
         message: `There are ${upcomingPoojas.length} poojas scheduled for tomorrow. Please ensure materials are ready.`,
         category: "Pooja Management",

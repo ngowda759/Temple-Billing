@@ -7,7 +7,7 @@ const User = require("../models/User");
 const attendanceService = require("../services/attendanceService");
 const leaveService = require("../services/leaveService");
 const Task = require("../models/Task");
-const Notification = require("../models/Notification");
+const notificationPersistenceService = require("../services/notificationPersistenceService");
 const { canLoginForStatus, getRoleAccess } = require("../utils/employeeAccess");
 const { sendEmail } = require("../utils/communicationService");
 
@@ -239,7 +239,7 @@ exports.createEmployee = async (req, res) => {
     createdEmployee.userId = user._id;
     await createdEmployee.save();
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "New Employee Added",
       message: `${createdEmployee.name} has been added as ${role}`,
       audienceRole: "admin",

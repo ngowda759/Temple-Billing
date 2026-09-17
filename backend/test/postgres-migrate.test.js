@@ -28,10 +28,23 @@ const poolQuery = async (databaseUrl, sql) => {
     await pool.end();
   }
 };
+
+// Parameterized variant used by the Phase 2W notification tests below, which
+// need to pass values rather than interpolate them into the SQL text.
+const pgQuery = async (databaseUrl, sql, params = []) => {
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    return (await pool.query(sql, params)).rows;
+  } finally {
+    await pool.end();
+  }
+};
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
-  // Phase 2A–2V tables must be dropped too so a fresh run applies the latest DDL.
+  // Phase 2A–2W tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS notifications CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS payroll_records CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS shifts CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS leaves CASCADE");
@@ -73,7 +86,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 23 migration\(s\)\./);
+  assert.match(output, /Applied 24 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -100,6 +113,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "021_create_leaves.sql",
     "022_create_shifts.sql",
     "023_create_payroll_records.sql",
+    "024_create_notifications.sql",
   ]);
 });
 
@@ -112,7 +126,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -152,6 +166,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "021_create_leaves.sql",
       "022_create_shifts.sql",
     "023_create_payroll_records.sql",
+      "024_create_notifications.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -420,7 +435,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 23 migration\(s\)\./);
+  assert.match(output, /Applied 24 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -459,7 +474,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -484,7 +499,7 @@ test("rollback of the Phase 2J inventory_logs migration can be removed and reapp
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -557,7 +572,7 @@ test("rollback of the Phase 2K inventory_consumptions migration can be removed a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT kcu.column_name, pg_get_constraintdef(oid) AS def FROM pg_constraint c
@@ -775,7 +790,7 @@ test("rollback of the Phase 2L inventory_requests migration can be removed and r
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const indexes = await poolQuery(databaseUrl, `
     SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'
@@ -845,7 +860,7 @@ test("previous migrations are unchanged (git diff on migrations dir is empty of 
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 23 migration\(s\)\./);
+  assert.match(output, /Applied 24 migration\(s\)\./);
 });
 
 test("Phase 2M purchase_orders migration creates the Mongo-mapped columns, enum CHECK, constraints and real FKs", async () => {
@@ -974,7 +989,7 @@ test("rollback of the Phase 2M purchase_orders migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1168,7 +1183,7 @@ test("rollback of the Phase 2N goods_received_notes migration can be removed and
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1327,7 +1342,7 @@ test("rollback of the Phase 2O damage_notes migration can be removed and reappli
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   // Re-apply regenerates the table, both real FKs, the enum CHECKs, the
   // unique damage_number and the justified indexes.
@@ -1505,7 +1520,7 @@ test("rollback of the Phase 2P assets migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.assets') AS t");
   assert.ok(tbl[0].t, "assets rebuilt after re-run");
@@ -1724,7 +1739,7 @@ test("rollback of the Phase 2Q repairs migration can be removed and reapplied", 
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   for (const table of ["repair_requests", "repair_tickets", "repair_ticket_spare_parts"]) {
     const tbl = await poolQuery(databaseUrl, `SELECT to_regclass('public.${table}') AS t`);
@@ -1849,7 +1864,7 @@ test("rollback of the Phase 2R rooms migration can be removed and reapplied", as
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.rooms') AS t");
   assert.ok(tbl[0].t, "rooms rebuilt after re-run");
@@ -2018,7 +2033,7 @@ test("rollback of the Phase 2S attendance migration can be removed and reapplied
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.attendance') AS t");
   assert.ok(tbl[0].t, "attendance rebuilt after re-run");
@@ -2258,7 +2273,7 @@ test("rollback of the Phase 2T leaves migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.leaves') AS t");
   assert.ok(tbl[0].t, "leaves rebuilt after re-run");
@@ -2476,7 +2491,7 @@ test("rollback of the Phase 2U shifts migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.shifts') AS t");
   assert.ok(tbl[0].t, "shifts rebuilt after re-run");
@@ -2661,7 +2676,7 @@ test("rollback of the Phase 2V payroll_records migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 23);
+  assert.strictEqual(rows.length, 24);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.payroll_records') AS t");
   assert.ok(tbl[0].t, "payroll_records rebuilt after re-run");
@@ -2982,4 +2997,135 @@ test("payroll_records defaults, period semantics and money precision behave as t
   } finally {
     await pool.end();
   }
+});
+
+// ─── Phase 2W: notifications ────────────────────────────────────────────────
+test("rollback of the Phase 2W notifications migration can be removed and reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+  assert.match((await poolQuery(databaseUrl,
+    "SELECT to_regclass('public.notifications') AS t"))[0].t || "", /notifications/);
+
+  // Simulate rolling back only migration 024: drop the table and forget it.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS notifications CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '024_create_notifications.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*024_create_notifications\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+});
+
+test("notifications migration creates the Mongo-mapped columns, constraints and indexes", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const cols = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'notifications'
+    ORDER BY ordinal_position`);
+
+  const byName = Object.fromEntries(cols.map((c) => [c.column_name, c]));
+
+  // Every persisted Mongoose field must have a column.
+  for (const name of [
+    "id", "title", "message", "audience_id", "audience_email", "audience_role",
+    "category", "date", "viewed", "viewed_at", "read", "read_at", "attachment",
+    "email_sent", "email_sent_at", "email_recipient", "created_at", "updated_at",
+  ]) {
+    assert.ok(byName[name], `missing column ${name}`);
+  }
+
+  // The Mongoose schema marks title/message required; everything else optional.
+  assert.strictEqual(byName.title.is_nullable, "NO");
+  assert.strictEqual(byName.message.is_nullable, "NO");
+  for (const optional of [
+    "audience_id", "audience_email", "audience_role", "category", "attachment",
+    "email_recipient", "viewed_at", "read_at", "email_sent_at",
+  ]) {
+    assert.strictEqual(byName[optional].is_nullable, "YES", `${optional} should be nullable`);
+  }
+
+  // Mongoose booleans default to false.
+  for (const flag of ["viewed", "read", "email_sent"]) {
+    assert.strictEqual(byName[flag].data_type, "boolean");
+    assert.strictEqual(byName[flag].is_nullable, "NO");
+    assert.match(byName[flag].column_default, /false/);
+  }
+
+  // `date` defaults to Date.now in the schema.
+  assert.strictEqual(byName.date.data_type, "timestamp with time zone");
+  assert.match(byName.date.column_default, /now\(\)/);
+
+  const indexes = await poolQuery(databaseUrl,
+    "SELECT indexname FROM pg_indexes WHERE tablename = 'notifications'");
+  const idx = indexes.map((r) => r.indexname);
+  // The four Mongoose indexes plus the primary key.
+  assert.ok(idx.includes("notifications_pkey"), "primary key missing");
+  assert.ok(idx.some((n) => /created_at/.test(n)), "createdAt index missing");
+  assert.ok(idx.some((n) => /date/.test(n)), "date index missing");
+  assert.ok(idx.some((n) => /audience_email/.test(n)), "audienceEmail index missing");
+  assert.ok(idx.some((n) => /audience_role/.test(n)), "audienceRole index missing");
+});
+
+test("notifications defaults, nullability and read/viewed state behave as the Mongo schema declares", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const id = crypto.randomBytes(12).toString("hex");
+  const inserted = await pgQuery(databaseUrl,
+    `INSERT INTO notifications (id, title, message) VALUES ($1, 'T', 'M')
+     RETURNING read, viewed, email_sent, read_at, viewed_at, date, created_at`,
+    [id]);
+  const row = inserted[0];
+
+  // Schema defaults on a bare insert.
+  assert.strictEqual(row.read, false);
+  assert.strictEqual(row.viewed, false);
+  assert.strictEqual(row.email_sent, false);
+  assert.strictEqual(row.read_at, null);
+  assert.strictEqual(row.viewed_at, null);
+  assert.ok(row.date);
+  assert.ok(row.created_at);
+
+  // title/message are required — the NOT NULL guard rejects a missing message.
+  await assert.rejects(
+    () => pgQuery(databaseUrl, "INSERT INTO notifications (id, title) VALUES ($1, 'No message')", [id + "x"]),
+    /null value in column "message"|not-null/,
+  );
+});
+
+test("notifications read/readAt pair round-trips and supports unread-count queries", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const recipient = "unread-" + crypto.randomBytes(6).toString("hex") + "@example.com";
+  for (let i = 0; i < 3; i += 1) {
+    await pgQuery(databaseUrl,
+      `INSERT INTO notifications (id, title, message, audience_email, audience_role)
+       VALUES ($1, $2, 'M', $3, 'staff')`,
+      [crypto.randomBytes(12).toString("hex"), `N${i}`, recipient]);
+  }
+
+  let count = await pgQuery(databaseUrl,
+    "SELECT count(*)::int AS c FROM notifications WHERE audience_email = $1 AND read = false", [recipient]);
+  assert.strictEqual(count[0].c, 3);
+
+  const readAt = new Date();
+  await pgQuery(databaseUrl,
+    "UPDATE notifications SET read = true, read_at = $2 WHERE audience_email = $1 AND title = 'N0'",
+    [recipient, readAt]);
+
+  count = await pgQuery(databaseUrl,
+    "SELECT count(*)::int AS c FROM notifications WHERE audience_email = $1 AND read = false", [recipient]);
+  assert.strictEqual(count[0].c, 2);
+
+  const marked = await pgQuery(databaseUrl,
+    "SELECT read, read_at FROM notifications WHERE audience_email = $1 AND title = 'N0'", [recipient]);
+  assert.strictEqual(marked[0].read, true);
+  assert.ok(marked[0].read_at);
 });

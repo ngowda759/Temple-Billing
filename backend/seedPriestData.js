@@ -5,7 +5,7 @@ const bcrypt = require("bcryptjs");
 const User = require("./src/models/User");
 const Booking = require("./src/models/Booking");
 const Task = require("./src/models/Task");
-const Notification = require("./src/models/Notification");
+const notificationPersistenceService = require("./src/services/notificationPersistenceService");
 const Bill = require("./src/models/Bill");
 
 const seed = async () => {
@@ -241,7 +241,7 @@ const seed = async () => {
 
     // 4. Seed notifications/announcements
     console.log("Checking Announcements...");
-    const announcementsCount = await Notification.countDocuments({
+    const announcementsCount = await notificationPersistenceService.countDocuments({
       $or: [{ audienceRole: "priest" }, { audienceRole: "staff" }],
     });
     if (announcementsCount === 0) {
@@ -266,7 +266,7 @@ const seed = async () => {
           category: "meeting",
         },
       ];
-      await Notification.create(notificationsData);
+      await notificationPersistenceService.create(notificationsData);
       console.log("Announcements seeded successfully.");
     }
 

@@ -1,8 +1,8 @@
 const Task = require("../models/Task");
 const Employee = require("../models/Employee");
 const User = require("../models/User");
-const Notification = require("../models/Notification");
 const mongoose = require("mongoose");
+const notificationPersistenceService = require("../services/notificationPersistenceService");
 const { createStaffNotification } = require("../utils/notificationService");
 
 const TASK_STATUSES = ["Pending", "In Progress", "Completed"];
@@ -159,7 +159,7 @@ exports.updateTaskStatus = async (req, res) => {
 
     // SEND ADMIN NOTIFICATION WHEN TASK COMPLETED
     if (status === "Completed") {
-      await Notification.create({
+      await notificationPersistenceService.create({
         title: "Task Completed",
         message: `${updated.staffName} completed assigned task`,
         audienceRole: "admin",
@@ -216,7 +216,10 @@ exports.getStaffNotifications = async (req, res) => {
   try {
     const { staffId } = req.params;
     const query = await buildStaffNotificationQuery(staffId);
-    const notifications = await Notification.find(query).sort({ date: -1, createdAt: -1 });
+    const notifications = await notificationPersistenceService.findMany({
+      filter: query,
+      sort: { date: -1, createdAt: -1 },
+    });
 
     return res.json({
       success: true,
@@ -234,7 +237,7 @@ exports.getStaffUnreadCount = async (req, res) => {
   try {
     const { staffId } = req.params;
     const query = await buildStaffNotificationQuery(staffId);
-    const unreadCount = await Notification.countDocuments({ ...query, read: false });
+    const unreadCount = await notificationPersistenceService.countDocuments({ ...query, read: false });
 
     return res.json({
       success: true,
@@ -259,7 +262,7 @@ exports.markStaffNotificationRead = async (req, res) => {
       });
     }
 
-    const notification = await Notification.findByIdAndUpdate(
+    const notification = await notificationPersistenceService.findByIdAndUpdate(
       id,
       { read: true, readAt: new Date() },
       { new: true }
@@ -288,7 +291,7 @@ exports.markStaffNotificationsRead = async (req, res) => {
   try {
     const { staffId } = req.params;
     const query = await buildStaffNotificationQuery(staffId);
-    await Notification.updateMany({ ...query, read: false }, { read: true, readAt: new Date() });
+    await notificationPersistenceService.updateMany({ ...query, read: false }, { read: true, readAt: new Date() });
 
     return res.json({
       success: true,
@@ -306,7 +309,7 @@ exports.markStaffNotificationsViewed = async (req, res) => {
   try {
     const { staffId } = req.params;
     const query = await buildStaffNotificationQuery(staffId);
-    await Notification.updateMany({ ...query, viewed: false }, { viewed: true, viewedAt: new Date() });
+    await notificationPersistenceService.updateMany({ ...query, viewed: false }, { viewed: true, viewedAt: new Date() });
 
     return res.json({
       success: true,

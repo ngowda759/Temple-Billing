@@ -2,7 +2,7 @@ const Employee = require("../models/Employee");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const Notification = require("../models/Notification");
+const notificationPersistenceService = require("../services/notificationPersistenceService");
 
 const ALLOWED_AUTH_ROLES = ["admin", "accountant", "cashier", "priest", "staff"];
 const STAFF_PROFILE_EDITABLE_FIELDS = [
@@ -273,7 +273,7 @@ if (joiningDateObj > today) {
       mustChangePassword: false,
     });
 
-    await Notification.create({
+    await notificationPersistenceService.create({
   title: "New Employee Added",
   message: `${name} has been added as ${normalizedRole}`,
   audienceRole: "admin",
