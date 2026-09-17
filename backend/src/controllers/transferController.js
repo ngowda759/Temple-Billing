@@ -1,7 +1,7 @@
 const TransferRequest = require("../models/TransferRequest");
 const Booking = require("../models/Booking");
 const Task = require("../models/Task");
-const Notification = require("../models/Notification");
+const notificationPersistenceService = require("../services/notificationPersistenceService");
 const User = require("../models/User");
 const { sendEmail } = require("../utils/communicationService");
 
@@ -140,7 +140,7 @@ exports.resolveTransferRequest = async (req, res) => {
     }
 
     // Notify Original Priest
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Transfer Request Resolved",
       message: originalPriestMsg,
       audienceRole: "priest",
@@ -150,7 +150,7 @@ exports.resolveTransferRequest = async (req, res) => {
 
     // Notify New Priest if approved
     if (status === "Approved") {
-      await Notification.create({
+      await notificationPersistenceService.create({
         title: "New Duty Assigned",
         message: targetPriestMsg,
         audienceRole: "priest",
@@ -230,7 +230,7 @@ exports.directAdminTransfer = async (req, res) => {
       return res.status(400).json({ message: "Invalid reference type" });
     }
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Duty Transferred",
       message: "Admin has directly transferred a duty to you.",
       audienceRole: "priest",

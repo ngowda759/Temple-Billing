@@ -1,4 +1,4 @@
-const Notification = require("../models/Notification");
+const notificationPersistenceService = require("../services/notificationPersistenceService");
 
 const getNotifications = async (req, res) => {
   try {
@@ -16,7 +16,10 @@ const getNotifications = async (req, res) => {
       query.category = { $nin: ["event", "events", "festival", "festivals"] };
     }
 
-    const notifications = await Notification.find(query).sort({ createdAt: -1 });
+    const notifications = await notificationPersistenceService.findMany({
+      filter: query,
+      sort: { createdAt: -1 },
+    });
 
     res.status(200).json(notifications);
   } catch (error) {
@@ -28,7 +31,7 @@ const getNotifications = async (req, res) => {
 
 const markNotificationRead = async (req, res) => {
   try {
-    await Notification.findByIdAndUpdate(
+    await notificationPersistenceService.findByIdAndUpdate(
       req.params.id,
       {
         read: true,

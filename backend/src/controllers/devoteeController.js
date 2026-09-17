@@ -1,6 +1,9 @@
 const Booking = require("../models/Booking");
 const Donation = require("../models/Donation");
-const Notification = require("../models/Notification");
+// Notification persistence is additive: the shared service selects PostgreSQL
+// when the Notification path is used and PostgreSQL is reachable, and otherwise
+// falls back to the existing Mongoose model.
+const notificationPersistenceService = require("../services/notificationPersistenceService");
 const Event = require("../models/Event");
 const SupportRequest = require("../models/SupportRequest");
 const User = require("../models/User");
@@ -850,18 +853,22 @@ const getNotifications = async (req, res) => {
           filters.push({ audienceId: userId });
         }
 
-        const notifications = await Notification.find({
-          $or: filters,
-        }).sort({ createdAt: -1 });
+        const notifications = await notificationPersistenceService.findMany({
+          filter: { $or: filters },
+          sort: { createdAt: -1 },
+        });
         return res.status(200).json({ notifications });
       }
 
       // No email provided: return only general broadcasts
-      const notifications = await Notification.find({
-        audienceRole: { $in: ["devotee", "all"] },
-        audienceEmail: { $in: [null, "", undefined] },
-        audienceId: { $in: [null, "", undefined] },
-      }).sort({ createdAt: -1 });
+      const notifications = await notificationPersistenceService.findMany({
+        filter: {
+          audienceRole: { $in: ["devotee", "all"] },
+          audienceEmail: { $in: [null, "", undefined] },
+          audienceId: { $in: [null, "", undefined] },
+        },
+        sort: { createdAt: -1 },
+      });
       return res.status(200).json({ notifications });
     } else {
       // Offline/Local file fallback
@@ -1140,7 +1147,7 @@ const updateEventStatus = async (req, res) => {
     event.status = status;
     await event.save();
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Event Status Updated",
       message: `${event.title} status changed to ${status}.`,
     });
@@ -1203,7 +1210,7 @@ const updateEvent = async (req, res) => {
 
     await event.save();
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Event Updated",
       message: `${event.title} has been updated.`,
     });
@@ -1224,7 +1231,7 @@ const deleteEvent = async (req, res) => {
     }
 
     try {
-      await Notification.create({
+      await notificationPersistenceService.create({
         title: "Event Deleted",
         message: `The event "${event.title}" has been deleted.`,
         category: "event",
@@ -1257,7 +1264,7 @@ const submitSupportRequest = async (req, res) => {
       message,
     });
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "New Support Request",
       message: `${supportRequest.name} raised: ${supportRequest.subject}`,
     });
@@ -1321,7 +1328,7 @@ const updateProfile = async (req, res) => {
       if (place && String(place).trim()) user.place = String(place).trim();
       await user.save();
 
-      await Notification.create({
+      await notificationPersistenceService.create({
         title: "Profile Updated",
         message: `${user.name} updated devotee profile details.`,
       }).catch(() => {});
@@ -1400,7 +1407,7 @@ const replySupportRequest = async (req, res) => {
     }
     await supportRequest.save();
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Feedback Response",
       message: `Your feedback on '${supportRequest.subject}' has been replied to.`,
       audienceEmail: supportRequest.email,
@@ -1446,7 +1453,7 @@ const createNotification = async (req, res) => {
       }
     }
 
-    const notification = await Notification.create({
+    const notification = await notificationPersistenceService.create({
       title,
       message,
       category: category || "event",
@@ -1615,7 +1622,7 @@ const createPrasadamOrder = async (req, res) => {
     }
 
     // Direct / Simulated Confirmations
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "New Prasadam Order",
       message: `${devoteeName} ordered ${itemName} x${normalizedQty}.`,
       audienceEmail: normalizedOrderEmail || undefined,
@@ -1717,7 +1724,7 @@ const verifyPrasadamPayment = async (req, res) => {
 
     // Send notifications/emails
     try {
-      await Notification.create({
+      await notificationPersistenceService.create({
         title: "New Prasadam Order",
         message: `${order.devoteeName} ordered ${order.itemName} x${order.quantity}.`,
         audienceEmail: order.email || undefined,
@@ -1759,7 +1766,7 @@ const cancelPrasadamOrder = async (req, res) => {
     // Persist the cancellation through the active Prasadam Order path so both
     // the PostgreSQL repository and the Mongoose model stay consistent.
     order = await prasadamOrderService.updateById(id, { status: "Cancelled" });
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Prasadam Order Cancelled",
       message: `${order.devoteeName} cancelled ${order.itemName} order.`,
       audienceEmail: order.email || undefined,
@@ -1830,7 +1837,7 @@ const createRazorpayOrder = async (req, res) => {
 
       // Create notification and send receipt where possible
       try {
-        await Notification.create({
+        await notificationPersistenceService.create({
           title: "Donation Received",
           message: `${donorName || "Anonymous"} donated INR ${numericAmount} (simulated).`,
           audienceEmail: normalizedDonorEmail || undefined,
@@ -1933,7 +1940,7 @@ const verifyRazorpayPayment = async (req, res) => {
 
     // Send receipt / notification
     try {
-      await Notification.create({
+      await notificationPersistenceService.create({
         title: "Donation Received",
         message: `${donation.donorName || "A donor"} donated INR ${donation.amount}.`,
         audienceEmail: donation.donorEmail || undefined,
@@ -2057,7 +2064,7 @@ const updateBookingStatus = async (req, res) => {
       }
     );
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Booking Status Updated",
       message: `Your ${booking.service} booking is now ${status}.`,
       audienceEmail: booking.devoteeEmail || undefined,
@@ -2077,7 +2084,7 @@ const markNotificationAsRead = async (req, res) => {
       return res.status(400).json({ error: "Notification ID is required." });
     }
     
-    const notification = await Notification.findByIdAndUpdate(
+    const notification = await notificationPersistenceService.findByIdAndUpdate(
       id,
       {
         read: true,
@@ -2124,7 +2131,7 @@ const sendNotificationEmail = async (req, res) => {
       return res.status(400).json({ error: "Notification ID is required." });
     }
 
-    const notification = await Notification.findById(id);
+    const notification = await notificationPersistenceService.findById(id);
     if (!notification) {
       return res.status(404).json({ error: "Notification not found." });
     }
@@ -2275,10 +2282,11 @@ const sendNotificationEmail = async (req, res) => {
     });
 
     if (emailRes.success) {
-      notification.emailSent = true;
-      notification.emailSentAt = new Date();
-      notification.emailRecipient = recipient;
-      await notification.save();
+      await notificationPersistenceService.findByIdAndUpdate(notification._id, {
+        emailSent: true,
+        emailSentAt: new Date(),
+        emailRecipient: recipient,
+      });
       return res.status(200).json({ success: true, message: `Notification email dispatched successfully to ${recipient}` });
     } else {
       return res.status(200).json({

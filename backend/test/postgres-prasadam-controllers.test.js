@@ -171,14 +171,14 @@ test("PG path: verifyPrasadamPayment persists Placed + razorpay fields, syncs Bi
   const svc = require("../src/services/prasadamOrderService");
   const devoteeController = require("../src/controllers/devoteeController");
   const Bill = require("../src/models/Bill");
-  const Notification = require("../src/models/Notification");
+  const notificationPersistenceService = require("../src/services/notificationPersistenceService");
   const Prasadam = require("../src/models/Prasadam");
   const communicationService = require("../src/utils/communicationService");
 
   const order = await svc.create(orderBase());
 
   const originalBillUpdateMany = Bill.updateMany;
-  const originalNotificationCreate = Notification.create;
+  const originalNotificationCreate = notificationPersistenceService.create;
   const originalPrasadamFindOne = Prasadam.findOne;
   const originalSendEmail = communicationService.sendEmail;
   const originalSendSMS = communicationService.sendSMS;
@@ -189,7 +189,7 @@ test("PG path: verifyPrasadamPayment persists Placed + razorpay fields, syncs Bi
     billUpdateCall = { filter, update };
     return { modifiedCount: 1 };
   };
-  Notification.create = async () => {
+  notificationPersistenceService.create = async () => {
     notificationCreated = true;
     return {};
   };
@@ -235,10 +235,10 @@ test("PG path: verifyPrasadamPayment persists Placed + razorpay fields, syncs Bi
     assert.ok(billUpdateCall, "Bill.updateMany called");
     assert.strictEqual(billUpdateCall.filter.sourceId, order._id.toString());
     assert.strictEqual(billUpdateCall.update.status, "Paid");
-    assert.ok(notificationCreated, "Notification.create called");
+    assert.ok(notificationCreated, "notification persistence create called");
   } finally {
     Bill.updateMany = originalBillUpdateMany;
-    Notification.create = originalNotificationCreate;
+    notificationPersistenceService.create = originalNotificationCreate;
     Prasadam.findOne = originalPrasadamFindOne;
     communicationService.sendEmail = originalSendEmail;
     communicationService.sendSMS = originalSendSMS;
@@ -249,13 +249,13 @@ test("PG path: verifyPrasadamPayment persists Placed + razorpay fields, syncs Bi
 test("PG path: cancelPrasadamOrder flips status and creates notification", async () => {
   const svc = require("../src/services/prasadamOrderService");
   const devoteeController = require("../src/controllers/devoteeController");
-  const Notification = require("../src/models/Notification");
+  const notificationPersistenceService = require("../src/services/notificationPersistenceService");
 
   const order = await svc.create(orderBase());
 
-  const originalNotificationCreate = Notification.create;
+  const originalNotificationCreate = notificationPersistenceService.create;
   let notificationPayload = null;
-  Notification.create = async (payload) => {
+  notificationPersistenceService.create = async (payload) => {
     notificationPayload = payload;
     return {};
   };
@@ -267,14 +267,14 @@ test("PG path: cancelPrasadamOrder flips status and creates notification", async
 
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.order.status, "Cancelled");
-    assert.ok(notificationPayload, "Notification.create called");
+    assert.ok(notificationPayload, "notification persistence create called");
     assert.ok(notificationPayload.message.includes("cancelled"));
     assert.strictEqual(notificationPayload.audienceEmail, order.email);
 
     const reread = await svc.findById(order._id);
     assert.strictEqual(reread.status, "Cancelled");
   } finally {
-    Notification.create = originalNotificationCreate;
+    notificationPersistenceService.create = originalNotificationCreate;
   }
 });
 
@@ -283,14 +283,14 @@ test("PG path: admin status update persists on PG and syncs Bill ledger, transac
   const svc = require("../src/services/prasadamOrderService");
   const admin = require("../src/controllers/prasadamAdminController");
   const Bill = require("../src/models/Bill");
-  const Notification = require("../src/models/Notification");
+  const notificationPersistenceService = require("../src/services/notificationPersistenceService");
   const AccountTransaction = require("../src/models/AccountTransaction");
   const AccountHead = require("../src/models/AccountHead");
 
   const order = await svc.create(orderBase());
 
   const originalBillUpdateMany = Bill.updateMany;
-  const originalNotificationCreate = Notification.create;
+  const originalNotificationCreate = notificationPersistenceService.create;
   const originalTxFindOne = AccountTransaction.findOne;
   const originalTxSave = AccountTransaction.prototype.save;
   const originalHeadFindOne = AccountHead.findOne;
@@ -304,7 +304,7 @@ test("PG path: admin status update persists on PG and syncs Bill ledger, transac
     billUpdate = { filter, update };
     return { modifiedCount: 1 };
   };
-  Notification.create = async (payload) => {
+  notificationPersistenceService.create = async (payload) => {
     notificationPayload = payload;
     return {};
   };
@@ -346,7 +346,7 @@ test("PG path: admin status update persists on PG and syncs Bill ledger, transac
     assert.strictEqual(notificationPayload.category, "prasadam");
   } finally {
     Bill.updateMany = originalBillUpdateMany;
-    Notification.create = originalNotificationCreate;
+    notificationPersistenceService.create = originalNotificationCreate;
     AccountTransaction.findOne = originalTxFindOne;
     AccountTransaction.prototype.save = originalTxSave;
     AccountHead.findOne = originalHeadFindOne;
@@ -359,14 +359,14 @@ test("PG path: Bill.updateMany failure does not corrupt the already-written PG o
   const svc = require("../src/services/prasadamOrderService");
   const devoteeController = require("../src/controllers/devoteeController");
   const Bill = require("../src/models/Bill");
-  const Notification = require("../src/models/Notification");
+  const notificationPersistenceService = require("../src/services/notificationPersistenceService");
   const Prasadam = require("../src/models/Prasadam");
   const communicationService = require("../src/utils/communicationService");
 
   const order = await svc.create(orderBase());
 
   const originalBillUpdateMany = Bill.updateMany;
-  const originalNotificationCreate = Notification.create;
+  const originalNotificationCreate = notificationPersistenceService.create;
   const originalPrasadamFindOne = Prasadam.findOne;
   const originalSendEmail = communicationService.sendEmail;
   const originalSendSMS = communicationService.sendSMS;
@@ -377,7 +377,7 @@ test("PG path: Bill.updateMany failure does not corrupt the already-written PG o
     throw new Error("bill sync exploded");
   };
   Prasadam.findOne = async () => null;
-  Notification.create = async () => ({});
+  notificationPersistenceService.create = async () => ({});
   communicationService.sendEmail = async () => ({});
   communicationService.sendSMS = async () => ({});
 
@@ -404,7 +404,7 @@ test("PG path: Bill.updateMany failure does not corrupt the already-written PG o
     assert.strictEqual(reread.razorpayPaymentId, paymentId);
   } finally {
     Bill.updateMany = originalBillUpdateMany;
-    Notification.create = originalNotificationCreate;
+    notificationPersistenceService.create = originalNotificationCreate;
     Prasadam.findOne = originalPrasadamFindOne;
     communicationService.sendEmail = originalSendEmail;
     communicationService.sendSMS = originalSendSMS;
@@ -415,20 +415,20 @@ test("PG path: Notification.create failure after verify is contained (order stay
   const svc = require("../src/services/prasadamOrderService");
   const devoteeController = require("../src/controllers/devoteeController");
   const Bill = require("../src/models/Bill");
-  const Notification = require("../src/models/Notification");
+  const notificationPersistenceService = require("../src/services/notificationPersistenceService");
   const Prasadam = require("../src/models/Prasadam");
   const communicationService = require("../src/utils/communicationService");
 
   const order = await svc.create(orderBase());
 
   const originalBillUpdateMany = Bill.updateMany;
-  const originalNotificationCreate = Notification.create;
+  const originalNotificationCreate = notificationPersistenceService.create;
   const originalPrasadamFindOne = Prasadam.findOne;
   const originalSendEmail = communicationService.sendEmail;
   const originalSendSMS = communicationService.sendSMS;
 
   Bill.updateMany = async () => ({ modifiedCount: 1 });
-  Notification.create = async () => {
+  notificationPersistenceService.create = async () => {
     throw new Error("notification exploded");
   };
   Prasadam.findOne = async () => null;
@@ -457,7 +457,7 @@ test("PG path: Notification.create failure after verify is contained (order stay
     assert.strictEqual(reread.status, "Placed");
   } finally {
     Bill.updateMany = originalBillUpdateMany;
-    Notification.create = originalNotificationCreate;
+    notificationPersistenceService.create = originalNotificationCreate;
     Prasadam.findOne = originalPrasadamFindOne;
     communicationService.sendEmail = originalSendEmail;
     communicationService.sendSMS = originalSendSMS;
@@ -468,20 +468,20 @@ test("PG path: recordTransaction failure in admin update does not revert the PG 
   const svc = require("../src/services/prasadamOrderService");
   const admin = require("../src/controllers/prasadamAdminController");
   const Bill = require("../src/models/Bill");
-  const Notification = require("../src/models/Notification");
+  const notificationPersistenceService = require("../src/services/notificationPersistenceService");
   const AccountTransaction = require("../src/models/AccountTransaction");
   const AccountHead = require("../src/models/AccountHead");
 
   const order = await svc.create(orderBase());
 
   const originalBillUpdateMany = Bill.updateMany;
-  const originalNotificationCreate = Notification.create;
+  const originalNotificationCreate = notificationPersistenceService.create;
   const originalTxFindOne = AccountTransaction.findOne;
   const originalTxSave = AccountTransaction.prototype.save;
   const originalHeadFindOne = AccountHead.findOne;
 
   Bill.updateMany = async () => ({ modifiedCount: 1 });
-  Notification.create = async () => ({});
+  notificationPersistenceService.create = async () => ({});
   AccountTransaction.findOne = async () => null;
   AccountTransaction.prototype.save = async function () {
     throw new Error("accounting exploded");
@@ -498,7 +498,7 @@ test("PG path: recordTransaction failure in admin update does not revert the PG 
     assert.strictEqual(reread.status, "Collected");
   } finally {
     Bill.updateMany = originalBillUpdateMany;
-    Notification.create = originalNotificationCreate;
+    notificationPersistenceService.create = originalNotificationCreate;
     AccountTransaction.findOne = originalTxFindOne;
     AccountTransaction.prototype.save = originalTxSave;
     AccountHead.findOne = originalHeadFindOne;

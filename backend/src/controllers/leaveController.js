@@ -1,6 +1,6 @@
 const leaveService = require("../services/leaveService");
 const Employee = require("../models/Employee");
-const Notification = require("../models/Notification");
+const notificationPersistenceService = require("../services/notificationPersistenceService");
 const { createNotification, createStaffNotification } = require("../utils/notificationService");
 const mongoose = require("mongoose");
 const LEAVE_STATUSES = ["Pending", "Approved", "Rejected"];
@@ -257,7 +257,7 @@ exports.applyLeave = async (req, res) => {
       reviewedAt: null,
     });
 
-    await Notification.create({
+    await notificationPersistenceService.create({
       title: "Leave Request",
       message: `${leave.staffName} submitted a leave request`,
       audienceRole: "admin",
