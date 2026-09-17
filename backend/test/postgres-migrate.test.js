@@ -31,7 +31,8 @@ const poolQuery = async (databaseUrl, sql) => {
 const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
-  // Phase 2A–2T tables must be dropped too so a fresh run applies the latest DDL.
+  // Phase 2A–2V tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS payroll_records CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS shifts CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS leaves CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS attendance CASCADE");
@@ -72,7 +73,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 22 migration\(s\)\./);
+  assert.match(output, /Applied 23 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -98,6 +99,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "020_create_attendance.sql",
     "021_create_leaves.sql",
     "022_create_shifts.sql",
+    "023_create_payroll_records.sql",
   ]);
 });
 
@@ -110,7 +112,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -149,6 +151,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "020_create_attendance.sql",
       "021_create_leaves.sql",
       "022_create_shifts.sql",
+    "023_create_payroll_records.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -417,7 +420,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 22 migration\(s\)\./);
+  assert.match(output, /Applied 23 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -456,7 +459,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -481,7 +484,7 @@ test("rollback of the Phase 2J inventory_logs migration can be removed and reapp
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -554,7 +557,7 @@ test("rollback of the Phase 2K inventory_consumptions migration can be removed a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT kcu.column_name, pg_get_constraintdef(oid) AS def FROM pg_constraint c
@@ -772,7 +775,7 @@ test("rollback of the Phase 2L inventory_requests migration can be removed and r
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const indexes = await poolQuery(databaseUrl, `
     SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'
@@ -842,7 +845,7 @@ test("previous migrations are unchanged (git diff on migrations dir is empty of 
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 22 migration\(s\)\./);
+  assert.match(output, /Applied 23 migration\(s\)\./);
 });
 
 test("Phase 2M purchase_orders migration creates the Mongo-mapped columns, enum CHECK, constraints and real FKs", async () => {
@@ -971,7 +974,7 @@ test("rollback of the Phase 2M purchase_orders migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1165,7 +1168,7 @@ test("rollback of the Phase 2N goods_received_notes migration can be removed and
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1324,7 +1327,7 @@ test("rollback of the Phase 2O damage_notes migration can be removed and reappli
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   // Re-apply regenerates the table, both real FKs, the enum CHECKs, the
   // unique damage_number and the justified indexes.
@@ -1502,7 +1505,7 @@ test("rollback of the Phase 2P assets migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.assets') AS t");
   assert.ok(tbl[0].t, "assets rebuilt after re-run");
@@ -1721,7 +1724,7 @@ test("rollback of the Phase 2Q repairs migration can be removed and reapplied", 
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   for (const table of ["repair_requests", "repair_tickets", "repair_ticket_spare_parts"]) {
     const tbl = await poolQuery(databaseUrl, `SELECT to_regclass('public.${table}') AS t`);
@@ -1846,7 +1849,7 @@ test("rollback of the Phase 2R rooms migration can be removed and reapplied", as
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.rooms') AS t");
   assert.ok(tbl[0].t, "rooms rebuilt after re-run");
@@ -2015,7 +2018,7 @@ test("rollback of the Phase 2S attendance migration can be removed and reapplied
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.attendance') AS t");
   assert.ok(tbl[0].t, "attendance rebuilt after re-run");
@@ -2255,7 +2258,7 @@ test("rollback of the Phase 2T leaves migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.leaves') AS t");
   assert.ok(tbl[0].t, "leaves rebuilt after re-run");
@@ -2473,7 +2476,7 @@ test("rollback of the Phase 2U shifts migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 22);
+  assert.strictEqual(rows.length, 23);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.shifts') AS t");
   assert.ok(tbl[0].t, "shifts rebuilt after re-run");
@@ -2636,6 +2639,346 @@ test("shifts defaults and nullability behave as the Mongo schema declares", asyn
         `shifts.${col} rejects NULL`
       );
     }
+  } finally {
+    await pool.end();
+  }
+});
+
+// ─ Phase 2V: payroll_records migration ───────────────────────────────────
+test("rollback of the Phase 2V payroll_records migration can be removed and reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // Simulate rolling back only migration 023: drop the payroll_records table
+  // (and its tracking record). Every earlier table stays in place, so a re-run
+  // must re-apply only 023 and rebuild payroll_records with its indexes.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS payroll_records CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '023_create_payroll_records.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*023_create_payroll_records\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+
+  const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
+  assert.strictEqual(rows.length, 23);
+
+  const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.payroll_records') AS t");
+  assert.ok(tbl[0].t, "payroll_records rebuilt after re-run");
+
+  const indexes = await poolQuery(databaseUrl, `
+    SELECT indexname FROM pg_indexes WHERE tablename = 'payroll_records' ORDER BY indexname`);
+  assert.strictEqual(indexes.length, 6, "re-applied migration rebuilds the pkey, the UNIQUE index and 4 indexes");
+
+  const { output: second } = runMigrate(databaseUrl);
+  assert.match(second, /No pending migrations\./);
+});
+
+test("payroll_records migration creates the Mongo-mapped columns, NUMERIC money, constraints and indexes", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    const cols = await pool.query(`
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_name = 'payroll_records' ORDER BY column_name`);
+    const byName = Object.fromEntries(cols.rows.map((r) => [r.column_name, r]));
+
+    // The exact projection: id + the 26 Mongo schema fields + the two timestamps.
+    assert.strictEqual(cols.rows.length, 29, "exactly 29 mapped columns");
+
+    const expected = {
+      id: ["text", "NO"],
+      employee_id: ["text", "NO"],
+      employee_name: ["text", "NO"],
+      department: ["text", "NO"],
+      role: ["text", "NO"],
+      month_key: ["text", "NO"],
+      // Every monetary path is NUMERIC — never float/real/double precision.
+      base_salary: ["numeric", "NO"],
+      present_days: ["numeric", "NO"],
+      absent_days: ["numeric", "NO"],
+      leave_days: ["numeric", "NO"],
+      half_days: ["numeric", "NO"],
+      late_days: ["numeric", "NO"],
+      extra_duty_days: ["numeric", "NO"],
+      overtime_hours: ["numeric", "NO"],
+      deduction: ["numeric", "NO"],
+      extra_duty_pay: ["numeric", "NO"],
+      bonus: ["numeric", "NO"],
+      net_salary: ["numeric", "NO"],
+      status: ["text", "NO"],
+      payment_method: ["text", "NO"],
+      transaction_id: ["text", "NO"],
+      // paid_at is the schema's explicit `default: null`, so it is the one
+      // nullable timestamp.
+      paid_at: ["timestamp with time zone", "YES"],
+      paid_by: ["text", "NO"],
+      notes: ["text", "NO"],
+      // razorpayOrderId / razorpayPaymentId / razorpaySignature declare no
+      // default in the schema, so they are absent until the Razorpay flow runs.
+      razorpay_order_id: ["text", "YES"],
+      razorpay_payment_id: ["text", "YES"],
+      razorpay_signature: ["text", "YES"],
+      created_at: ["timestamp with time zone", "NO"],
+      updated_at: ["timestamp with time zone", "NO"],
+    };
+    for (const [name, [type, nullable]] of Object.entries(expected)) {
+      assert.ok(byName[name], `payroll_records.${name} exists`);
+      assert.strictEqual(byName[name].data_type, type, `payroll_records.${name} type`);
+      assert.strictEqual(byName[name].is_nullable, nullable, `payroll_records.${name} nullability`);
+    }
+
+    // No column may be a floating-point type — money must never lose precision.
+    for (const [name, row] of Object.entries(byName)) {
+      assert.ok(
+        !/^(real|double precision)$/.test(row.data_type),
+        `payroll_records.${name} must not be a floating-point type (got ${row.data_type})`
+      );
+    }
+    for (const col of ["base_salary", "deduction", "extra_duty_pay", "bonus", "net_salary", "overtime_hours"]) {
+      assert.strictEqual(byName[col].data_type, "numeric", `payroll_records.${col} is NUMERIC`);
+    }
+
+    // Defaults mirror the Mongoose schema defaults exactly.
+    const defaults = {
+      department: "''::text",
+      role: "''::text",
+      present_days: "0",
+      absent_days: "0",
+      leave_days: "0",
+      half_days: "0",
+      late_days: "0",
+      extra_duty_days: "0",
+      overtime_hours: "0",
+      deduction: "0",
+      extra_duty_pay: "0",
+      bonus: "0",
+      status: "'Pending'::text",
+      payment_method: "'Bank Transfer'::text",
+      transaction_id: "''::text",
+      paid_by: "''::text",
+      notes: "''::text",
+    };
+    for (const [col, def] of Object.entries(defaults)) {
+      assert.strictEqual(byName[col].column_default, def, `payroll_records.${col} default`);
+    }
+    for (const col of ["paid_at", "razorpay_order_id", "razorpay_payment_id", "razorpay_signature"]) {
+      assert.strictEqual(byName[col].column_default, null, `payroll_records.${col} has no default`);
+    }
+    assert.match(byName.created_at.column_default, /now\(\)/);
+    assert.match(byName.updated_at.column_default, /now\(\)/);
+
+    // The unique index from the Mongo schema, exactly.
+    const uniques = await pool.query(`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid = 'payroll_records'::regclass AND contype = 'u'`);
+    assert.strictEqual(uniques.rows.length, 1, "one UNIQUE constraint");
+    assert.match(
+      uniques.rows[0].def,
+      /UNIQUE \(employee_id, month_key\)/,
+      "the Mongo compound unique index is reproduced verbatim"
+    );
+
+    // The two enums, exactly as declared.
+    const checks = await pool.query(`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid = 'payroll_records'::regclass AND contype = 'c'`);
+    const defs = checks.rows.map((r) => r.def).sort();
+    assert.ok(defs.some((d) => /status = ANY \(ARRAY\['Pending'::text, 'Paid'::text\]\)/.test(d)),
+      "status CHECK mirrors the 2-value enum");
+    assert.ok(defs.some((d) => /payment_method = ANY/.test(d) && /'Bank Transfer'::text/.test(d)
+      && /'Net Banking'::text/.test(d)), "paymentMethod CHECK mirrors the 6-value enum");
+    for (const col of ["base_salary", "net_salary", "present_days", "absent_days", "leave_days",
+      "half_days", "late_days", "extra_duty_days", "overtime_hours", "deduction", "extra_duty_pay", "bonus"]) {
+      assert.ok(defs.some((d) => d.includes(`${col} >= (0)::numeric`)),
+        `payroll_records.${col} has the min: 0 CHECK`);
+    }
+    assert.ok(defs.some((d) => d.includes("month_key ~ '^[0-9]{4}-[0-9]{2}$'")),
+      "month_key CHECK pins the YYYY-MM period shape");
+
+    // No foreign keys, deliberately: employee_id points at an employees table
+    // the live write path never populates, so an FK would reject writes Mongo
+    // accepts (same decision as Phase 2S attendance and Phase 2T leaves).
+    const fks = await pool.query(`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conrelid = 'payroll_records'::regclass AND contype = 'f'`);
+    assert.strictEqual(fks.rows.length, 0, "payroll_records has no foreign keys");
+
+    const indexes = await pool.query(`
+      SELECT indexname FROM pg_indexes WHERE tablename = 'payroll_records' ORDER BY indexname`);
+    assert.deepStrictEqual(indexes.rows.map((r) => r.indexname), [
+      "idx_payroll_records_created_at",
+      "idx_payroll_records_month_key",
+      "idx_payroll_records_razorpay_order_id",
+      "idx_payroll_records_status_month_key",
+      "payroll_records_employee_id_month_key_key",
+      "payroll_records_pkey",
+    ]);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("payroll_records defaults, period semantics and money precision behave as the Mongo schema declares", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: databaseUrl });
+  const id = () => crypto.randomBytes(12).toString("hex");
+  const employeeA = id();
+  const employeeB = id();
+  try {
+    // Defaults match the Mongoose schema defaults exactly.
+    await pool.query(
+      "INSERT INTO payroll_records (id, employee_id, employee_name, month_key, base_salary, net_salary) VALUES ($1, $2, 'Asha', '2026-07', 30000, 30000)",
+      [id(), employeeA]
+    );
+    const { rows } = await pool.query(
+      `SELECT department, role, present_days::text AS present, status, payment_method,
+              transaction_id, paid_at, paid_by, notes, extra_duty_pay::text AS extra
+       FROM payroll_records WHERE employee_id = $1`,
+      [employeeA]
+    );
+    assert.strictEqual(rows[0].department, "");
+    assert.strictEqual(rows[0].role, "");
+    assert.strictEqual(Number(rows[0].present), 0);
+    assert.strictEqual(rows[0].status, "Pending");
+    assert.strictEqual(rows[0].payment_method, "Bank Transfer");
+    assert.strictEqual(rows[0].transaction_id, "");
+    assert.strictEqual(rows[0].paid_at, null, "paidAt defaults to null");
+    assert.strictEqual(rows[0].paid_by, "");
+    assert.strictEqual(rows[0].notes, "");
+    assert.strictEqual(Number(rows[0].extra), 0);
+
+    // Money round-trips exactly — zero, integers, decimals and a large value.
+    // Comparing NUMERIC::text avoids floating-point arithmetic entirely.
+    const money = ["0", "1", "0.01", "1234.5678", "9999999999.99", "30000"];
+    for (const amount of money) {
+      const eid = id();
+      await pool.query(
+        `INSERT INTO payroll_records (id, employee_id, employee_name, month_key, base_salary,
+          deduction, extra_duty_pay, bonus, net_salary, overtime_hours)
+         VALUES ($1, $2, 'Money', '2026-08', $3, $3, $3, $3, $3, $3)`,
+        [id(), eid, amount]
+      );
+      const back = await pool.query(
+        `SELECT base_salary::text AS b, deduction::text AS d, extra_duty_pay::text AS e,
+                bonus::text AS bo, net_salary::text AS n, overtime_hours::text AS o
+         FROM payroll_records WHERE employee_id = $1`,
+        [eid]
+      );
+      const r = back.rows[0];
+      assert.strictEqual(Number(r.b), Number(amount), `base_salary round-trips ${amount}`);
+      assert.strictEqual(Number(r.d), Number(amount), `deduction round-trips ${amount}`);
+      assert.strictEqual(Number(r.e), Number(amount), `extra_duty_pay round-trips ${amount}`);
+      assert.strictEqual(Number(r.bo), Number(amount), `bonus round-trips ${amount}`);
+      assert.strictEqual(Number(r.n), Number(amount), `net_salary round-trips ${amount}`);
+      assert.strictEqual(Number(r.o), Number(amount), `overtime_hours round-trips ${amount}`);
+      // No silent rounding or truncation: the stored scale is preserved.
+      assert.strictEqual(r.b, String(Number(amount)), `base_salary stored without truncation (${amount})`);
+    }
+
+    // The payroll period is the 'YYYY-MM' month key — one record per employee
+    // per period, enforced exactly like the Mongo compound unique index.
+    await assert.rejects(
+      pool.query(
+        "INSERT INTO payroll_records (id, employee_id, employee_name, month_key, base_salary, net_salary) VALUES ($1, $2, 'Asha', '2026-07', 30000, 30000)",
+        [id(), employeeA]
+      ),
+      /duplicate key value violates unique constraint "payroll_records_employee_id_month_key_key"/,
+      "the same employee + period is rejected"
+    );
+
+    // A different employee in the same period is fine.
+    await pool.query(
+      "INSERT INTO payroll_records (id, employee_id, employee_name, month_key, base_salary, net_salary) VALUES ($1, $2, 'Bilal', '2026-07', 25000, 25000)",
+      [id(), employeeB]
+    );
+    // A different period for the same employee is fine — including across year
+    // boundaries and the December / January edges.
+    for (const month of ["2026-06", "2026-08", "2025-12", "2027-01"]) {
+      await pool.query(
+        "INSERT INTO payroll_records (id, employee_id, employee_name, month_key, base_salary, net_salary) VALUES ($1, $2, 'Asha', $3, 30000, 30000)",
+        [id(), employeeA, month]
+      );
+    }
+    const periods = await pool.query(
+      "SELECT month_key FROM payroll_records WHERE employee_id = $1 ORDER BY month_key",
+      [employeeA]
+    );
+    assert.deepStrictEqual(periods.rows.map((r) => r.month_key),
+      ["2025-12", "2026-06", "2026-07", "2026-08", "2027-01"]);
+
+    // month_key stays TEXT so lexicographic comparison and $in membership behave
+    // exactly as they do against the stored Mongo Strings.
+    const inRange = await pool.query(
+      "SELECT COUNT(*)::int AS n FROM payroll_records WHERE employee_id = $1 AND month_key >= '2026-01' AND month_key <= '2026-12'",
+      [employeeA]
+    );
+    assert.strictEqual(inRange.rows[0].n, 3, "text range comparison matches the Mongo string semantics");
+
+    // A malformed period is rejected — the shape payEmployeePayroll already
+    // enforces with a 400 before it reaches a datasource.
+    for (const bad of ["2026-7", "202607", "2026-13x", ""]) {
+      await assert.rejects(
+        pool.query(
+          "INSERT INTO payroll_records (id, employee_id, employee_name, month_key, base_salary, net_salary) VALUES ($1, $2, 'Bad', $3, 1, 1)",
+          [id(), id(), bad]
+        ),
+        /payroll_records_month_key_check|check constraint/,
+        `month_key ${JSON.stringify(bad)} is rejected`
+      );
+    }
+
+    // The enums are enforced.
+    await assert.rejects(
+      pool.query("UPDATE payroll_records SET status = 'Approved' WHERE employee_id = $1", [employeeA]),
+      /payroll_records_status_check/,
+      "only the two real statuses are storable"
+    );
+    await assert.rejects(
+      pool.query("UPDATE payroll_records SET payment_method = 'Bitcoin' WHERE employee_id = $1", [employeeA]),
+      /payroll_records_payment_method_check/,
+      "only the six real payment methods are storable"
+    );
+
+    // min: 0 is enforced on the money and counter paths, exactly as Mongoose
+    // rejects a negative value on create.
+    await assert.rejects(
+      pool.query("UPDATE payroll_records SET base_salary = -1 WHERE employee_id = $1", [employeeA]),
+      /payroll_records_base_salary_check/,
+      "negative base_salary is rejected"
+    );
+    await assert.rejects(
+      pool.query("UPDATE payroll_records SET net_salary = -1 WHERE employee_id = $1", [employeeA]),
+      /payroll_records_net_salary_check/,
+      "negative net_salary is rejected"
+    );
+
+    // Nullability mirrors the schema's required fields.
+    for (const col of ["employee_id", "employee_name", "month_key", "base_salary", "net_salary"]) {
+      await assert.rejects(
+        pool.query(`UPDATE payroll_records SET ${col} = NULL WHERE employee_id = $1`, [employeeB]),
+        /null value in column/,
+        `payroll_records.${col} rejects NULL`
+      );
+    }
+
+    // paid_at is the one column that legitimately clears (the Razorpay branch
+    // writes null).
+    await pool.query("UPDATE payroll_records SET paid_at = NULL WHERE employee_id = $1", [employeeB]);
+    const cleared = await pool.query(
+      "SELECT paid_at FROM payroll_records WHERE employee_id = $1",
+      [employeeB]
+    );
+    assert.strictEqual(cleared.rows[0].paid_at, null);
   } finally {
     await pool.end();
   }

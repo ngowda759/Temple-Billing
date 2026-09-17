@@ -3,7 +3,7 @@ const Employee = require("../models/Employee");
 const attendanceService = require("../services/attendanceService");
 const leaveService = require("../services/leaveService");
 const Task = require("../models/Task");
-const PayrollRecord = require("../models/PayrollRecord");
+const payrollService = require("../services/payrollService");
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
 
@@ -271,7 +271,7 @@ const loadPayrollContext = async (monthValue) => {
     Task.find({
       $or: [{ dateKey: { $gte: startKey, $lte: endKey } }, { dueDate: { $gte: startKey, $lte: endKey } }],
     }),
-    PayrollRecord.find({ monthKey: monthRange.monthKey }),
+    payrollService.findMany({ filter: { monthKey: monthRange.monthKey } }),
   ]);
 
   const payrollMap = new Map(payrollRecords.map((record) => [record.employeeId.toString(), record]));
@@ -317,9 +317,11 @@ exports.getPayrollDashboard = async (req, res) => {
       });
     }
 
-    const trendRecords = await PayrollRecord.find({
-      monthKey: { $in: trendMonths.map((item) => item.monthKey) },
-      status: "Paid",
+    const trendRecords = await payrollService.findMany({
+      filter: {
+        monthKey: { $in: trendMonths.map((item) => item.monthKey) },
+        status: "Paid",
+      },
     });
 
     const trend = trendMonths.map(({ month, monthKey }) => {
@@ -397,7 +399,7 @@ exports.payEmployeePayroll = async (req, res) => {
       Task.find({
         $or: [{ dateKey: { $gte: startKey, $lte: endKey } }, { dueDate: { $gte: startKey, $lte: endKey } }],
       }),
-      PayrollRecord.findOne({ employeeId: employee._id, monthKey }),
+      payrollService.findOne({ employeeId: employee._id, monthKey }),
     ]);
 
     const computed = buildEmployeePayroll({
@@ -444,8 +446,9 @@ exports.payEmployeePayroll = async (req, res) => {
     };
 
     const record = existingRecord
-      ? await PayrollRecord.findByIdAndUpdate(existingRecord._id, payload, { new: true })
-      : await PayrollRecord.create(payload);
+      ? await payrollService.updateById(existingRecord._id, payload)
+      : await payrollService.create(payload);
+    let paymentRecord = record;
 
     if (hasKeys && isOnline) {
       const razorpayClient = new Razorpay({
@@ -461,13 +464,20 @@ exports.payEmployeePayroll = async (req, res) => {
       };
 
       const order = await razorpayClient.orders.create(orderOptions);
-      record.razorpayOrderId = order.id;
-      await record.save();
+      // On the PostgreSQL path the record is a plain repository object, so the
+      // razorpayOrderId mutation goes through the repository as well; Mongoose
+      // documents keep the original in-place save.
+      if (await payrollService.usePostgres()) {
+        paymentRecord = await payrollService.updateById(record._id || record.id, { razorpayOrderId: order.id });
+      } else {
+        record.razorpayOrderId = order.id;
+        await record.save();
+      }
 
       return res.json({
         success: true,
         message: "Razorpay order created for salary payment.",
-        record,
+        record: paymentRecord,
         order,
         key: process.env.RAZORPAY_KEY_ID || "",
         simulated: false,
@@ -532,16 +542,29 @@ exports.verifyPayrollPayment = async (req, res) => {
     }
 
     let record = null;
-    if (recordId) record = await PayrollRecord.findById(recordId);
-    if (!record) record = await PayrollRecord.findOne({ razorpayOrderId: razorpay_order_id });
+    if (recordId) record = await payrollService.findById(recordId);
+    if (!record) record = await payrollService.findOne({ razorpayOrderId: razorpay_order_id });
     if (!record) return res.status(404).json({ success: false, message: "Payroll record not found." });
 
-    record.status = "Paid";
-    record.transactionId = razorpay_payment_id;
-    record.razorpayPaymentId = razorpay_payment_id;
-    record.razorpaySignature = razorpay_signature;
-    record.paidAt = new Date();
-    await record.save();
+    // Persist the payment-verification mutation. On the PostgreSQL path this
+    // goes through the repository (record.save() is a Mongoose-only concept);
+    // on the Mongo path the original document mutation is preserved.
+    if (await payrollService.usePostgres()) {
+      record = await payrollService.updateById(record._id || record.id, {
+        status: "Paid",
+        transactionId: razorpay_payment_id,
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature,
+        paidAt: new Date(),
+      });
+    } else {
+      record.status = "Paid";
+      record.transactionId = razorpay_payment_id;
+      record.razorpayPaymentId = razorpay_payment_id;
+      record.razorpaySignature = razorpay_signature;
+      record.paidAt = new Date();
+      await record.save();
+    }
 
     const { recordTransaction } = require("../services/accountingService");
     await recordTransaction({

@@ -22,11 +22,11 @@ migrated **one at a time** without a big-bang switchover.
 
 ## Current status
 
-**Migrations applied:** `backend/src/db/migrations/001`–`018` (18 files).
-**PostgreSQL tables created:** 30 `CREATE TABLE` statements across those files
+**Migrations applied:** `backend/src/db/migrations/001`–`023` (23 files).
+**PostgreSQL tables created:** 35 `CREATE TABLE` statements across those files
 (this count includes the Phase 1 `pg_health` probe table; `schema_migrations` is
 created by the runner itself, not by a migration file).
-**Test files:** 29 under `backend/test/`. Most entities have a PostgreSQL-path
+**Test files:** 41 under `backend/test/`. Most entities have a PostgreSQL-path
 test plus a fallback test (from Phase 2G onward); four cover cross-cutting
 concerns (config, migrate, health, repositories).
 
@@ -53,6 +53,7 @@ concerns (config, migrate, health, repositories).
 | 2S | Attendance | `020_create_attendance.sql` | [phase 2S](postgres-attendance-phase-2s.md) |
 | 2T | Leaves | `021_create_leaves.sql` | [phase 2T](postgres-leaves-phase-2t.md) |
 | 2U | Shifts | `022_create_shifts.sql` | [phase 2U](postgres-shifts-phase-2u.md) |
+| 2V | Payroll | `023_create_payroll_records.sql` | [phase 2V](postgres-payroll-phase-2v.md) |
 
 Phases 2A–2H and 2N were implemented without a dedicated document. Their scope
 is summarised in [Entities without a dedicated document](#entities-without-a-dedicated-document)
