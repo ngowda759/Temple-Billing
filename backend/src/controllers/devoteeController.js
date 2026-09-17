@@ -4,7 +4,10 @@ const Donation = require("../models/Donation");
 // when the Notification path is used and PostgreSQL is reachable, and otherwise
 // falls back to the existing Mongoose model.
 const notificationPersistenceService = require("../services/notificationPersistenceService");
-const Event = require("../models/Event");
+// Event persistence is additive: the shared service selects PostgreSQL when
+// the Event path is used and PostgreSQL is reachable, and otherwise falls
+// back to the existing Mongoose model.
+const eventPersistenceService = require("../services/eventPersistenceService");
 const SupportRequest = require("../models/SupportRequest");
 const User = require("../models/User");
 const PrasadamOrder = require("../models/PrasadamOrder");
@@ -456,8 +459,9 @@ const createBooking = async (req, res) => {
     if (eventId && booking.status === "Confirmed") {
       try {
         if (isDbConnected()) {
-          await Event.findByIdAndUpdate(String(eventId), {
-            $inc: { registrations: 1, collection: Number(amount) || 0 },
+          await eventPersistenceService.incrementById(String(eventId), {
+            registrations: 1,
+            collection: Number(amount) || 0,
           });
           booking.counted = true;
           await booking.save();
@@ -562,8 +566,9 @@ const verifyBookingPayment = async (req, res) => {
     // If booking linked to an event, increment registrations and collection
     if (booking.eventId && !booking.counted) {
       try {
-        await Event.findByIdAndUpdate(String(booking.eventId), {
-          $inc: { registrations: 1, collection: Number(booking.amount) || 0 }
+        await eventPersistenceService.incrementById(String(booking.eventId), {
+          registrations: 1,
+          collection: Number(booking.amount) || 0,
         });
         booking.counted = true;
         await booking.save();
@@ -813,7 +818,7 @@ const createDonation = async (req, res) => {
     if (eventId) {
       try {
         if (isDbConnected()) {
-          await Event.findByIdAndUpdate(String(eventId), { $inc: { collection: numericAmount } });
+          await eventPersistenceService.incrementById(String(eventId), { collection: numericAmount });
         }
       } catch (err) {
         console.error("Failed to update event collection for donation:", err);
@@ -938,7 +943,7 @@ const getEvents = async (req, res) => {
     todayStart.setHours(0, 0, 0, 0);
 
     // Automatically mark past events as Completed if they were marked Upcoming or Active
-    await Event.updateMany(
+    await eventPersistenceService.updateMany(
       {
         date: { $lt: todayStart },
         status: { $in: ["Upcoming", "Active"] },
@@ -946,7 +951,7 @@ const getEvents = async (req, res) => {
       { $set: { status: "Completed" } }
     );
 
-    const events = await Event.find().sort({ date: 1 });
+    const events = await eventPersistenceService.findMany({ sort: { date: 1 } });
     return res.status(200).json({ events });
   } catch (error) {
     console.error("getEvents error:", error);
@@ -1007,7 +1012,7 @@ const createEvent = async (req, res) => {
     if (collection != null) eventData.collection = Number(collection) || 0;
     if (status) eventData.status = status;
 
-    const event = await Event.create(eventData);
+    const event = await eventPersistenceService.create(eventData);
 
     const formattedEventDate = new Date(date).toLocaleDateString("en-IN", {
       day: "2-digit",
@@ -1062,7 +1067,7 @@ const getFestivalOverview = async (req, res) => {
     todayStart.setHours(0, 0, 0, 0);
 
     // Automatically mark past events as Completed
-    await Event.updateMany(
+    await eventPersistenceService.updateMany(
       {
         date: { $lt: todayStart },
         status: { $in: ["Upcoming", "Active"] },
@@ -1072,35 +1077,30 @@ const getFestivalOverview = async (req, res) => {
 
     const tomorrowStart = new Date(todayStart);
     tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-    const upcomingFestivals = await Event.countDocuments({
+    const upcomingFestivals = await eventPersistenceService.countDocuments({
       date: { $gte: todayStart },
       status: { $nin: ["Completed", "Cancelled"] },
     });
-    const todaysEvents = await Event.countDocuments({ date: { $gte: todayStart, $lt: tomorrowStart } });
+    const todaysEvents = await eventPersistenceService.countDocuments({ date: { $gte: todayStart, $lt: tomorrowStart } });
 
     // Current month range
     const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
     const nextMonthStart = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 1);
 
-    const currentMonthFestivals = await Event.countDocuments({ date: { $gte: monthStart, $lt: nextMonthStart } });
+    const currentMonthFestivals = await eventPersistenceService.countDocuments({ date: { $gte: monthStart, $lt: nextMonthStart } });
 
     // Aggregate totals overall
-    const agg = await Event.aggregate([
-      { $group: { _id: null, totalRegistrations: { $sum: "$registrations" }, totalCollection: { $sum: "$collection" } } },
-    ]);
+    const totals = await eventPersistenceService.sumTotals({});
 
-    let totalRegistrations = (agg[0] && agg[0].totalRegistrations) || 0;
+    let totalRegistrations = totals.registrations;
     // Only use Event.collection for festival revenue — do not fall back to global bookings
-    let festivalRevenue = (agg[0] && agg[0].totalCollection) || 0;
+    let festivalRevenue = totals.collection;
 
     // Monthly aggregates (prefer event collection/registrations if present)
-    const monthAgg = await Event.aggregate([
-      { $match: { date: { $gte: monthStart, $lt: nextMonthStart } } },
-      { $group: { _id: null, monthRegistrations: { $sum: "$registrations" }, monthCollection: { $sum: "$collection" } } },
-    ]);
+    const monthTotals = await eventPersistenceService.sumTotals({ date: { $gte: monthStart, $lt: nextMonthStart } });
 
-    const monthlyRegistrations = (monthAgg[0] && monthAgg[0].monthRegistrations) || 0;
-    const monthlyRevenue = (monthAgg[0] && monthAgg[0].monthCollection) || 0;
+    const monthlyRegistrations = monthTotals.registrations;
+    const monthlyRevenue = monthTotals.collection;
 
     // Fallback only for registrations (keep overall booking counts if events don't record registrations)
     if (!totalRegistrations) {
@@ -1141,18 +1141,17 @@ const updateEventStatus = async (req, res) => {
       return res.status(400).json({ error: "Invalid status provided." });
     }
 
-    const event = await Event.findById(id);
+    const event = await eventPersistenceService.findById(id);
     if (!event) return res.status(404).json({ error: "Event not found." });
 
-    event.status = status;
-    await event.save();
+    const updated = await eventPersistenceService.updateById(id, { status });
 
     await notificationPersistenceService.create({
       title: "Event Status Updated",
-      message: `${event.title} status changed to ${status}.`,
+      message: `${updated.title} status changed to ${status}.`,
     });
 
-    return res.status(200).json({ event });
+    return res.status(200).json({ event: updated });
   } catch (error) {
     console.error("updateEventStatus error:", error);
     return res.status(500).json({ error: "Failed to update event status." });
@@ -1175,16 +1174,17 @@ const updateEvent = async (req, res) => {
       status,
     } = req.body;
 
-    const event = await Event.findById(id);
+    const event = await eventPersistenceService.findById(id);
     if (!event) return res.status(404).json({ error: "Event not found." });
 
-    if (title && String(title).trim()) event.title = String(title).trim();
+    const updates = {};
+    if (title && String(title).trim()) updates.title = String(title).trim();
     if (date) {
       const dateError = validateFestivalDate(date);
       if (dateError) {
         return res.status(400).json({ error: dateError });
       }
-      event.date = new Date(date);
+      updates.date = new Date(date);
     }
     if (endDate !== undefined) {
       if (endDate) {
@@ -1195,27 +1195,29 @@ const updateEvent = async (req, res) => {
         if (parsedEndDate < parsedStartDate) {
           return res.status(400).json({ error: "To Date cannot be before From Date." });
         }
-        event.endDate = parsedEndDate;
+        updates.endDate = parsedEndDate;
       } else {
-        event.endDate = event.date;
+        updates.endDate = event.date;
       }
     }
-    if (location && String(location).trim()) event.location = String(location).trim();
-    if (description != null) event.description = String(description || "").trim();
-    if (imageUrl != null) event.image = imageUrl || undefined;
-    if (slots != null) event.slots = Number(slots) || 0;
-    if (registrations != null) event.registrations = Number(registrations) || 0;
-    if (collection != null) event.collection = Number(collection) || 0;
-    if (status && ["Upcoming", "Active", "Completed", "Cancelled"].includes(status)) event.status = status;
+    if (location && String(location).trim()) updates.location = String(location).trim();
+    if (description != null) updates.description = String(description || "").trim();
+    // `imageUrl || undefined` UNSETS the field when imageUrl is blank; the
+    // repository reads an explicit null as that unset.
+    if (imageUrl != null) updates.image = imageUrl || null;
+    if (slots != null) updates.slots = Number(slots) || 0;
+    if (registrations != null) updates.registrations = Number(registrations) || 0;
+    if (collection != null) updates.collection = Number(collection) || 0;
+    if (status && ["Upcoming", "Active", "Completed", "Cancelled"].includes(status)) updates.status = status;
 
-    await event.save();
+    const updated = await eventPersistenceService.updateById(id, updates);
 
     await notificationPersistenceService.create({
       title: "Event Updated",
-      message: `${event.title} has been updated.`,
+      message: `${updated.title} has been updated.`,
     });
 
-    return res.status(200).json({ event });
+    return res.status(200).json({ event: updated });
   } catch (error) {
     console.error("updateEvent error:", error);
     return res.status(500).json({ error: "Failed to update event." });
@@ -1225,7 +1227,7 @@ const updateEvent = async (req, res) => {
 const deleteEvent = async (req, res) => {
   try {
     const { id } = req.params;
-    const event = await Event.findByIdAndDelete(id);
+    const event = await eventPersistenceService.findByIdAndDelete(id);
     if (!event) {
       return res.status(404).json({ error: "Event not found." });
     }
@@ -1829,7 +1831,7 @@ const createRazorpayOrder = async (req, res) => {
       // Update event collection immediately for simulated donations
       if (eventId) {
         try {
-          await Event.findByIdAndUpdate(String(eventId), { $inc: { collection: numericAmount } });
+          await eventPersistenceService.incrementById(String(eventId), { collection: numericAmount });
         } catch (err) {
           console.error("Failed to update event collection for simulated donation:", err);
         }
@@ -1932,7 +1934,7 @@ const verifyRazorpayPayment = async (req, res) => {
     // If donation linked to an event, increment its collection
     if (donation.eventId) {
       try {
-        await Event.findByIdAndUpdate(String(donation.eventId), { $inc: { collection: Number(donation.amount) || 0 } });
+        await eventPersistenceService.incrementById(String(donation.eventId), { collection: Number(donation.amount) || 0 });
       } catch (err) {
         console.error("Failed to update event collection from verifyRazorpayPayment:", err);
       }
@@ -2015,7 +2017,7 @@ const handleRazorpayWebhook = async (req, res) => {
 
         if (donation.eventId) {
           try {
-            await Event.findByIdAndUpdate(String(donation.eventId), { $inc: { collection: Number(donation.amount) || amount } });
+            await eventPersistenceService.incrementById(String(donation.eventId), { collection: Number(donation.amount) || amount });
           } catch (err) {
             console.error("Failed to update event collection from webhook:", err);
           }
@@ -2046,8 +2048,9 @@ const updateBookingStatus = async (req, res) => {
     // If changing to Confirmed and linked to an event, increment event aggregates once
     if (booking.eventId && status === "Confirmed" && !booking.counted) {
       try {
-        await Event.findByIdAndUpdate(String(booking.eventId), {
-          $inc: { registrations: 1, collection: Number(booking.amount) || 0 },
+        await eventPersistenceService.incrementById(String(booking.eventId), {
+          registrations: 1,
+          collection: Number(booking.amount) || 0,
         });
         booking.counted = true;
       } catch (err) {
