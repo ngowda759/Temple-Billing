@@ -11,7 +11,7 @@ const eventPersistenceService = require("../services/eventPersistenceService");
 const SupportRequest = require("../models/SupportRequest");
 const User = require("../models/User");
 const PrasadamOrder = require("../models/PrasadamOrder");
-const Prasadam = require("../models/Prasadam");
+const prasadamService = require("../services/prasadamService");
 const Bill = require("../models/Bill");
 const { isDbConnected } = require("../config/db");
 const fileUserStore = require("../store/fileUserStore");
@@ -1541,7 +1541,7 @@ const createPrasadamOrder = async (req, res) => {
     }
     const requestedUnitPrice = Number(req.body.unitPrice ?? req.body.price);
 
-    const prasadamItem = await Prasadam.findOne({ name: { $regex: new RegExp(`^${itemName}$`, "i") } });
+    const prasadamItem = await prasadamService.findOneByName(itemName, { caseInsensitive: true });
     if (!prasadamItem) {
       return res.status(404).json({ error: "Prasadam item not found in master list." });
     }
@@ -1655,13 +1655,16 @@ const createPrasadamOrder = async (req, res) => {
       }).catch((err) => console.warn("Failed to send prasadam order confirmation:", err.message));
     }
 
-    prasadamItem.availableQuantity -= normalizedQty;
-    await prasadamItem.save();
+    const updatedPrasadamItem = await prasadamService.incrementById(prasadamItem._id, -normalizedQty);
+    const remainingQuantity = updatedPrasadamItem
+      ? Number(updatedPrasadamItem.availableQuantity)
+      : Number(prasadamItem.availableQuantity) - normalizedQty;
+    const minimumStock = Number(updatedPrasadamItem ? updatedPrasadamItem.minimumStock : prasadamItem.minimumStock);
 
-    if (prasadamItem.availableQuantity <= prasadamItem.minimumStock) {
+    if (remainingQuantity <= minimumStock) {
       await createStaffBroadcastNotifications({
         title: "⚠️ Low Prasadam Stock",
-        message: `${prasadamItem.name} stock is low. Current: ${prasadamItem.availableQuantity}.`,
+        message: `${prasadamItem.name} stock is low. Current: ${remainingQuantity}.`,
         category: "inventory",
       }).catch(() => {});
     }
@@ -1716,15 +1719,18 @@ const verifyPrasadamPayment = async (req, res) => {
     );
 
     // Deduct stock after payment completes
-    const prasadamItem = await Prasadam.findOne({ name: { $regex: new RegExp(`^${order.itemName}$`, "i") } });
+    const prasadamItem = await prasadamService.findOneByName(order.itemName, { caseInsensitive: true });
     if (prasadamItem) {
-      prasadamItem.availableQuantity = Math.max(0, prasadamItem.availableQuantity - order.quantity);
-      await prasadamItem.save();
+      const updatedPrasadamItem = await prasadamService.incrementById(prasadamItem._id, -Number(order.quantity), { clampAtZero: true });
+      const remainingQuantity = updatedPrasadamItem
+        ? Number(updatedPrasadamItem.availableQuantity)
+        : Math.max(0, Number(prasadamItem.availableQuantity) - Number(order.quantity));
+      const minimumStock = Number(updatedPrasadamItem ? updatedPrasadamItem.minimumStock : prasadamItem.minimumStock);
 
-      if (prasadamItem.availableQuantity <= prasadamItem.minimumStock) {
+      if (remainingQuantity <= minimumStock) {
         await createStaffBroadcastNotifications({
           title: "⚠️ Low Prasadam Stock",
-          message: `${prasadamItem.name} stock is low. Current: ${prasadamItem.availableQuantity}.`,
+          message: `${prasadamItem.name} stock is low. Current: ${remainingQuantity}.`,
           category: "inventory",
         }).catch(() => {});
       }
