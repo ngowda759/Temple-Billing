@@ -6,7 +6,7 @@ const mongoose = require("mongoose");
 const InventoryItem = require("../models/InventoryItem");
 const Instruction = require("../models/Instruction");
 const Employee = require("../models/Employee");
-const PriestSetting = require("../models/PriestSetting");
+const priestSettingService = require("../services/priestSettingService");
 const TransferRequest = require("../models/TransferRequest");
 const leaveService = require("../services/leaveService");
 
@@ -1113,10 +1113,7 @@ exports.getSettings = async (req, res) => {
       return res.status(404).json({ message: "Employee record not found for priest settings" });
     }
 
-    let settings = await PriestSetting.findOne({ priestId: employee._id });
-    if (!settings) {
-      settings = await PriestSetting.create({ priestId: employee._id });
-    }
+    const settings = await priestSettingService.getOrCreate(employee._id);
 
     return res.status(200).json(settings);
   } catch (error) {
@@ -1135,19 +1132,7 @@ exports.updateSettings = async (req, res) => {
       return res.status(404).json({ message: "Employee record not found for priest settings" });
     }
 
-    let settings = await PriestSetting.findOne({ priestId: employee._id });
-    if (!settings) {
-      settings = new PriestSetting({ priestId: employee._id });
-    }
-
-    const { smsNotifications, dutyReminders, calendarWidget, agamaReferenceModule } = req.body;
-
-    if (smsNotifications !== undefined) settings.smsNotifications = smsNotifications;
-    if (dutyReminders !== undefined) settings.dutyReminders = dutyReminders;
-    if (calendarWidget !== undefined) settings.calendarWidget = calendarWidget;
-    if (agamaReferenceModule !== undefined) settings.agamaReferenceModule = agamaReferenceModule;
-
-    await settings.save();
+    const settings = await priestSettingService.updateSettings(employee._id, req.body);
 
     return res.status(200).json({ message: "Settings updated successfully", settings });
   } catch (error) {
