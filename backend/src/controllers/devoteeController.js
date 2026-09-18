@@ -36,7 +36,7 @@ const prasadamOrderService = require("../services/prasadamOrderService");
 const InventoryRequest = require("../models/InventoryRequest");
 const InventoryItem = require("../models/InventoryItem");
 const Employee = require("../models/Employee");
-const Pooja = require("../models/Pooja");
+const poojaService = require("../services/poojaService");
 
 const generateInventoryRequestsForBooking = async (booking) => {
   // System-generated request creation intentionally stays on the Mongoose
@@ -55,7 +55,10 @@ const generateInventoryRequestsForBooking = async (booking) => {
 
     for (const item of items) {
       if (item.type === "pooja") {
-        const pooja = await Pooja.findOne({ name: item.name }).populate("requiredMaterials.item");
+        const pooja = await poojaService.populateMaterials(
+          await poojaService.findOne({ name: item.name }),
+          "full"
+        );
         if (!pooja) continue;
         
         // Find materials that the temple must provide (either implicitly or chosen by devotee)
@@ -245,7 +248,10 @@ const createBooking = async (req, res) => {
 
     for (const item of allItems) {
       if (item.type === "pooja") {
-        const pooja = await Pooja.findOne({ name: item.name }).populate("requiredMaterials.item");
+        const pooja = await poojaService.populateMaterials(
+          await poojaService.findOne({ name: item.name }),
+          "full"
+        );
           if (pooja) {
             if (pooja.duration) poojaDuration = poojaDuration ? `${poojaDuration} + ${pooja.duration}` : pooja.duration;
             if (pooja.rules && pooja.rules.length > 0) {
@@ -329,7 +335,7 @@ const createBooking = async (req, res) => {
     let finalAssignedPriest = assignedPriest;
     if (!finalAssignedPriest && isDbConnected()) {
       // Find eligible priests
-      const poojaDoc = await Pooja.findOne({ name: service });
+      const poojaDoc = await poojaService.findOne({ name: service });
       if (poojaDoc) {
         const eligiblePriests = await Employee.find({ 
           role: "priest", 

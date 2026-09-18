@@ -1,5 +1,5 @@
 const PoojaBooking = require("../models/PoojaBooking");
-const Pooja = require("../models/Pooja");
+const poojaService = require("../services/poojaService");
 const InventoryItem = require("../models/InventoryItem");
 
 // Create a new pooja booking
@@ -11,7 +11,10 @@ const createBooking = async (req, res) => {
       return res.status(400).json({ message: "All required fields must be provided" });
     }
 
-    const pooja = await Pooja.findOne({ name: service }).populate("requiredMaterials.item");
+    const pooja = await poojaService.populateMaterials(
+      await poojaService.findOne({ name: service }),
+      "full"
+    );
     if (!pooja) {
       return res.status(404).json({ message: "Pooja details not found" });
     }
