@@ -22,11 +22,11 @@ migrated **one at a time** without a big-bang switchover.
 
 ## Current status
 
-**Migrations applied:** 27 files, `backend/src/db/migrations/001`–`027`.
-**PostgreSQL tables created:** 42 `CREATE TABLE` statements across those files
+**Migrations applied:** 28 files, `backend/src/db/migrations/001`–`028`.
+**PostgreSQL tables created:** 44 `CREATE TABLE` statements across those files
 (this count includes the Phase 1 `pg_health` probe table; `schema_migrations` is
 created by the runner itself, not by a migration file).
-**Test files:** 49 under `backend/test/`. Most entities have a PostgreSQL-path
+**Test files:** 51 under `backend/test/`. Most entities have a PostgreSQL-path
 test plus a fallback test (from Phase 2G onward); four cover cross-cutting
 concerns (config, migrate, health, repositories).
 
@@ -55,6 +55,7 @@ concerns (config, migrate, health, repositories).
 | 2U | Shifts | `022_create_shifts.sql` | [phase 2U](postgres-shifts-phase-2u.md) |
 | 2V | Payroll | `023_create_payroll_records.sql` | [phase 2V](postgres-payroll-phase-2v.md) |
 | 2Z | Prasadam (stock master) | `027_create_prasadams.sql` | [phase 2Z](postgres-prasadam-phase-2z.md) |
+| 2AA | Settings (`AttendanceSetting`, `PriestSetting`) | `028_create_settings.sql` | [phase 2AA](postgres-settings-phase-2aa.md) |
 
 Phases 2A–2H and 2N were implemented without a dedicated document. Their scope
 is summarised in [Entities without a dedicated document](#entities-without-a-dedicated-document)
@@ -237,8 +238,8 @@ Service: `goodsReceivedNoteService.js`.
 
 ## Planned next steps
 
-1. Migrate the remaining MongoDB entities: Attendance settings/locations,
-   Payroll, Notifications, Events, Poojas, Prasadam, Settings, Audit Logs,
+1. Migrate the remaining MongoDB entities: Attendance locations, Payroll,
+   Notifications, Events, Poojas, Prasadam, Audit Logs,
    InventoryIssue, Suppliers, Recipes, Tasks (and the legacy ShiftAssignment
    model, whose only consumer is the offline
    `backend/scripts/migrateShiftAssignments.js` script), CashClosing,
