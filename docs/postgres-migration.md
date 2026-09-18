@@ -22,12 +22,11 @@ migrated **one at a time** without a big-bang switchover.
 
 ## Current status
 
-**Migrations applied:** `backend/src/db/migrations/001`–`025` plus `027` (26
-files).
-**PostgreSQL tables created:** 38 `CREATE TABLE` statements across those files
+**Migrations applied:** 27 files, `backend/src/db/migrations/001`–`027`.
+**PostgreSQL tables created:** 42 `CREATE TABLE` statements across those files
 (this count includes the Phase 1 `pg_health` probe table; `schema_migrations` is
 created by the runner itself, not by a migration file).
-**Test files:** 47 under `backend/test/`. Most entities have a PostgreSQL-path
+**Test files:** 49 under `backend/test/`. Most entities have a PostgreSQL-path
 test plus a fallback test (from Phase 2G onward); four cover cross-cutting
 concerns (config, migrate, health, repositories).
 

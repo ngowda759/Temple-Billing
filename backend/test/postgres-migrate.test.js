@@ -44,6 +44,10 @@ const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS schema_migrations");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
   // Phase 2A–2X tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_material_requirement_items CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_material_requirements CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_required_materials CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS poojas CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS events CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS notifications CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS payroll_records CASCADE");
@@ -88,7 +92,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
   assert.match(output, /Applied:\s*001_create_pg_health\.sql/);
-  assert.match(output, /Applied 26 migration\(s\)\./);
+  assert.match(output, /Applied 27 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
   assert.deepStrictEqual(rows.map((r) => r.name), [
@@ -117,6 +121,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "023_create_payroll_records.sql",
     "024_create_notifications.sql",
     "025_create_events.sql",
+"026_create_poojas.sql",
     "027_create_prasadams.sql",
   ]);
 });
@@ -130,7 +135,7 @@ test("db:migrate is idempotent — second run applies nothing", async () => {
   assert.match(output, /Applied 0 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 });
 
 test("migration failure rolls back and is not recorded", async () => {
@@ -172,7 +177,8 @@ test("migration failure rolls back and is not recorded", async () => {
     "023_create_payroll_records.sql",
       "024_create_notifications.sql",
       "025_create_events.sql",
-    "027_create_prasadams.sql",
+      "026_create_poojas.sql",
+      "027_create_prasadams.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");
@@ -442,7 +448,7 @@ test("rollback of the accounting migration leaves no tables behind", async () =>
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
 
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 26 migration\(s\)\./);
+  assert.match(output, /Applied 27 migration\(s\)\./);
 
   const tables = await poolQuery(databaseUrl, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   assert.ok(tables.some((t) => t.table_name === "account_heads"));
@@ -481,7 +487,7 @@ test("rollback of the inventory_batches migration can be reapplied", async () =>
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -506,7 +512,7 @@ test("rollback of the Phase 2J inventory_logs migration can be removed and reapp
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -579,7 +585,7 @@ test("rollback of the Phase 2K inventory_consumptions migration can be removed a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT kcu.column_name, pg_get_constraintdef(oid) AS def FROM pg_constraint c
@@ -797,7 +803,7 @@ test("rollback of the Phase 2L inventory_requests migration can be removed and r
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const indexes = await poolQuery(databaseUrl, `
     SELECT indexdef FROM pg_indexes WHERE tablename = 'inventory_requests'
@@ -867,7 +873,7 @@ test("previous migrations are unchanged (git diff on migrations dir is empty of 
   const databaseUrl = TEST_DB_URL;
   await resetTestDb(databaseUrl);
   const { output } = runMigrate(databaseUrl);
-  assert.match(output, /Applied 26 migration\(s\)\./);
+  assert.match(output, /Applied 27 migration\(s\)\./);
 });
 
 test("Phase 2M purchase_orders migration creates the Mongo-mapped columns, enum CHECK, constraints and real FKs", async () => {
@@ -996,7 +1002,7 @@ test("rollback of the Phase 2M purchase_orders migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1190,7 +1196,7 @@ test("rollback of the Phase 2N goods_received_notes migration can be removed and
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const fk = await poolQuery(databaseUrl, `
     SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
@@ -1349,7 +1355,7 @@ test("rollback of the Phase 2O damage_notes migration can be removed and reappli
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   // Re-apply regenerates the table, both real FKs, the enum CHECKs, the
   // unique damage_number and the justified indexes.
@@ -1527,7 +1533,7 @@ test("rollback of the Phase 2P assets migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.assets') AS t");
   assert.ok(tbl[0].t, "assets rebuilt after re-run");
@@ -1746,7 +1752,7 @@ test("rollback of the Phase 2Q repairs migration can be removed and reapplied", 
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   for (const table of ["repair_requests", "repair_tickets", "repair_ticket_spare_parts"]) {
     const tbl = await poolQuery(databaseUrl, `SELECT to_regclass('public.${table}') AS t`);
@@ -1871,7 +1877,7 @@ test("rollback of the Phase 2R rooms migration can be removed and reapplied", as
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.rooms') AS t");
   assert.ok(tbl[0].t, "rooms rebuilt after re-run");
@@ -2040,7 +2046,7 @@ test("rollback of the Phase 2S attendance migration can be removed and reapplied
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.attendance') AS t");
   assert.ok(tbl[0].t, "attendance rebuilt after re-run");
@@ -2280,7 +2286,7 @@ test("rollback of the Phase 2T leaves migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.leaves') AS t");
   assert.ok(tbl[0].t, "leaves rebuilt after re-run");
@@ -2498,7 +2504,7 @@ test("rollback of the Phase 2U shifts migration can be removed and reapplied", a
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.shifts') AS t");
   assert.ok(tbl[0].t, "shifts rebuilt after re-run");
@@ -2683,7 +2689,7 @@ test("rollback of the Phase 2V payroll_records migration can be removed and reap
   assert.match(output, /Applied 1 migration\(s\)\./);
 
   const rows = await poolQuery(databaseUrl, "SELECT name FROM schema_migrations ORDER BY id");
-  assert.strictEqual(rows.length, 26);
+  assert.strictEqual(rows.length, 27);
 
   const tbl = await poolQuery(databaseUrl, "SELECT to_regclass('public.payroll_records') AS t");
   assert.ok(tbl[0].t, "payroll_records rebuilt after re-run");
@@ -3487,4 +3493,117 @@ test("events timestamps round-trip the instant they were written with", async ()
     [localId, local]);
   const back = await pgQuery(databaseUrl, "SELECT date FROM events WHERE id = $1", [localId]);
   assert.strictEqual(back[0].date.getTime(), local.getTime());
+});
+
+// ─── Phase 2Y: poojas ───────────────────────────────────────────────────────
+test("rollback of the Phase 2Y poojas migration can be removed and reapplied", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const before = await poolQuery(databaseUrl, "SELECT to_regclass('public.poojas') AS t");
+  assert.match(before[0].t || "", /poojas/);
+
+  // Simulate rolling back only migration 026: drop the tables and forget them.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_required_materials CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS poojas CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_material_requirement_items CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_material_requirements CASCADE");
+  await poolQuery(databaseUrl, "DELETE FROM schema_migrations WHERE name = '026_create_poojas.sql'");
+
+  const { output } = runMigrate(databaseUrl);
+  assert.match(output, /Applied:\s*026_create_poojas\.sql/);
+  assert.match(output, /Applied 1 migration\(s\)\./);
+
+  const after = await poolQuery(databaseUrl, "SELECT to_regclass('public.poojas') AS t");
+  assert.match(after[0].t || "", /poojas/);
+});
+
+test("poojas migration creates the Mongo-mapped columns, constraints and indexes", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  const cols = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'poojas'
+    ORDER BY ordinal_position`);
+
+  const byName = Object.fromEntries(cols.map((c) => [c.column_name, c]));
+
+  // Exactly the 17 mapped columns: id + the 15 schema fields + 2 timestamps.
+  assert.deepStrictEqual(cols.map((c) => c.column_name), [
+    "id", "name", "description", "price", "duration", "available_days",
+    "available_dates", "available_start_time", "available_end_time",
+    "minimum_advance_booking_days", "strict_advance_preparation", "rules",
+    "instructions", "dress_code", "status", "created_at", "updated_at",
+  ]);
+
+  // price is money: bare NUMERIC (the repo convention — exact round-trip).
+  assert.strictEqual(byName.price.data_type, "numeric");
+  assert.strictEqual(byName.price.is_nullable, "NO");
+
+  // availableDates is a [String] of "YYYY-MM-DD" calendar days, NOT a date
+  // column, and availableDays/rules/instructions are [String] arrays.
+  assert.strictEqual(byName.available_dates.data_type, "ARRAY");
+  assert.strictEqual(byName.available_days.data_type, "ARRAY");
+  assert.strictEqual(byName.rules.data_type, "ARRAY");
+  assert.strictEqual(byName.instructions.data_type, "ARRAY");
+
+  // availableStartTime / availableEndTime are plain "HH:mm" strings, never TIME.
+  assert.strictEqual(byName.available_start_time.data_type, "text");
+  assert.strictEqual(byName.available_end_time.data_type, "text");
+
+  // Timestamps are instants.
+  assert.strictEqual(byName.created_at.data_type, "timestamp with time zone");
+  assert.strictEqual(byName.updated_at.data_type, "timestamp with time zone");
+
+  // name is the only unique path; status carries the 2-value enum.
+  const uniques = await poolQuery(databaseUrl, `
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'poojas'::regclass AND contype IN ('u','p')`);
+  assert.ok(uniques.some((c) => c.conname === "poojas_name_key"), "name is UNIQUE");
+
+  const checks = await poolQuery(databaseUrl, `
+    SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'poojas'::regclass AND contype = 'c'`);
+  // pg_get_constraintdef renders the literal as (price >= (0)::numeric) and the
+  // enum as status = ANY (ARRAY['Active'::text, 'Inactive'::text]).
+  assert.ok(checks.some((c) => /price >= \(?0\)?::numeric/.test(c.def) || /price >= 0/.test(c.def)), "price CHECK");
+  assert.ok(checks.some((c) => c.def.includes("Active") && c.def.includes("Inactive")), "status CHECK");
+});
+
+test("poojas migration keeps the embedded material arrays as CASCADE children only", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  runMigrate(databaseUrl);
+
+  // The two child tables carry the ONLY foreign keys introduced by 026, and
+  // both are intra-migration ON DELETE CASCADE (embedded arrays of the parent).
+  const childFks = await poolQuery(databaseUrl, `
+    SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'pooja_required_materials'::regclass AND contype = 'f'`);
+  assert.strictEqual(childFks.length, 1);
+  assert.match(childFks[0].def, /REFERENCES poojas\(id\) ON DELETE CASCADE/);
+
+  // No outbound FK to inventory_items: the Pooja sub-path is optional and a FK
+  // would let a pooja row block an inventory item delete, which Mongo allows.
+  const outbound = await poolQuery(databaseUrl, `
+    SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+    WHERE conrelid = 'poojas'::regclass AND contype = 'f'`);
+  assert.strictEqual(outbound.length, 0);
+
+  // Deleting the parent removes its embedded rows (Mongo sub-document semantics).
+  const poojaId = crypto.randomBytes(12).toString("hex");
+  await pgQuery(databaseUrl,
+    "INSERT INTO poojas (id, name, price) VALUES ($1, 'CascadeCheck', 10)", [poojaId]);
+  await pgQuery(databaseUrl,
+    `INSERT INTO pooja_required_materials (id, pooja_id, position, item_name, qty, unit)
+     VALUES ($1, $2, 0, 'Camphor', 1, 'kg')`, [crypto.randomBytes(12).toString("hex"), poojaId]);
+
+  await pgQuery(databaseUrl, "DELETE FROM poojas WHERE id = $1", [poojaId]);
+  const orphans = await pgQuery(databaseUrl,
+    "SELECT count(*)::int AS c FROM pooja_required_materials WHERE pooja_id = $1", [poojaId]);
+  assert.strictEqual(orphans[0].c, 0);
 });

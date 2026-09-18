@@ -159,11 +159,11 @@ application, which the repository preserves. No `ON DELETE CASCADE` is used.
 idempotent (`CREATE TABLE IF NOT EXISTS`), so it applies cleanly on a fresh
 database and re-applies cleanly after being rolled back.
 
-**Migration number.** Phase 2Y (`phase-2y-postgres-poojas`) claims
-`026_create_poojas.sql` and is still an open PR, so the next free number on
-`main` is `027`. `027_create_prasadams.sql` is therefore used, and the migration
-runner applies it regardless of whether 026 has landed; the two do not collide
-because they use different numbers and different tables.
+**Migration number.** Phase 2Y (`phase-2y-postgres-poojas`, PR #27) claimed
+`026_create_poojas.sql` and has since merged, so the next free number on `main`
+was `027`. `027_create_prasadams.sql` is therefore used. The two migrations use
+different numbers and different tables, so they never collide regardless of merge
+order.
 
 Rollback follows the project convention: drop the table (and its
 `schema_migrations` row) and re-run `npm run db:migrate`, which re-applies only

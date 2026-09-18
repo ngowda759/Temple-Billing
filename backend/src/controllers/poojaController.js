@@ -1,9 +1,20 @@
-const Pooja = require("../models/Pooja");
+const poojaService = require("../services/poojaService");
+
+// Poojas are read/written through poojaService so they follow the selected
+// datasource: PostgreSQL when it is reachable, otherwise the existing Mongoose
+// model. Both datasources return the same Mongo-shaped document; the only
+// difference is that references stay plain id strings on the PostgreSQL path,
+// so the populated `requiredMaterials.item` shape the pre-migration `populate`
+// produced is reassembled via poojaService.populateMaterials. Response shapes,
+// status codes and messages are unchanged.
 
 exports.getAllPoojas = async (req, res) => {
   try {
-    const poojas = await Pooja.find({}).populate("requiredMaterials.item", "name category currentStock");
-    res.status(200).json(poojas);
+    const poojas = await poojaService.findMany({ filter: {} });
+    const populated = await Promise.all(
+      poojas.map((pooja) => poojaService.populateMaterials(pooja, "inventoryNameCategoryStock"))
+    );
+    res.status(200).json(populated);
   } catch (err) {
     console.error("Error fetching poojas:", err);
     res.status(500).json({ message: "Failed to fetch poojas" });
@@ -12,11 +23,11 @@ exports.getAllPoojas = async (req, res) => {
 
 exports.getPoojaById = async (req, res) => {
   try {
-    const pooja = await Pooja.findById(req.params.id).populate("requiredMaterials.item", "name category currentStock");
+    const pooja = await poojaService.findById(req.params.id);
     if (!pooja) {
       return res.status(404).json({ message: "Pooja not found" });
     }
-    res.status(200).json(pooja);
+    res.status(200).json(await poojaService.populateMaterials(pooja, "inventoryNameCategoryStock"));
   } catch (err) {
     console.error("Error fetching pooja:", err);
     res.status(500).json({ message: "Failed to fetch pooja" });
@@ -25,8 +36,7 @@ exports.getPoojaById = async (req, res) => {
 
 exports.createPooja = async (req, res) => {
   try {
-    const pooja = new Pooja(req.body);
-    await pooja.save();
+    const pooja = await poojaService.create(req.body);
     res.status(201).json({ message: "Pooja created successfully", pooja });
   } catch (err) {
     console.error("Error creating pooja:", err);
@@ -36,7 +46,7 @@ exports.createPooja = async (req, res) => {
 
 exports.updatePooja = async (req, res) => {
   try {
-    const pooja = await Pooja.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const pooja = await poojaService.updateById(req.params.id, req.body);
     if (!pooja) {
       return res.status(404).json({ message: "Pooja not found" });
     }
@@ -49,7 +59,7 @@ exports.updatePooja = async (req, res) => {
 
 exports.deletePooja = async (req, res) => {
   try {
-    const pooja = await Pooja.findByIdAndDelete(req.params.id);
+    const pooja = await poojaService.destroy(req.params.id);
     if (!pooja) {
       return res.status(404).json({ message: "Pooja not found" });
     }
