@@ -102,7 +102,11 @@ exports.getPriestDashboard = async (req, res) => {
     };
 
     // 7. Format today's schedule
-    const Pooja = require("../models/Pooja");
+    // The lookup goes through poojaService so it follows the selected
+    // datasource. It is intentionally NOT populated: the original query had no
+    // populate either, and this loop only reads requiredMaterials[].itemName /
+    // qty / unit, so the plain id form is what matters here.
+    const poojaService = require("../services/poojaService");
     const todaySchedule = await Promise.all(todayBookings.map(async (b) => {
       const poojaItems = b.isCombined ? (b.items || []).filter(i => i.type === "pooja") : [{
         name: b.service,
@@ -113,7 +117,7 @@ exports.getPriestDashboard = async (req, res) => {
       const devoteeBrings = [];
       
       for (const pooja of poojaItems) {
-        const poojaInfo = await Pooja.findOne({ name: pooja.name });
+        const poojaInfo = await poojaService.findOne({ name: pooja.name });
         if (poojaInfo && poojaInfo.requiredMaterials) {
           poojaInfo.requiredMaterials.forEach(rm => {
             if (rm.mustBringByDevotee) {
