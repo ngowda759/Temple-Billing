@@ -128,7 +128,7 @@ exports.approveGRN = async (req, res) => {
 
 
 const Recipe = require("../models/Recipe");
-const Prasadam = require("../models/Prasadam");
+const prasadamService = require("../services/prasadamService");
 
 // Kitchen logs production -> Auto Deduct Raw Materials
 exports.logKitchenProduction = async (req, res) => {
@@ -199,10 +199,21 @@ exports.logKitchenProduction = async (req, res) => {
     }
     
     // Also update Prasadam model if they are linked by name
-    const prasadamRecord = await Prasadam.findOne({ name: recipe.name });
+    // The master is reached through the Prasadam service so it follows the
+    // selected datasource (PostgreSQL when available, otherwise Mongoose).
+    // NOTE: `availableStock` below is NOT a field on the Prasadam schema, so
+    // under Mongoose strict mode this assignment persists nothing today — it is
+    // a pre-existing no-op kept verbatim. It is reported as an out-of-scope
+    // finding rather than fixed or turned into a stock column here.
+    const prasadamRecord = await prasadamService.findOneByName(recipe.name, { caseInsensitive: false });
     if (prasadamRecord) {
       prasadamRecord.availableStock = (prasadamRecord.availableStock || 0) + producedQuantity;
-      await prasadamRecord.save();
+      // The PostgreSQL path returns a plain row object, not a Mongoose
+      // document, and availableStock is not a persisted field either way — so
+      // the assignment stays in memory and only Mongoose documents reach save().
+      if (typeof prasadamRecord.save === "function") {
+        await prasadamRecord.save();
+      }
     }
 
     res.status(200).json({ success: true, message: `Production logged. Raw materials deducted for ${recipe.name}.` });

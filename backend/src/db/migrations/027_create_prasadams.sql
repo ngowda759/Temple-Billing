@@ -1,0 +1,179 @@
+-- Phase 2Z: prasadams (MongoDB → PostgreSQL migration).
+--
+-- Mirrors backend/src/models/Prasadam.js and every real usage of the Prasadam
+-- model. This is the Prasadam MASTER (the sellable prasadam list), not to be
+-- confused with prasadam_orders (Phase 2G, 008_create_prasadam_orders.sql),
+-- which is the sales/order ledger. The two entities are independent: an order
+-- carries itemName as a plain denormalized String and points at an order row,
+-- while the master is the price/stock catalogue.
+--
+--   * Prasadam.js — the Mongoose model: name (String, trim, required, UNIQUE),
+--     price (Number, required, min 0), availableQuantity (Number, required,
+--     min 0, default 0), minimumStock (Number, required, min 0, default 0),
+--     timestamps. The schema declares NO nested sub-documents, NO arrays, NO
+--     ObjectId references and NO soft-delete/archive field. The only index is
+--     the automatic _id index plus the unique index on name.
+--
+--     The schema also declares a `status` VIRTUAL (not persisted):
+--       availableQuantity === 0           → 'Out Of Stock'
+--       availableQuantity <= minimumStock → 'Low Stock'
+--       otherwise                         → 'Available'
+--     and sets toJSON/toObject virtuals:true, so `status` appears in API
+--     responses even though nothing is stored. It is therefore deliberately
+--     NOT a column here: there is no persisted Mongo field to migrate and the
+--     repository recomputes the same value on read, so the API shape is
+--     unchanged.
+--
+--   * prasadamController.js — the dedicated /api/prasadam router:
+--       getAllPrasadam   (GET    /)         Prasadam.find().sort({ name: 1 })
+--       createPrasadam   (POST   /)         Prasadam.create({ name (trimmed),
+--                                           price, availableQuantity,
+--                                           minimumStock }) — 400 on a blank
+--                                           name, 409 on a duplicate name
+--                                           (Mongo error code 11000)
+--       updatePrasadam   (PUT    /:id)      findById → conditional assignment
+--                                           (name trimmed, numbers coerced) →
+--                                           findByIdAndUpdate(..., { new: true })
+--                                           NOTE: no runValidators, so the
+--                                           Mongo `min: 0` is not enforced on
+--                                           this path today (see the
+--                                           divergence note below)
+--       restockPrasadam  (PUT    /:id/restock)  findById → availableQuantity +=
+--                                           Number(quantityAdded) → save()
+--                                           (400 when quantityAdded <= 0)
+--       deletePrasadam   (DELETE /:id)      findByIdAndDelete — a HARD delete
+--
+--   * devoteeController.js — the order-time stock interaction. Both
+--     createPrasadamOrder and verifyPrasadamPayment look the item up by a
+--     CASE-INSENSITIVE EXACT name
+--     ({ name: { $regex: new RegExp(`^${itemName}$`, 'i') } }) then either
+--     reject the order (availableQuantity < requested) or decrement
+--     availableQuantity (clamped at 0 in verifyPrasadamPayment) and save().
+--
+--   * inventoryWorkflowController.js — logKitchenProduction does
+--     Prasadam.findOne({ name: recipe.name }) (exact, case-sensitive) and then
+--     assigns `prasadamRecord.availableStock += producedQuantity`. That field
+--     does NOT exist on the schema, so Mongoose strict mode drops it and the
+--     write persists nothing. This migration deliberately does not invent an
+--     available_stock column for it; the repository reproduces the same no-op.
+--
+-- This migration is strictly additive: it introduces an alternate persistence
+-- path (backed by prasadamRepository, reachable through prasadamService) that
+-- is selected only when the service is used AND PostgreSQL is reachable.
+-- MongoDB stays the source of truth and the fallback path; no Mongo →
+-- PostgreSQL switch happens anywhere in the application, no production data is
+-- migrated and there are no dual writes.
+--
+-- Primary keys are 24-char hex strings so they remain compatible with the
+-- MongoDB ObjectIds returned by the existing model.
+--
+-- Mongo → PostgreSQL field mapping — prasadams (every persisted Mongo field):
+--   * _id               → id TEXT PRIMARY KEY (24-hex Mongo-compatible id)
+--   * name              → name TEXT NOT NULL, UNIQUE (required, trim).
+--                         CHECK name <> '' because Mongoose runs trim BEFORE the
+--                         required check, so a whitespace-only name is already
+--                         rejected there. `unique: true` is preserved verbatim
+--                         as a UNIQUE constraint (see the note below).
+--   * price             → price NUMERIC NOT NULL (money — NUMERIC, never
+--                         float/double, so rupee/paise values round-trip
+--                         exactly; the Phase 2B–2X convention)
+--   * availableQuantity → available_quantity NUMERIC NOT NULL DEFAULT 0 (bare
+--                         Number with `min: 0` and no integer constraint in
+--                         Mongo → NUMERIC, see the quantity-type note below)
+--   * minimumStock      → minimum_stock NUMERIC NOT NULL DEFAULT 0 (same)
+--   * createdAt         → created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+--   * updatedAt         → updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+--
+-- Completeness: every persisted Mongo field has a column and there are exactly
+-- 7 columns (id + the 4 schema fields + the two timestamps); the `status`
+-- virtual is the only other application-visible field and it is computed, not
+-- stored. The model has no category, no unit, no description, no image, no SKU
+-- or code, no supplier link, no cost price, no reorder level beyond
+-- minimumStock, no expiry, no batch link, no createdBy/updatedBy and no
+-- archive/active flag. Those concepts exist on other entities but not on
+-- Prasadam, so they are deliberately NOT columns and no child table is
+-- created — a prasadam is a single-table row.
+--
+-- Quantity-type note (availableQuantity / minimumStock). Both are declared
+-- `{ type: Number, required: true, min: 0 }` with no integer cast, and every
+-- write path coerces with `Number(value) || 0` (or `Number(quantityAdded)`,
+-- which is only checked for `> 0`). A fractional quantity is therefore legal
+-- and persisted today, so NUMERIC is used rather than INTEGER — the same
+-- precedent as events.slots, rooms.capacity and the Phase 2G
+-- prasadam_orders.quantity. An INTEGER column would reject or silently round a
+-- value the current API accepts, which this additive migration must not do.
+--
+-- Money note (price). The Phase 2G prasadam_orders.unit_price/amount columns
+-- already document the intended shape: the master's price is the value an
+-- order copies into unit_price, so both sides are NUMERIC. The range itself is
+-- enforced in the repository rather than as a CHECK — see the divergence note
+-- below.
+--
+-- Divergence note — `min: 0` is deliberately NOT a CHECK constraint. Mongoose
+-- declares min:0 for price / availableQuantity / minimumStock and enforces it
+-- on create and on save(), but prasadamController.updatePrasadam calls
+-- findByIdAndUpdate(..., { new: true }) WITHOUT runValidators, so a negative
+-- value is reachable through PUT /api/prasadam/:id today and DOES persist in
+-- Mongo. A `>= 0` CHECK here would therefore make the PostgreSQL path stricter
+-- than the application: a write the API accepts today would start failing.
+-- Following the established convention, the constraint is omitted and the
+-- repository enforces the application's real semantics instead — the min:0
+-- range is applied on CREATE (where Mongoose's validators do run) and is
+-- deliberately not applied on update (where they do not). This mirrors both
+-- real paths exactly; no rule is added or removed.
+--
+-- Unique-name semantics. `name` is `unique: true`, and prasadamController
+-- answers a Mongo 11000 duplicate-key error with HTTP 409. The UNIQUE
+-- constraint preserves exactly that: a duplicate insert raises 23505, which
+-- prasadamService translates back to the same 11000-shaped error so the
+-- controller's existing 409 branch is untouched. Nothing is silently replaced
+-- or upserted.
+--
+-- Relationships / foreign keys. Prasadam declares NO outbound reference field,
+-- so prasadams has no foreign key. There is likewise NO inbound FK: the links
+-- that exist are name-based Strings, not ids —
+--   * PrasadamOrder.itemName and Recipe.name are matched against Prasadam.name,
+--     case-insensitively at order time and exactly in logKitchenProduction.
+-- A name is not a stable key (it is mutable on the master and the order keeps
+-- its own denormalized copy), so it cannot be expressed as a foreign key
+-- without changing behaviour. Inventing one from a same-looking String would be
+-- speculative; no FK is created in either direction and no ON DELETE behaviour
+-- is invented. deletePrasadam is a bare hard delete with no cascading cleanup
+-- anywhere in the application, which the repository preserves.
+--
+-- Indexes. The schema's only declared index is `name`'s unique index, which the
+-- UNIQUE constraint below provides. It also serves the standing listing sort
+-- (Prasadam.find().sort({ name: 1 })) and the two case-insensitive exact-name
+-- lookups (a `name` predicate is index-usable; the leading-anchored regex is
+-- served as a range scan on the same index). No further index is added: no
+-- query filters or sorts on price / availableQuantity / minimumStock, and the
+-- UI filters client-side, so an index there would be speculative.
+
+CREATE TABLE IF NOT EXISTS prasadams (
+  -- Mongo: _id — 24-hex ObjectId-compatible id.
+  id TEXT PRIMARY KEY,
+  -- Mongo: name String — required, trim, unique: true.
+  name TEXT NOT NULL,
+  -- Mongo: price Number — required, min 0. Money, so NUMERIC.
+  price NUMERIC NOT NULL,
+  -- Mongo: availableQuantity Number — required, min 0, default 0.
+  available_quantity NUMERIC NOT NULL DEFAULT 0,
+  -- Mongo: minimumStock Number — required, min 0, default 0.
+  minimum_stock NUMERIC NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Mongo: name `unique: true` — preserved verbatim. A duplicate raises 23505,
+  -- which the service maps back to the 11000-shaped error the controller
+  -- already turns into HTTP 409.
+  CONSTRAINT prasadams_name_key UNIQUE (name),
+  -- Mongoose runs `trim: true` before the `required: true` check, so a
+  -- whitespace-only name is rejected there as well. The repository trims before
+  -- insert, so this CHECK reproduces exactly what Mongo already rejects and
+  -- narrows no value the application can currently persist.
+  CONSTRAINT prasadams_name_check CHECK (name <> '')
+  -- The `min: 0` ranges are NOT CHECK constraints — see the divergence note
+  -- above. prasadamController.updatePrasadam persists negative values today
+  -- (findByIdAndUpdate without runValidators), so a `>= 0` CHECK would reject a
+  -- write the API currently accepts. The repository enforces the application's
+  -- real semantics instead: min:0 on CREATE only, nothing extra on update.
+);

@@ -1,14 +1,14 @@
-const Prasadam = require("../models/Prasadam");
 const PrasadamOrder = require("../models/PrasadamOrder");
 const { createStaffNotification } = require("../utils/notificationService");
 const prasadamOrderService = require("../services/prasadamOrderService");
+const prasadamService = require("../services/prasadamService");
 
 const clean = (value) => String(value || "").trim();
 
 // GET /api/prasadam
 const getAllPrasadam = async (req, res) => {
   try {
-    const items = await Prasadam.find().sort({ name: 1 });
+    const items = await prasadamService.findMany({ sort: { name: 1 } });
     return res.json({ success: true, items });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -24,7 +24,7 @@ const createPrasadam = async (req, res) => {
       return res.status(400).json({ success: false, message: "Prasadam name is required." });
     }
 
-    const newPrasadam = await Prasadam.create({
+    const newPrasadam = await prasadamService.create({
       name: clean(name),
       price: Number(price) || 0,
       availableQuantity: Number(availableQuantity) || 0,
@@ -64,14 +64,14 @@ const updatePrasadam = async (req, res) => {
     if (availableQuantity !== undefined) updatePayload.availableQuantity = Number(availableQuantity);
     if (minimumStock !== undefined) updatePayload.minimumStock = Number(minimumStock);
 
-    const oldItem = await Prasadam.findById(id);
+    const oldItem = await prasadamService.findById(id);
     if (!oldItem) {
       return res.status(404).json({ success: false, message: "Prasadam not found." });
     }
 
-    const priceChanged = price !== undefined && Number(price) !== oldItem.price;
+    const priceChanged = price !== undefined && Number(price) !== Number(oldItem.price);
 
-    const item = await Prasadam.findByIdAndUpdate(id, updatePayload, { new: true });
+    const item = await prasadamService.updateById(id, updatePayload);
 
     if (priceChanged) {
       try {
@@ -115,13 +115,10 @@ const restockPrasadam = async (req, res) => {
       return res.status(400).json({ success: false, message: "Valid quantity added is required." });
     }
 
-    const item = await Prasadam.findById(id);
+    const item = await prasadamService.incrementById(id, Number(quantityAdded));
     if (!item) {
       return res.status(404).json({ success: false, message: "Prasadam not found." });
     }
-
-    item.availableQuantity += Number(quantityAdded);
-    await item.save();
 
     return res.json({ success: true, message: "Prasadam restocked successfully", item });
   } catch (error) {
@@ -133,7 +130,7 @@ const restockPrasadam = async (req, res) => {
 const deletePrasadam = async (req, res) => {
   try {
     const { id } = req.params;
-    const item = await Prasadam.findByIdAndDelete(id);
+    const item = await prasadamService.destroy(id);
     if (!item) {
       return res.status(404).json({ success: false, message: "Prasadam not found." });
     }
