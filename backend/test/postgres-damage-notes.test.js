@@ -418,10 +418,15 @@ test("PG path: findMany sorts (whitelist) and paginates with limit/offset", asyn
 });
 
 // ─── FK / RESTRICT behaviours ──────────────────────────────────────────────
+// PostgreSQL 18 reports a RESTRICT action as "violates RESTRICT setting of
+// foreign key constraint"; older versions say "violates foreign key
+// constraint". Both describe the same restriction, so match either.
+const FK_RESTRICT_RE = /violates (?:RESTRICT setting of )?foreign key constraint/;
+
 test("PG path: deleting an inventory_item referenced by damage_notes is RESTRICTED", async () => {
   const item = await createItem();
   const d = await damageNoteService.create(damageBase(item._id));
-  await assert.rejects(inventoryItemRepository.destroy(item._id), /violates foreign key constraint/);
+  await assert.rejects(inventoryItemRepository.destroy(item._id), FK_RESTRICT_RE);
   await damageNoteService.destroy(d._id);
   assert.strictEqual(await inventoryItemRepository.destroy(item._id), true);
 });
@@ -430,7 +435,7 @@ test("PG path: deleting an inventory_batch referenced by damage_notes is RESTRIC
   const item = await createItem();
   const batch = await createBatch(item._id);
   const d = await damageNoteService.create(damageBase(item._id, { batch: batch._id }));
-  await assert.rejects(inventoryBatchRepository.destroy(batch._id), /violates foreign key constraint/);
+  await assert.rejects(inventoryBatchRepository.destroy(batch._id), FK_RESTRICT_RE);
   await damageNoteService.destroy(d._id);
   assert.strictEqual(await inventoryBatchRepository.destroy(batch._id), true);
   assert.strictEqual(await inventoryItemRepository.destroy(item._id), true);

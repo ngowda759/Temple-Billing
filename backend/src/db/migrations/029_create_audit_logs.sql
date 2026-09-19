@@ -1,5 +1,11 @@
 -- Phase 2AB: audit_logs (MongoDB → PostgreSQL migration).
 --
+-- Renumbered 028 → 029 in Phase 2AC: Phase 2AA had already taken the 028
+-- prefix for 028_create_settings.sql, so two migrations shared a number. The
+-- runner sorts filenames, so both applied, but the collision made the intended
+-- apply order ambiguous and would silently reorder the chain if either file was
+-- ever renamed. The SQL below is unchanged.
+--
 -- Mirrors backend/src/models/AuditLog.js and every real usage of the AuditLog
 -- model. Unlike every earlier phase this domain has NO repository and NO
 -- service today: the entire persistence surface is a single controller.
