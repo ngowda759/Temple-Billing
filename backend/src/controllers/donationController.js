@@ -1,4 +1,4 @@
-const Donation = require("../models/Donation");
+const donationService = require("../services/donationService");
 const Bill = require("../models/Bill");
 
 // CREATE DONATION
@@ -39,7 +39,7 @@ const createDonation = async (req, res) => {
       });
     }
 
-    const donation = await Donation.create({
+    const donation = await donationService.create({
       donorName: donorName.trim(),
       donorEmail: donorEmail ? String(donorEmail).trim().toLowerCase() : undefined,
       contactNumber,
@@ -107,7 +107,7 @@ const createDonation = async (req, res) => {
 // GET ALL DONATIONS
 const getAllDonations = async (req, res) => {
   try {
-    const donations = await Donation.find().sort({ createdAt: -1 });
+    const donations = await donationService.findMany({ sort: { createdAt: -1 } });
 
     res.status(200).json({
       success: true,
@@ -127,7 +127,7 @@ const getAllDonations = async (req, res) => {
 // GET DASHBOARD STATS
 const getDonationStats = async (req, res) => {
   try {
-    const donations = await Donation.find();
+    const donations = await donationService.findMany({ sort: { createdAt: -1 } });
 
     const totalAmount = donations.reduce(
       (acc, item) => acc + (Number(item.amount) || 0),
@@ -161,7 +161,7 @@ const getDonationStats = async (req, res) => {
 // DELETE DONATION
 const deleteDonation = async (req, res) => {
   try {
-    const donation = await Donation.findById(req.params.id);
+    const donation = await donationService.findById(req.params.id);
 
     if (!donation) {
       return res.status(404).json({
@@ -170,7 +170,7 @@ const deleteDonation = async (req, res) => {
       });
     }
 
-    await donation.deleteOne();
+    await donationService.destroy(donation._id);
     await Bill.deleteMany({ sourceId: donation._id.toString() });
 
     res.status(200).json({
@@ -189,7 +189,7 @@ const deleteDonation = async (req, res) => {
 const updateDonationStatus = async (req, res) => {
   try {
     const { status } = req.body;
-    const donation = await Donation.findById(req.params.id);
+    const donation = await donationService.findById(req.params.id);
     if (!donation) {
       return res.status(404).json({
         success: false,
@@ -198,8 +198,7 @@ const updateDonationStatus = async (req, res) => {
     }
 
     const previousStatus = donation.status;
-    donation.status = status;
-    await donation.save();
+    const updatedDonation = await donationService.updateById(donation._id, { status });
 
     // Sync bill ledger status as well
     await Bill.updateMany(
@@ -235,7 +234,7 @@ const updateDonationStatus = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Donation status updated successfully",
-      donation,
+      donation: updatedDonation || donation,
     });
   } catch (error) {
     res.status(500).json({
