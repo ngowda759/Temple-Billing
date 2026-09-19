@@ -5,6 +5,11 @@ const crypto = require("crypto");
 
 const newId = () => crypto.randomBytes(12).toString("hex");
 
+// Optional pooled client supplied by a service-level unit of work. When given,
+// the query joins the caller's PostgreSQL transaction instead of checking out
+// its own connection. Repositories never probe PostgreSQL themselves.
+const run = (sql, params, client) => (client ? client.query(sql, params) : query(sql, params));
+
 // Mirrors the enums declared in backend/src/models/AccountTransaction.js.
 const TRANSACTION_TYPES = new Set(["Credit", "Debit"]);
 const SOURCES = new Set([
@@ -199,10 +204,10 @@ const buildTxFilter = (filter) => {
   return { where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", values };
 };
 
-const findById = async (id) => {
+const findById = async (id, client) => {
   if (!id) return null;
   if (dbConfig.isDbConnected()) {
-    const { rows } = await query(`SELECT ${TX_COLS.join(", ")} FROM account_transactions WHERE id = $1 LIMIT 1`, [String(id)]);
+    const { rows } = await run(`SELECT ${TX_COLS.join(", ")} FROM account_transactions WHERE id = $1 LIMIT 1`, [String(id)], client);
     return toDoc(rows[0]);
   }
   return AccountTransaction.findById(String(id));
@@ -228,15 +233,15 @@ const findMany = async (options = {}) => {
   return rows.map(toDoc);
 };
 
-const findOne = async (filter = {}) => {
+const findOne = async (filter = {}, client) => {
   if (!dbConfig.isDbConnected()) return AccountTransaction.findOne(filter);
   const { where, values } = buildTxFilter(filter);
   if (!where) return null;
-  const { rows } = await query(`SELECT ${TX_COLS.join(", ")} FROM account_transactions ${where} ORDER BY created_at DESC LIMIT 1`, values);
+  const { rows } = await run(`SELECT ${TX_COLS.join(", ")} FROM account_transactions ${where} ORDER BY created_at DESC LIMIT 1`, values, client);
   return toDoc(rows[0]);
 };
 
-const create = async (data) => {
+const create = async (data, client) => {
   assertEnum(data.transactionType, TRANSACTION_TYPES, "transactionType");
   assertEnum(data.source, SOURCES, "source");
   assertEnum(data.paymentMethod, PAYMENT_METHODS, "paymentMethod");
@@ -247,13 +252,16 @@ const create = async (data) => {
   const id = data.id || newId();
   const row = toRow(data, id);
   if (dbConfig.isDbConnected()) {
-    await query(
+    const { rows } = await run(
       `INSERT INTO account_transactions (${TX_COLS.join(", ")})
        VALUES (${TX_COLS.map((_, i) => `$${i + 1}`).join(", ")})
-       ON CONFLICT (id) DO NOTHING`,
-      TX_COLS.map((col) => row[col])
+       ON CONFLICT (id) DO NOTHING
+       RETURNING ${TX_COLS.join(", ")}`,
+      TX_COLS.map((col) => row[col]),
+      client
     );
-    const existing = await findById(id);
+    if (rows[0]) return toDoc(rows[0]);
+    const existing = await findById(id, client);
     if (existing) return existing;
   } else {
     return AccountTransaction.create(data);

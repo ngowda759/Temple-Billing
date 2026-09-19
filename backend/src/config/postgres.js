@@ -108,6 +108,25 @@ const isPostgresConnected = async () => {
 
 const query = (text, params) => getPool().query(text, params);
 
+// Runs `fn` inside ONE PostgreSQL transaction on a single pooled client.
+// `fn` receives the client so every repository call in the unit of work shares
+// the same connection. Repositories stay datasource-agnostic: they forward the
+// optional client to `query` and never probe PostgreSQL themselves.
+const runInTransaction = async (fn) => {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 const closePostgres = async () => {
   if (pool) {
     await pool.end();
@@ -121,5 +140,6 @@ module.exports = {
   isPostgresConnected,
   hasPostgresConfig,
   query,
+  runInTransaction,
   closePostgres,
 };

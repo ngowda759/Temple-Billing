@@ -1,6 +1,8 @@
 const dbConfig = require("../config/db");
+const { isPostgresConnected, runInTransaction } = require("../config/postgres");
 const AccountTransaction = require("../models/AccountTransaction");
 const accountTransactionRepository = require("../repositories/accountTransactionRepository");
+const accountHeadRepository = require("../repositories/accountHeadRepository");
 const accountHeadService = require("./accountHeadService");
 
 const TRANSACTION_TYPES = new Set(["Credit", "Debit"]);
@@ -14,6 +16,20 @@ const ACCOUNT_TRANSACTION_SOURCES = new Set([
 ]);
 
 const isConnected = () => dbConfig.isDbConnected();
+
+// The explicit PostgreSQL gate: PostgreSQL is used when the datasource seam is
+// connected AND PostgreSQL is actually reachable. Reading the seam through the
+// config module keeps it switchable at call time; the reachability check means
+// an unreachable PostgreSQL can never break a transaction recording nor leave
+// partial accounting state — the Mongoose model takes over instead.
+const usePostgres = async () => {
+  if (!dbConfig.isDbConnected()) return false;
+  try {
+    return await isPostgresConnected();
+  } catch {
+    return false;
+  }
+};
 
 const getFinancialYear = (date) => {
   const d = date ? new Date(date) : new Date();
@@ -78,10 +94,29 @@ const ensureAccountHead = async ({ category, transactionType, recordedBy }) => {
 };
 
 /**
+ * Ensures the account head exists using the SAME PostgreSQL client as the
+ * transaction insert, so both statements commit or roll back together. A
+ * concurrent auto-create that loses the account_heads_name_key race aborts the
+ * unit of work rather than leaving a head without its transaction.
+ */
+const ensureAccountHeadInTx = async (client, { category, transactionType, recordedBy }) => {
+  const existing = await accountHeadRepository.findByName(category, client);
+  if (existing) return existing;
+  return accountHeadRepository.create({
+    name: category,
+    type: transactionType === "Credit" ? "Income" : "Expense",
+    description: `Auto-generated head for ${category}`,
+    isActive: true,
+    createdBy: recordedBy,
+  }, client);
+};
+
+/**
  * Records a transaction, mirroring accountingService.recordTransaction semantics:
  * idempotency check on (referenceId, referenceModel, category), auto-creation of
  * missing account heads, and derived financial year. Calls the PostgreSQL
- * repository when connected and falls back to the Mongo model otherwise.
+ * repository when PostgreSQL is selected and reachable and falls back to the
+ * Mongo model otherwise.
  */
 const recordTransaction = async (payload) => {
   const {
@@ -104,8 +139,10 @@ const recordTransaction = async (payload) => {
 
   assertAmount(amount);
 
+  const pg = await usePostgres();
+
   if (referenceId && referenceModel && category) {
-    const existing = isConnected()
+    const existing = pg
       ? await accountTransactionRepository.findOne({
           referenceId,
           referenceModel,
@@ -124,10 +161,6 @@ const recordTransaction = async (payload) => {
   }
 
   const financialYear = getFinancialYear(date);
-
-  if (category) {
-    await ensureAccountHead({ category, transactionType, recordedBy });
-  }
 
   const transactionData = {
     transactionType,
@@ -148,30 +181,42 @@ const recordTransaction = async (payload) => {
     recordedBy,
   };
 
-  if (isConnected()) {
-    return accountTransactionRepository.create(transactionData);
+  if (!pg) {
+    if (category) {
+      await ensureAccountHead({ category, transactionType, recordedBy });
+    }
+    return AccountTransaction.create(transactionData);
   }
-  return AccountTransaction.create(transactionData);
+
+  // One PostgreSQL transaction: the account-head write and the ledger write
+  // share a single client, so a failure in either leaves no partial accounting
+  // state.
+  return runInTransaction(async (client) => {
+    if (category) {
+      await ensureAccountHeadInTx(client, { category, transactionType, recordedBy });
+    }
+    return accountTransactionRepository.create(transactionData, client);
+  });
 };
 
 const findById = async (id) =>
-  isConnected() ? accountTransactionRepository.findById(id) : AccountTransaction.findById(id);
+  (await usePostgres()) ? accountTransactionRepository.findById(id) : AccountTransaction.findById(id);
 
 const findMany = async (options = {}) =>
-  isConnected() ? accountTransactionRepository.findMany(options) : AccountTransaction.find(options.filter || {}).sort(options.sort || { date: -1 });
+  (await usePostgres()) ? accountTransactionRepository.findMany(options) : AccountTransaction.find(options.filter || {}).sort(options.sort || { date: -1 });
 
 const updateById = async (id, updates) => {
   if (updates && updates.amount !== undefined) assertAmount(updates.amount);
-  return isConnected()
+  return (await usePostgres())
     ? accountTransactionRepository.updateById(id, updates)
     : AccountTransaction.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
 };
 
 const count = async (filter = {}) =>
-  isConnected() ? accountTransactionRepository.count(filter) : AccountTransaction.countDocuments(filter);
+  (await usePostgres()) ? accountTransactionRepository.count(filter) : AccountTransaction.countDocuments(filter);
 
 const destroy = async (id) =>
-  isConnected() ? accountTransactionRepository.destroy(id) : Boolean(await AccountTransaction.findByIdAndDelete(id));
+  (await usePostgres()) ? accountTransactionRepository.destroy(id) : Boolean(await AccountTransaction.findByIdAndDelete(id));
 
 module.exports = {
   getFinancialYear,
@@ -183,4 +228,5 @@ module.exports = {
   count,
   destroy,
   isConnected,
+  usePostgres,
 };

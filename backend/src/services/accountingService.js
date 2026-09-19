@@ -1,5 +1,4 @@
-const AccountTransaction = require("../models/AccountTransaction");
-const AccountHead = require("../models/AccountHead");
+const accountTransactionService = require("./accountTransactionService");
 
 /**
  * Gets the financial year (e.g., "2026-2027") for a given date.
@@ -40,79 +39,11 @@ const getFinancialYear = (date) => {
  */
 const recordTransaction = async (payload) => {
   try {
-    const {
-      transactionType,
-      source,
-      category,
-      amount,
-      date = new Date(),
-      paymentMethod = "System",
-      status = "Completed",
-      description,
-      receiptNumber,
-      invoiceNumber,
-      referenceId,
-      referenceModel,
-      cashierId,
-      cashierName,
-      recordedBy,
-    } = payload;
+    const { amount } = payload || {};
 
     if (!amount || amount <= 0) return null;
 
-    // Idempotency check: if a transaction with the same referenceId, referenceModel, and category already exists, do not duplicate.
-    if (referenceId && referenceModel && category) {
-      const existing = await AccountTransaction.findOne({
-        referenceId,
-        referenceModel,
-        category,
-        status: { $in: ["Completed", "Approved", "Pending Approval"] }
-      });
-      
-      if (existing) {
-        console.log(`[Accounting] Transaction for ${referenceModel} ${referenceId} in ${category} already exists. Skipping duplicate.`);
-        return existing;
-      }
-    }
-
-    const financialYear = getFinancialYear(date);
-
-    // Make sure the account head exists. (Optional, if we want strict relation, but currently category is just a string).
-    // We can auto-create the head if it's not found to ensure reports are clean.
-    if (category) {
-      const head = await AccountHead.findOne({ name: category });
-      if (!head) {
-        await AccountHead.create({
-          name: category,
-          type: transactionType === "Credit" ? "Income" : "Expense",
-          description: `Auto-generated head for ${category}`,
-          isActive: true,
-          createdBy: recordedBy,
-        });
-      }
-    }
-
-    const transaction = new AccountTransaction({
-      transactionType,
-      source,
-      category,
-      amount,
-      date,
-      financialYear,
-      paymentMethod,
-      status,
-      description,
-      receiptNumber,
-      invoiceNumber,
-      referenceId,
-      referenceModel,
-      cashierId,
-      cashierName,
-      recordedBy,
-    });
-
-    await transaction.save();
-    return transaction;
+    return await accountTransactionService.recordTransaction(payload);
   } catch (error) {
     console.error("[Accounting Service] Failed to record transaction:", error);
     throw error;
