@@ -13,7 +13,7 @@ const User = require("../models/User");
 const PrasadamOrder = require("../models/PrasadamOrder");
 const prasadamService = require("../services/prasadamService");
 const Bill = require("../models/Bill");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const fileUserStore = require("../store/fileUserStore");
 const fileBookingStore = require("../store/fileBookingStore");
 const fileDonationStore = require("../store/fileDonationStore");
@@ -177,7 +177,7 @@ const getBookings = async (req, res) => {
   try {
     const email = normalizeEmail(req.query.email);
     let bookings;
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       bookings = email
         ? await Booking.find(buildEmailLookup("devoteeEmail", email)).sort({ createdAt: -1 })
         : await Booking.find().sort({ createdAt: -1 });
@@ -333,7 +333,7 @@ const createBooking = async (req, res) => {
     }
 
     let finalAssignedPriest = assignedPriest;
-    if (!finalAssignedPriest && isDbConnected()) {
+    if (!finalAssignedPriest && dbConfig.isDbConnected()) {
       // Find eligible priests
       const poojaDoc = await poojaService.findOne({ name: service });
       if (poojaDoc) {
@@ -349,7 +349,7 @@ const createBooking = async (req, res) => {
            // Keep unassigned for manual admin assignment
         }
       }
-    } else if (finalAssignedPriest && isDbConnected()) {
+    } else if (finalAssignedPriest && dbConfig.isDbConnected()) {
       const priestEmp = await Employee.findById(finalAssignedPriest);
       if (priestEmp) priestName = priestEmp.name;
     }
@@ -389,7 +389,7 @@ const createBooking = async (req, res) => {
       source: "Online Portal",
     };
 
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       booking = await Booking.create(bookingPayload);
     } else {
       booking = await fileBookingStore.createBooking(bookingPayload);
@@ -464,7 +464,7 @@ const createBooking = async (req, res) => {
     // If this booking is linked to an event and already confirmed, update event aggregates
     if (eventId && booking.status === "Confirmed") {
       try {
-        if (isDbConnected()) {
+        if (dbConfig.isDbConnected()) {
           await eventPersistenceService.incrementById(String(eventId), {
             registrations: 1,
             collection: Number(amount) || 0,
@@ -481,7 +481,7 @@ const createBooking = async (req, res) => {
       }
     }
 
-    if (isDbConnected() && paymentStatus === "Paid") {
+    if (dbConfig.isDbConnected() && paymentStatus === "Paid") {
       try {
         if (isCombined && items && items.length > 0) {
           for (const item of items) {
@@ -612,7 +612,7 @@ const verifyBookingPayment = async (req, res) => {
       console.warn("Notification after booking verify failed:", notifErr);
     }
 
-    if (isDbConnected() && booking.paymentStatus === "Paid") {
+    if (dbConfig.isDbConnected() && booking.paymentStatus === "Paid") {
       try {
         if (booking.isCombined && booking.items && booking.items.length > 0) {
           for (const item of booking.items) {
@@ -672,7 +672,7 @@ const getDonations = async (req, res) => {
   try {
     const email = normalizeEmail(req.query.email);
     let donations;
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       donations = email
         ? await Donation.find(buildEmailLookup("donorEmail", email)).sort({ createdAt: -1 })
         : await Donation.find().sort({ createdAt: -1 });
@@ -738,7 +738,7 @@ const createDonation = async (req, res) => {
       donatedBy: donatedBy || undefined,
     };
 
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       donation = await Donation.create(donationPayload);
     } else {
       donation = await fileDonationStore.createDonation(donationPayload);
@@ -779,7 +779,7 @@ const createDonation = async (req, res) => {
         key: process.env.RAZORPAY_KEY_ID || "",
         simulated: false,
       });
-    } else if (isDbConnected() && paymentStatus === "Paid") {
+    } else if (dbConfig.isDbConnected() && paymentStatus === "Paid") {
       // Offline paid donation
       await recordTransaction({
         transactionType: "Credit",
@@ -823,7 +823,7 @@ const createDonation = async (req, res) => {
     // If donation is linked to an event, increment the event's collection
     if (eventId) {
       try {
-        if (isDbConnected()) {
+        if (dbConfig.isDbConnected()) {
           await eventPersistenceService.incrementById(String(eventId), { collection: numericAmount });
         }
       } catch (err) {
@@ -845,7 +845,7 @@ const getNotifications = async (req, res) => {
   try {
     const email = normalizeEmail(req.query.email);
     
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       if (email) {
         let user = await User.findOne(buildEmailLookup("email", email)).select("_id role").lean();
         const userId = user?._id?.toString?.() || user?.id;
@@ -896,7 +896,7 @@ const getProfile = async (req, res) => {
     if (req.query.email) {
       const normalizedEmail = normalizeEmail(req.query.email);
       let user = null;
-      if (isDbConnected()) {
+      if (dbConfig.isDbConnected()) {
         user = await User.findOne(buildEmailLookup("email", normalizedEmail)).select("-password");
       } else {
         user = await fileUserStore.findUserByEmail(normalizedEmail);
@@ -940,7 +940,7 @@ const getProfile = async (req, res) => {
 
 const getEvents = async (req, res) => {
   try {
-    if (!isDbConnected()) {
+    if (!dbConfig.isDbConnected()) {
       console.warn("getEvents: DB not connected, returning empty list");
       return res.status(200).json({ events: [] });
     }
@@ -1056,7 +1056,7 @@ const createEvent = async (req, res) => {
 
 const getFestivalOverview = async (req, res) => {
   try {
-    if (!isDbConnected()) {
+    if (!dbConfig.isDbConnected()) {
       console.warn("getFestivalOverview: DB not connected, returning defaults");
       return res.status(200).json({
         upcomingFestivals: 0,
@@ -1323,7 +1323,7 @@ const updateProfile = async (req, res) => {
       return Number.isNaN(d.getTime()) ? "2025" : String(d.getFullYear());
     };
 
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       user = await User.findOne(buildEmailLookup("email", normalizedCurrentEmail));
       if (!user) {
         return res.status(404).json({ error: "Profile not found." });
@@ -1794,7 +1794,7 @@ const cancelPrasadamOrder = async (req, res) => {
 // Create a Razorpay order and a pending Donation record
 const createRazorpayOrder = async (req, res) => {
   try {
-    if (!isDbConnected()) return res.status(500).json({ error: "Database not connected." });
+    if (!dbConfig.isDbConnected()) return res.status(500).json({ error: "Database not connected." });
 
     const { amount, donorName, donorEmail, donorPhone, category = "General", paymentMethod = "UPI", notes, eventId } = req.body;
     const normalizedDonorEmail = normalizeEmail(donorEmail);
@@ -1967,7 +1967,7 @@ const verifyRazorpayPayment = async (req, res) => {
       console.warn("Notification after verify failed:", notifErr);
     }
 
-    if (isDbConnected() && donation.status === "Completed") {
+    if (dbConfig.isDbConnected() && donation.status === "Completed") {
       try {
         await recordTransaction({
           transactionType: "Credit",

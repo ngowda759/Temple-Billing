@@ -1,5 +1,5 @@
 const { query } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const InventoryItem = require("../models/InventoryItem");
 const crypto = require("crypto");
 
@@ -332,13 +332,13 @@ const validateUpdates = (updates) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (!isDbConnected()) return InventoryItem.findById(String(id));
+  if (!dbConfig.isDbConnected()) return InventoryItem.findById(String(id));
   const { rows } = await query(`SELECT ${INVENTORY_ITEM_COLS.join(", ")} FROM inventory_items WHERE id = $1 LIMIT 1`, [String(id)]);
   return toDoc(rows[0]);
 };
 
 const findOne = async (filter = {}) => {
-  if (!isDbConnected()) return InventoryItem.findOne(filter);
+  if (!dbConfig.isDbConnected()) return InventoryItem.findOne(filter);
   const { where, values } = buildInventoryItemFilter(filter);
   // Mongoose findOne({}) returns the first document; we mirror that rather
   // than treating an empty filter as no-match.
@@ -348,7 +348,7 @@ const findOne = async (filter = {}) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { name: 1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = InventoryItem.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -373,7 +373,7 @@ const findMany = async (options = {}) => {
  */
 const create = async (data) => {
   assertValidCreate(data);
-  if (!isDbConnected()) return InventoryItem.create(data);
+  if (!dbConfig.isDbConnected()) return InventoryItem.create(data);
 
   const id = data.id || newId();
   const row = toRow(data, id);
@@ -393,7 +393,7 @@ const updateById = async (id, updates = {}) => {
   }
   validateUpdates(updates);
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return InventoryItem.findByIdAndUpdate(String(id), updates, { new: true, runValidators: true });
   }
 
@@ -476,7 +476,7 @@ const updateById = async (id, updates = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return InventoryItem.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return InventoryItem.countDocuments(filter);
   const { where, values } = buildInventoryItemFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM inventory_items ${where}`, values);
   return rows[0]?.count || 0;
@@ -484,7 +484,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (!isDbConnected()) return Boolean(await InventoryItem.findByIdAndDelete(String(id)));
+  if (!dbConfig.isDbConnected()) return Boolean(await InventoryItem.findByIdAndDelete(String(id)));
   const { rows } = await query(`DELETE FROM inventory_items WHERE id = $1 RETURNING id`, [String(id)]);
   return rows.length > 0;
 };
@@ -494,7 +494,7 @@ const destroy = async (id) => {
 // idx_inventory_items_name_lower index for lower(name).
 const findByName = async (name) => {
   if (!name) return null;
-  if (!isDbConnected()) return InventoryItem.findOne({ name: { $regex: new RegExp(`^${String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") } });
+  if (!dbConfig.isDbConnected()) return InventoryItem.findOne({ name: { $regex: new RegExp(`^${String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") } });
   const { rows } = await query(
     `SELECT ${INVENTORY_ITEM_COLS.join(", ")} FROM inventory_items WHERE lower(name) = lower($1) ORDER BY name ASC, id ASC`,
     [String(name).trim()]

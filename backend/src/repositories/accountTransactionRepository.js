@@ -1,5 +1,5 @@
 const { query } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const AccountTransaction = require("../models/AccountTransaction");
 const crypto = require("crypto");
 
@@ -201,7 +201,7 @@ const buildTxFilter = (filter) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`SELECT ${TX_COLS.join(", ")} FROM account_transactions WHERE id = $1 LIMIT 1`, [String(id)]);
     return toDoc(rows[0]);
   }
@@ -210,7 +210,7 @@ const findById = async (id) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { date: -1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = AccountTransaction.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -229,7 +229,7 @@ const findMany = async (options = {}) => {
 };
 
 const findOne = async (filter = {}) => {
-  if (!isDbConnected()) return AccountTransaction.findOne(filter);
+  if (!dbConfig.isDbConnected()) return AccountTransaction.findOne(filter);
   const { where, values } = buildTxFilter(filter);
   if (!where) return null;
   const { rows } = await query(`SELECT ${TX_COLS.join(", ")} FROM account_transactions ${where} ORDER BY created_at DESC LIMIT 1`, values);
@@ -246,7 +246,7 @@ const create = async (data) => {
 
   const id = data.id || newId();
   const row = toRow(data, id);
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     await query(
       `INSERT INTO account_transactions (${TX_COLS.join(", ")})
        VALUES (${TX_COLS.map((_, i) => `$${i + 1}`).join(", ")})
@@ -270,7 +270,7 @@ const updateById = async (id, updates = {}) => {
   assertEnum(updates.referenceModel, REFERENCE_MODELS, "referenceModel");
   assertAmount(updates.amount);
 
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const existing = await findById(id);
     if (!existing?._id) return null;
 
@@ -313,7 +313,7 @@ const updateById = async (id, updates = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return AccountTransaction.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return AccountTransaction.countDocuments(filter);
   const { where, values } = buildTxFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM account_transactions ${where}`, values);
   return rows[0]?.count || 0;
@@ -321,7 +321,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`DELETE FROM account_transactions WHERE id = $1 RETURNING id`, [String(id)]);
     return rows.length > 0;
   }

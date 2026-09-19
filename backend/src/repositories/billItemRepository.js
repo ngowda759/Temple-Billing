@@ -1,5 +1,5 @@
 const { query } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const Bill = require("../models/Bill");
 const crypto = require("crypto");
 
@@ -55,7 +55,7 @@ const toItem = (row) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const bill = await Bill.findOne({ "items._id": String(id) }, { "items.$": 1 });
     return bill && bill.items && bill.items[0] ? bill.items[0] : null;
   }
@@ -65,7 +65,7 @@ const findById = async (id) => {
 
 const findByBillId = async (billId) => {
   if (!billId) return [];
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const bill = await Bill.findById(String(billId)).select("items");
     return bill && Array.isArray(bill.items) ? bill.items : [];
   }
@@ -78,7 +78,7 @@ const findByBillId = async (billId) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = Bill.find(filter.billId ? { _id: filter.billId } : {});
     const docs = await q;
     const items = docs.flatMap((d) => (Array.isArray(d.items) ? d.items : []));
@@ -110,7 +110,7 @@ const create = async (data) => {
   assertAmount(data.amount);
   const id = data.id || newId();
   const row = toRow(data, data.billId, id);
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     await query(
       `INSERT INTO bill_items (${ITEM_COLS.join(", ")})
        VALUES (${ITEM_COLS.map((_, i) => `$${i + 1}`).join(", ")})
@@ -134,7 +134,7 @@ const updateById = async (id, updates = {}) => {
   if (!id) return null;
   assertItemType(updates.itemType);
   assertAmount(updates.amount);
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const bill = await Bill.findOneAndUpdate(
       { "items._id": String(id) },
       {
@@ -175,7 +175,7 @@ const updateById = async (id, updates = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const docs = await Bill.find(filter.billId ? { _id: filter.billId } : {});
     return docs.reduce((n, d) => n + (Array.isArray(d.items) ? d.items.length : 0), 0);
   }
@@ -194,7 +194,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const bill = await Bill.findOneAndUpdate(
       { "items._id": String(id) },
       { $pull: { items: { _id: String(id) } } },

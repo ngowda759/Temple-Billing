@@ -1,5 +1,5 @@
 const { query, getPool } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const PoojaBooking = require("../models/PoojaBooking");
 const crypto = require("crypto");
 
@@ -286,7 +286,7 @@ const assertEnumOrArray = (value, allowed, label) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`SELECT ${POOJA_BOOKING_COLS.join(", ")} FROM pooja_bookings WHERE id = $1 LIMIT 1`, [String(id)]);
     return await attachChildren(toDoc(rows[0]));
   }
@@ -294,7 +294,7 @@ const findById = async (id) => {
 };
 
 const findOne = async (filter = {}) => {
-  if (!isDbConnected()) return PoojaBooking.findOne(filter);
+  if (!dbConfig.isDbConnected()) return PoojaBooking.findOne(filter);
   const { where, values } = buildPoojaBookingFilter(filter);
   if (!where) return null;
   const { rows } = await query(`SELECT ${POOJA_BOOKING_COLS.join(", ")} FROM pooja_bookings ${where} ORDER BY created_at DESC, id DESC LIMIT 1`, values);
@@ -303,7 +303,7 @@ const findOne = async (filter = {}) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { createdAt: -1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = PoojaBooking.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -320,7 +320,7 @@ const findMany = async (options = {}) => {
 };
 
 const findOneByBookingNumber = async (bookingNumber) =>
-  isDbConnected()
+  dbConfig.isDbConnected()
     ? findOne({ bookingNumber: String(bookingNumber).trim() })
     : PoojaBooking.findOne({ bookingNumber: String(bookingNumber).trim() });
 
@@ -346,7 +346,7 @@ const create = async (data) => {
 
   const materialEntries = Array.isArray(data.templeMaterialRequests) ? data.templeMaterialRequests : [];
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return PoojaBooking.create(data);
   }
 
@@ -387,7 +387,7 @@ const updateById = async (id, updates = {}) => {
   if (updates.amount !== undefined) assertAmount(updates.amount);
   if (updates.templeMaterialCharge !== undefined) assertAmount(updates.templeMaterialCharge);
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return PoojaBooking.findByIdAndUpdate(String(id), updates, { new: true, runValidators: true });
   }
 
@@ -422,7 +422,7 @@ const updateById = async (id, updates = {}) => {
   // bind a JS object as a single parameter.
   if (updates.priestChecklist !== undefined) apply("priest_checklist", JSON.stringify(updates.priestChecklist || {}));
 
-  const replaceMaterials = updates.templeMaterialRequests !== undefined && isDbConnected();
+  const replaceMaterials = updates.templeMaterialRequests !== undefined && dbConfig.isDbConnected();
 
   if (values.length === 0 && !replaceMaterials) {
     return existing;
@@ -451,7 +451,7 @@ const updateById = async (id, updates = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return PoojaBooking.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return PoojaBooking.countDocuments(filter);
   const { where, values } = buildPoojaBookingFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM pooja_bookings ${where}`, values);
   return rows[0]?.count || 0;
@@ -459,7 +459,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (!isDbConnected()) return Boolean(await PoojaBooking.findByIdAndDelete(String(id)));
+  if (!dbConfig.isDbConnected()) return Boolean(await PoojaBooking.findByIdAndDelete(String(id)));
   const { rows } = await query(`DELETE FROM pooja_bookings WHERE id = $1 RETURNING id`, [String(id)]);
   return rows.length > 0;
 };

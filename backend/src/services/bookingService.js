@@ -1,4 +1,4 @@
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const Booking = require("../models/Booking");
 const bookingRepository = require("../repositories/bookingRepository");
 
@@ -13,7 +13,7 @@ const MATERIAL_STATUSES = new Set([
   "Acknowledged", "Consumed", "Cancelled", "Pending", "Reserved", "Ready",
 ]);
 
-const isConnected = () => isDbConnected();
+const isConnected = () => dbConfig.isDbConnected();
 
 const assertEnum = (value, allowed, label) => {
   if (value === undefined || value === null || value === "") return;

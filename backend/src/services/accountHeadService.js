@@ -1,10 +1,10 @@
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const AccountHead = require("../models/AccountHead");
 const accountHeadRepository = require("../repositories/accountHeadRepository");
 
 const HEAD_TYPES = new Set(["Income", "Expense"]);
 
-const isConnected = () => isDbConnected();
+const isConnected = () => dbConfig.isDbConnected();
 
 /**
  * PostgreSQL-backed account head operations.

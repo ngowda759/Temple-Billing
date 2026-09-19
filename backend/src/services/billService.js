@@ -1,4 +1,4 @@
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const Bill = require("../models/Bill");
 const billRepository = require("../repositories/billRepository");
 const billItemRepository = require("../repositories/billItemRepository");
@@ -7,7 +7,7 @@ const PAYMENT_MODES = new Set(["Cash", "UPI", "Card", "Bank Transfer", "Net Bank
 const STATUSES = new Set(["Paid", "Pending", "Cancelled"]);
 const ITEM_TYPES = new Set(["Pooja", "Donation", "Prasadam", "Room", "Other"]);
 
-const isConnected = () => isDbConnected();
+const isConnected = () => dbConfig.isDbConnected();
 
 const assertEnum = (value, allowed, label) => {
   if (value === undefined || value === null || value === "") return;

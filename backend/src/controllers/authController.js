@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const User = require("../models/User");
 const Employee = require("../models/Employee");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const {
   findUserByEmail: findFileUserByEmail,
   findUserById: findFileUserById,
@@ -43,7 +43,7 @@ const findUserByEmail = async (email) => {
   const normalizedEmail = normalizeDevoteeEmail(email);
   if (!normalizedEmail) return null;
 
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     return User.findOne(buildEmailLookup("email", normalizedEmail));
   }
 
@@ -54,7 +54,7 @@ const findUserByPhone = async (phone) => {
   const trimmedPhone = String(phone || "").trim();
   if (!trimmedPhone) return null;
 
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     return User.findOne({ phone: trimmedPhone });
   }
 
@@ -67,21 +67,21 @@ const findUserByPhone = async (phone) => {
 
 const createUserRecord = async ({ name, email, password, role, phone, address, place }) => {
   const normalizedEmail = normalizeDevoteeEmail(email);
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     return User.create({ name, email: normalizedEmail, password, role, phone, address, place, provider: "local" });
   }
   return createFileUser({ name, email: normalizedEmail, password, role, phone, address, place, provider: "local" });
 };
 
 const updateUserRecord = async (id, updates) => {
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     return User.findByIdAndUpdate(id, updates, { new: true });
   }
   return updateFileUser(id, updates);
 };
 
 const findUserById = async (id) => {
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     return User.findById(id);
   }
   return findFileUserById(id);
@@ -434,7 +434,7 @@ const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Email and password are required" });
     }
 
-    const user = isDbConnected()
+    const user = dbConfig.isDbConnected()
       ? await User.findOne({
           $or: [
             buildEmailLookup("email", normalizedEmail),
@@ -476,7 +476,7 @@ const loginUser = async (req, res) => {
     }
 
     const lastLogin = new Date();
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       user.lastLogin = lastLogin;
       user.status = effectiveStatus;
       if (employee?.photo) user.photo = employee.photo;
@@ -509,7 +509,7 @@ const loginUser = async (req, res) => {
 const getUsersForAdmin = async (req, res) => {
   try {
     let users = [];
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       users = await User.find()
         .select("-password -resetPasswordToken -resetPasswordExpiresAt")
         .sort({ createdAt: -1 });
@@ -550,7 +550,7 @@ const createUserByAdmin = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     let user;
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       user = await User.create({
         name,
         email: normalizedEmail,
@@ -706,7 +706,7 @@ const googleLogin = async (req, res) => {
     let user = await findUserByEmail(normalizedEmail);
     if (!user) {
       const randomPassword = await bcrypt.hash(crypto.randomBytes(16).toString("hex"), 10);
-      if (isDbConnected()) {
+      if (dbConfig.isDbConnected()) {
         user = await User.create({
           name,
           email: normalizedEmail,
@@ -738,7 +738,7 @@ const googleLogin = async (req, res) => {
 const getDevoteesForCashier = async (req, res) => {
   try {
     let users = [];
-    if (isDbConnected()) {
+    if (dbConfig.isDbConnected()) {
       users = await User.find({ role: "devotee" })
         .select("-password -resetPasswordToken -resetPasswordExpiresAt")
         .sort({ createdAt: -1 });

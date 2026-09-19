@@ -1,5 +1,5 @@
 const { query } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const Donation = require("../models/Donation");
 const crypto = require("crypto");
 
@@ -194,13 +194,13 @@ const assertEnumOrArray = (value, allowed, label) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (!isDbConnected()) return Donation.findById(String(id));
+  if (!dbConfig.isDbConnected()) return Donation.findById(String(id));
   const { rows } = await query(`SELECT ${DONATION_COLS.join(", ")} FROM donations WHERE id = $1 LIMIT 1`, [String(id)]);
   return toDoc(rows[0]);
 };
 
 const findOne = async (filter = {}) => {
-  if (!isDbConnected()) return Donation.findOne(filter);
+  if (!dbConfig.isDbConnected()) return Donation.findOne(filter);
   const { where, values } = buildDonationFilter(filter);
   if (!where) return null;
   const { rows } = await query(`SELECT ${DONATION_COLS.join(", ")} FROM donations ${where} ORDER BY created_at DESC LIMIT 1`, values);
@@ -209,7 +209,7 @@ const findOne = async (filter = {}) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { createdAt: -1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = Donation.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -230,7 +230,7 @@ const create = async (data) => {
   assertEnum(data.paymentMethod, PAYMENT_METHODS, "paymentMethod");
   assertEnum(data.status, STATUSES, "status");
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return Donation.create(data);
   }
 
@@ -253,7 +253,7 @@ const updateById = async (id, updates = {}) => {
   assertEnum(updates.status, STATUSES, "status");
   if (updates.amount !== undefined) assertAmount(updates.amount);
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return Donation.findByIdAndUpdate(String(id), updates, { new: true, runValidators: true });
   }
 
@@ -293,7 +293,7 @@ const updateById = async (id, updates = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return Donation.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return Donation.countDocuments(filter);
   const { where, values } = buildDonationFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM donations ${where}`, values);
   return rows[0]?.count || 0;
@@ -301,7 +301,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (!isDbConnected()) return Boolean(await Donation.findByIdAndDelete(String(id)));
+  if (!dbConfig.isDbConnected()) return Boolean(await Donation.findByIdAndDelete(String(id)));
   const { rows } = await query(`DELETE FROM donations WHERE id = $1 RETURNING id`, [String(id)]);
   return rows.length > 0;
 };

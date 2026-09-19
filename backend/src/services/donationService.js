@@ -1,11 +1,11 @@
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const Donation = require("../models/Donation");
 const donationRepository = require("../repositories/donationRepository");
 
 const PAYMENT_METHODS = new Set(["Cash", "UPI", "Card", "Bank Transfer", "Debit Card", "Credit Card", "Net Banking"]);
 const STATUSES = new Set(["Collected", "Not Collected", "Completed", "Pending", "Failed"]);
 
-const isConnected = () => isDbConnected();
+const isConnected = () => dbConfig.isDbConnected();
 
 const assertEnum = (value, allowed, label) => {
   if (value === undefined || value === null || value === "") return;
