@@ -5,6 +5,11 @@ const crypto = require("crypto");
 
 const newId = () => crypto.randomBytes(12).toString("hex");
 
+// Optional pooled client supplied by a service-level unit of work. When given,
+// the query joins the caller's PostgreSQL transaction instead of checking out
+// its own connection. Repositories never probe PostgreSQL themselves.
+const run = (sql, params, client) => (client ? client.query(sql, params) : query(sql, params));
+
 const HEAD_TYPES = new Set(["Income", "Expense"]);
 
 const assertHeadType = (type) => {
@@ -53,10 +58,10 @@ const findById = async (id) => {
   return AccountHead.findById(String(id));
 };
 
-const findByName = async (name) => {
+const findByName = async (name, client) => {
   if (!name) return null;
   if (dbConfig.isDbConnected()) {
-    const { rows } = await query(`SELECT ${HEAD_COLS.join(", ")} FROM account_heads WHERE name = $1 LIMIT 1`, [String(name)]);
+    const { rows } = await run(`SELECT ${HEAD_COLS.join(", ")} FROM account_heads WHERE name = $1 LIMIT 1`, [String(name)], client);
     return toDoc(rows[0]);
   }
   return AccountHead.findOne({ name: String(name) });
@@ -115,18 +120,24 @@ const buildHeadFilter = (filter) => {
   return { where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", values };
 };
 
-const create = async (data) => {
+const create = async (data, client) => {
   assertHeadType(data.type);
   const id = data.id || newId();
   const row = toRow(data, id);
   if (dbConfig.isDbConnected()) {
-    await query(
+    // `ON CONFLICT (id) DO NOTHING` never reports a duplicate *name*; the name
+    // is resolved by findByName inside the caller's unit of work, and the
+    // account_heads_name_key constraint still rejects a genuine race.
+    const { rows } = await run(
       `INSERT INTO account_heads (${HEAD_COLS.join(", ")})
        VALUES (${HEAD_COLS.map((_, i) => `$${i + 1}`).join(", ")})
-       ON CONFLICT (id) DO NOTHING`,
-      HEAD_COLS.map((col) => row[col])
+       ON CONFLICT (id) DO NOTHING
+       RETURNING ${HEAD_COLS.join(", ")}`,
+      HEAD_COLS.map((col) => row[col]),
+      client
     );
-    const existing = await findById(id);
+    if (rows[0]) return toDoc(rows[0]);
+    const existing = await findById(id, client);
     if (existing) return existing;
   } else {
     return AccountHead.create(data);

@@ -1,10 +1,26 @@
 const dbConfig = require("../config/db");
+const { isPostgresConnected } = require("../config/postgres");
 const AccountHead = require("../models/AccountHead");
 const accountHeadRepository = require("../repositories/accountHeadRepository");
 
 const HEAD_TYPES = new Set(["Income", "Expense"]);
 
 const isConnected = () => dbConfig.isDbConnected();
+
+// The explicit PostgreSQL gate: PostgreSQL is used when the datasource seam is
+// connected AND PostgreSQL is actually reachable. Reading the seam through the
+// config module (rather than a require-time destructure) keeps it switchable at
+// call time; the reachability check means an unreachable PostgreSQL can never
+// break an accounting write nor cause a partial one — the Mongoose model takes
+// over instead. This mirrors the Gate B established in Phase 2G.
+const usePostgres = async () => {
+  if (!dbConfig.isDbConnected()) return false;
+  try {
+    return await isPostgresConnected();
+  } catch {
+    return false;
+  }
+};
 
 /**
  * PostgreSQL-backed account head operations.
@@ -28,11 +44,11 @@ const validate = (data) => {
   }
 };
 
-const create = async (data) => {
+const create = async (data, client) => {
   validate(data);
-  if (!isConnected()) return AccountHead.create(data);
+  if (!(await usePostgres())) return AccountHead.create(data);
   const name = String(data.name).trim();
-  const existing = await accountHeadRepository.findByName(name);
+  const existing = await accountHeadRepository.findByName(name, client);
   if (existing) {
     const error = new Error(`Account head with name "${name}" already exists`);
     error.code = 11000; // mirror Mongo duplicate-key error for route compatibility
@@ -43,17 +59,17 @@ const create = async (data) => {
     name,
     description: data.description ? String(data.description).trim() : undefined,
     isActive: data.isActive !== false,
-  });
+  }, client);
 };
 
 const findById = async (id) =>
-  isConnected() ? accountHeadRepository.findById(id) : AccountHead.findById(id);
+  (await usePostgres()) ? accountHeadRepository.findById(id) : AccountHead.findById(id);
 
 const findByName = async (name) =>
-  isConnected() ? accountHeadRepository.findByName(name) : AccountHead.findOne({ name });
+  (await usePostgres()) ? accountHeadRepository.findByName(name) : AccountHead.findOne({ name });
 
 const findMany = async (options = {}) =>
-  isConnected() ? accountHeadRepository.findMany(options) : AccountHead.find(options.filter || {}).sort(options.sort || { name: 1 });
+  (await usePostgres()) ? accountHeadRepository.findMany(options) : AccountHead.find(options.filter || {}).sort(options.sort || { name: 1 });
 
 const updateById = async (id, updates) => {
   if (updates && updates.type !== undefined && !HEAD_TYPES.has(updates.type)) {
@@ -62,16 +78,16 @@ const updateById = async (id, updates) => {
   if (updates && updates.name !== undefined && !String(updates.name).trim()) {
     throw new Error("Account head name is required");
   }
-  return isConnected()
+  return (await usePostgres())
     ? accountHeadRepository.updateById(id, updates)
     : AccountHead.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
 };
 
 const count = async (filter = {}) =>
-  isConnected() ? accountHeadRepository.count(filter) : AccountHead.countDocuments(filter);
+  (await usePostgres()) ? accountHeadRepository.count(filter) : AccountHead.countDocuments(filter);
 
 const destroy = async (id) =>
-  isConnected() ? accountHeadRepository.destroy(id) : Boolean(await AccountHead.findByIdAndDelete(id));
+  (await usePostgres()) ? accountHeadRepository.destroy(id) : Boolean(await AccountHead.findByIdAndDelete(id));
 
 module.exports = {
   create,
@@ -82,4 +98,5 @@ module.exports = {
   count,
   destroy,
   isConnected,
+  usePostgres,
 };
