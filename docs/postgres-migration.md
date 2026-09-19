@@ -22,13 +22,16 @@ migrated **one at a time** without a big-bang switchover.
 
 ## Current status
 
-**Migrations applied:** 28 files, `backend/src/db/migrations/001`–`028`.
-**PostgreSQL tables created:** 44 `CREATE TABLE` statements across those files
+**Migrations applied:** 29 files, `backend/src/db/migrations/001`–`029`. Phase 2AC
+renumbered `audit_logs` from `028` to `029`: Phase 2AA had already used the `028`
+prefix for `028_create_settings.sql`, so the two shared a number.
+**PostgreSQL tables created:** 45 distinct tables across those files
 (this count includes the Phase 1 `pg_health` probe table; `schema_migrations` is
 created by the runner itself, not by a migration file).
-**Test files:** 51 under `backend/test/`. Most entities have a PostgreSQL-path
-test plus a fallback test (from Phase 2G onward); four cover cross-cutting
-concerns (config, migrate, health, repositories).
+**Test files:** 53 under `backend/test/`, all 53 registered in the `npm test`
+script. Most entities have a PostgreSQL-path test plus a fallback test (from
+Phase 2G onward); several cover cross-cutting concerns (config, migrate, health,
+repositories, and the audit-log pair).
 
 | Phase | Entity / area | Migration file(s) | Documentation |
 |---|---|---|---|
@@ -56,6 +59,7 @@ concerns (config, migrate, health, repositories).
 | 2V | Payroll | `023_create_payroll_records.sql` | [phase 2V](postgres-payroll-phase-2v.md) |
 | 2Z | Prasadam (stock master) | `027_create_prasadams.sql` | [phase 2Z](postgres-prasadam-phase-2z.md) |
 | 2AA | Settings (`AttendanceSetting`, `PriestSetting`) | `028_create_settings.sql` | [phase 2AA](postgres-settings-phase-2aa.md) |
+| 2AB | Audit logs | `029_create_audit_logs.sql` (renumbered from `028` in Phase 2AC) | summarised below |
 
 Phases 2A–2H and 2N were implemented without a dedicated document. Their scope
 is summarised in [Entities without a dedicated document](#entities-without-a-dedicated-document)
