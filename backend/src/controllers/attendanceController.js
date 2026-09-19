@@ -5,7 +5,7 @@ const leaveService = require("../services/leaveService");
 const shiftService = require("../services/shiftService");
 const Task = require("../models/Task");
 const User = require("../models/User");
-const AttendanceSetting = require("../models/AttendanceSetting");
+const attendanceSettingService = require("../services/attendanceSettingService");
 const { createNotification, createStaffNotification } = require("../utils/notificationService");
 const { canMarkAttendanceForStatus } = require("../utils/employeeAccess");
 
@@ -1334,8 +1334,7 @@ exports.markAttendance = async (req, res) => {
       }
     }
 
-    let settings = await AttendanceSetting.findOne();
-    if (!settings) settings = await AttendanceSetting.create({});
+    let settings = await attendanceSettingService.getOrCreate();
 
     let faceVerified = false;
     let locationVerified = false;
