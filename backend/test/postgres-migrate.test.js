@@ -46,6 +46,7 @@ const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS attendance_settings CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pg_health");
   // Phase 2A–2X tables must be dropped too so a fresh run applies the latest DDL.
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS audit_logs CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_material_requirement_items CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_material_requirements CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS pooja_required_materials CASCADE");

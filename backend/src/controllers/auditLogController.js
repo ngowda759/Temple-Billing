@@ -1,19 +1,18 @@
-const AuditLog = require("../models/AuditLog");
+const auditLogService = require("../services/auditLogService");
 
 exports.getAuditLogs = async (req, res) => {
   try {
     const { startDate, endDate, user, action, module } = req.query;
     let query = {};
-    
+
     if (startDate && endDate) {
       query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
     }
     if (user && user !== "All Users") {
-      // Typically we'd expect a User ID, but if the frontend sends name/role, we might need to populate or filter differently.
-      // Let's assume frontend sends User ID for now, or we skip user filtering if it's "All Users".
-      // Wait, if it's name/role, we can populate and then filter, but let's keep it simple.
-      // If we pass an ID, we use it directly:
-      if (user.length === 24) query.user = user; 
+      // Preserved verbatim from the pre-migration controller: the frontend
+      // normally sends a User id, and the filter is applied only when the value
+      // has ObjectId length (24). Any other value deliberately skips the filter.
+      if (user.length === 24) query.user = user;
     }
     if (action && action !== "All Actions") {
       query.action = { $regex: action, $options: "i" };
@@ -22,9 +21,11 @@ exports.getAuditLogs = async (req, res) => {
       query.module = module;
     }
 
-    const logs = await AuditLog.find(query)
-      .sort({ date: -1 })
-      .populate("user", "name role");
+    const logs = await auditLogService.findMany({
+      filter: query,
+      sort: { date: -1 },
+      populate: true,
+    });
 
     res.status(200).json(logs);
   } catch (error) {
@@ -32,9 +33,14 @@ exports.getAuditLogs = async (req, res) => {
   }
 };
 
+/**
+ * Writes an audit record. Failures are swallowed (and logged) exactly as before:
+ * an audit write must never fail the business request that triggered it, on
+ * either datasource.
+ */
 exports.logAudit = async (userId, action, moduleName, details, ipAddress = "127.0.0.1") => {
   try {
-    await AuditLog.create({
+    await auditLogService.create({
       user: userId,
       action,
       module: moduleName,
