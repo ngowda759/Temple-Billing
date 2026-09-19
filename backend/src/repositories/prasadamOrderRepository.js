@@ -1,5 +1,5 @@
 const { query } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const PrasadamOrder = require("../models/PrasadamOrder");
 const crypto = require("crypto");
 
@@ -235,13 +235,13 @@ const buildPrasadamOrderFilter = (filter = {}) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (!isDbConnected()) return PrasadamOrder.findById(String(id));
+  if (!dbConfig.isDbConnected()) return PrasadamOrder.findById(String(id));
   const { rows } = await query(`SELECT ${PRASADAM_ORDER_COLS.join(", ")} FROM prasadam_orders WHERE id = $1 LIMIT 1`, [String(id)]);
   return toDoc(rows[0]);
 };
 
 const findOne = async (filter = {}) => {
-  if (!isDbConnected()) return PrasadamOrder.findOne(filter);
+  if (!dbConfig.isDbConnected()) return PrasadamOrder.findOne(filter);
   const { where, values } = buildPrasadamOrderFilter(filter);
   if (!where) return null;
   const { rows } = await query(`SELECT ${PRASADAM_ORDER_COLS.join(", ")} FROM prasadam_orders ${where} ORDER BY created_at DESC, id DESC LIMIT 1`, values);
@@ -250,7 +250,7 @@ const findOne = async (filter = {}) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { createdAt: -1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = PrasadamOrder.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -288,7 +288,7 @@ const create = async (data) => {
   assertEnum(data.paymentMethod, PAYMENT_METHODS, "paymentMethod");
   assertEnum(data.status, STATUSES, "status");
 
-  if (!isDbConnected()) return PrasadamOrder.create(data);
+  if (!dbConfig.isDbConnected()) return PrasadamOrder.create(data);
 
   const id = data.id || newId();
   const row = toRow(data, id);
@@ -315,7 +315,7 @@ const updateById = async (id, updates = {}) => {
   if (updates.unitPrice !== undefined) assertAmount(updates.unitPrice, "unitPrice");
   if (updates.amount !== undefined) assertAmount(updates.amount, "amount");
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return PrasadamOrder.findByIdAndUpdate(String(id), updates, { new: true, runValidators: true });
   }
 
@@ -362,7 +362,7 @@ const updateById = async (id, updates = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return PrasadamOrder.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return PrasadamOrder.countDocuments(filter);
   const { where, values } = buildPrasadamOrderFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM prasadam_orders ${where}`, values);
   return rows[0]?.count || 0;
@@ -370,7 +370,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (!isDbConnected()) return Boolean(await PrasadamOrder.findByIdAndDelete(String(id)));
+  if (!dbConfig.isDbConnected()) return Boolean(await PrasadamOrder.findByIdAndDelete(String(id)));
   const { rows } = await query(`DELETE FROM prasadam_orders WHERE id = $1 RETURNING id`, [String(id)]);
   return rows.length > 0;
 };

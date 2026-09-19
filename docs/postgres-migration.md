@@ -166,6 +166,34 @@ even when MongoDB is up, and never causes a partial write.
 force and prove the Mongo fallback deterministically. `backend/test/*.test.js`
 (the PostgreSQL-path tests) pin it to `true` against a test database.
 
+### The seam must be read at call time (Phase 2AD)
+
+Because tests switch datasource by reassigning `dbConfig.isDbConnected`, a module
+must never capture it at load time:
+
+```js
+// WRONG — freezes the function at require time; a later pin is invisible.
+const { isDbConnected } = require("../config/db");
+
+// RIGHT — read through the config module on every call.
+const dbConfig = require("../config/db");
+if (dbConfig.isDbConnected()) { /* PostgreSQL path */ }
+```
+
+This is what makes datasource switching testable within a single process. The
+dynamically-selected datasource behaviour is covered by
+`backend/test/postgres-datasource-seam.test.js`.
+
+**Deferred:** repository-level PostgreSQL readiness is intentionally *not*
+implemented. The service-level gate (`usePostgres()`) is the single authoritative
+datasource decision, and repositories consume that decision without performing
+their own connectivity probe. Adding an independent repository-level probe would
+risk split-brain selection (the service choosing PostgreSQL while a repository
+independently concludes PostgreSQL is unavailable) and would add a `SELECT 1`
+round trip to every repository operation. Reconsider only if a later
+architecture requires repositories to be callable without the service-level
+datasource gate.
+
 ## Conventions used across all phases
 
 These were established in Phase 2A and followed consistently since:

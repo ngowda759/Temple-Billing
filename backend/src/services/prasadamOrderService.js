@@ -1,4 +1,4 @@
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const { isPostgresConnected } = require("../config/postgres");
 const PrasadamOrder = require("../models/PrasadamOrder");
 const prasadamOrderRepository = require("../repositories/prasadamOrderRepository");
@@ -16,7 +16,7 @@ const STATUSES = new Set([
 // it exposes the repository datasource-selection seam, which is mongoose's
 // connectivity flag. That flag is what the tests pin to select the PostgreSQL
 // branch deterministically (see test/postgres-repositories.test.js).
-const isConnected = () => isDbConnected();
+const isConnected = () => dbConfig.isDbConnected();
 
 // The explicit PostgreSQL gate for the Prasadam Order path. This is the
 // Phase 2G fallback boundary: the service uses PostgreSQL when the established
@@ -24,7 +24,7 @@ const isConnected = () => isDbConnected();
 // condition fails it routes back to the existing Mongoose model — so an
 // unavailable PostgreSQL can never take the app down nor cause a partial write.
 const usePostgres = async () => {
-  if (!isDbConnected()) return false;
+  if (!dbConfig.isDbConnected()) return false;
   try {
     return await isPostgresConnected();
   } catch {

@@ -1,5 +1,5 @@
 const { query, getPool } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const Booking = require("../models/Booking");
 const crypto = require("crypto");
 
@@ -360,7 +360,7 @@ const buildBookingFilter = (filter = {}) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`SELECT ${BOOKING_COLS.join(", ")} FROM bookings WHERE id = $1 LIMIT 1`, [String(id)]);
     return await attachChildren(toDoc(rows[0]));
   }
@@ -368,7 +368,7 @@ const findById = async (id) => {
 };
 
 const findOne = async (filter = {}) => {
-  if (!isDbConnected()) return Booking.findOne(filter);
+  if (!dbConfig.isDbConnected()) return Booking.findOne(filter);
   const { where, values } = buildBookingFilter(filter);
   if (!where) return null;
   const { rows } = await query(`SELECT ${BOOKING_COLS.join(", ")} FROM bookings ${where} ORDER BY created_at DESC, id DESC LIMIT 1`, values);
@@ -377,7 +377,7 @@ const findOne = async (filter = {}) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { createdAt: -1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = Booking.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -570,7 +570,7 @@ const create = async (data) => {
   const materialEntries = Array.isArray(data.templeMaterialRequests) ? data.templeMaterialRequests : [];
   const itemEntries = normalizeItemsArray(data.items);
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return Booking.create(data);
   }
 
@@ -609,7 +609,7 @@ const updateById = async (id, updates = {}) => {
   if (updates.gst !== undefined) assertAmount(updates.gst);
   if (updates.templeMaterialCharge !== undefined) assertAmount(updates.templeMaterialCharge);
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return Booking.findByIdAndUpdate(String(id), updates, { new: true, runValidators: true });
   }
 
@@ -680,9 +680,9 @@ const updateById = async (id, updates = {}) => {
   if (updates.isCombined !== undefined) apply("is_combined", Boolean(updates.isCombined));
 
   // Child arrays: when provided, replace the normalized rows atomically.
-  const replaceHistory = updates.bookingHistory !== undefined && isDbConnected();
-  const replaceMaterials = updates.templeMaterialRequests !== undefined && isDbConnected();
-  const replaceItems = updates.items !== undefined && isDbConnected();
+  const replaceHistory = updates.bookingHistory !== undefined && dbConfig.isDbConnected();
+  const replaceMaterials = updates.templeMaterialRequests !== undefined && dbConfig.isDbConnected();
+  const replaceItems = updates.items !== undefined && dbConfig.isDbConnected();
 
   if (values.length === 0 && !replaceHistory && !replaceMaterials && !replaceItems) {
     return existing;
@@ -717,7 +717,7 @@ const updateById = async (id, updates = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return Booking.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return Booking.countDocuments(filter);
   const { where, values } = buildBookingFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM bookings ${where}`, values);
   return rows[0]?.count || 0;
@@ -725,7 +725,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (!isDbConnected()) return Boolean(await Booking.findByIdAndDelete(String(id)));
+  if (!dbConfig.isDbConnected()) return Boolean(await Booking.findByIdAndDelete(String(id)));
   const { rows } = await query(`DELETE FROM bookings WHERE id = $1 RETURNING id`, [String(id)]);
   return rows.length > 0;
 };

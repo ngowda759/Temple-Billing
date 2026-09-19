@@ -1,12 +1,12 @@
 const bcrypt = require("bcryptjs");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const userRepository = require("../repositories/userRepository");
 const employeeRepository = require("../repositories/employeeRepository");
 const User = require("../models/User");
 const Employee = require("../models/Employee");
 const { normalizeEmail, buildEmailLookup } = require("../utils/email");
 
-const isConnected = () => isDbConnected();
+const isConnected = () => dbConfig.isDbConnected();
 
 const userToUpsert = (user) => {
   if (!user) return null;

@@ -1,5 +1,5 @@
 const { query } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const Employee = require("../models/Employee");
 const crypto = require("crypto");
 
@@ -162,7 +162,7 @@ const toRow = (data, id = newId()) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`SELECT ${EMP_COLS.join(", ")} FROM employees WHERE id = $1 LIMIT 1`, [String(id)]);
     return toDoc(rows[0]);
   }
@@ -171,7 +171,7 @@ const findById = async (id) => {
 
 const findByEmployeeId = async (employeeId) => {
   if (!employeeId) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`SELECT ${EMP_COLS.join(", ")} FROM employees WHERE employee_id = $1 LIMIT 1`, [String(employeeId)]);
     return toDoc(rows[0]);
   }
@@ -181,7 +181,7 @@ const findByEmployeeId = async (employeeId) => {
 const findByEmail = async (email) => {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`SELECT ${EMP_COLS.join(", ")} FROM employees WHERE email = $1 LIMIT 1`, [normalized]);
     return toDoc(rows[0]);
   }
@@ -190,12 +190,12 @@ const findByEmail = async (email) => {
 
 const findByIdOrEmployeeId = async (identifier) => {
   if (!identifier) return null;
-  const byId = isDbConnected() ? await findById(identifier) : null;
+  const byId = dbConfig.isDbConnected() ? await findById(identifier) : null;
   if (byId) return byId;
   const byEmpId = await findByEmployeeId(identifier);
   if (byEmpId) return byEmpId;
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const byEmail = await findByEmail(identifier);
     if (byEmail) return byEmail;
   }
@@ -203,7 +203,7 @@ const findByIdOrEmployeeId = async (identifier) => {
 };
 
 const exists = async (filter) => {
-  if (!isDbConnected()) return Boolean(await Employee.exists(filter));
+  if (!dbConfig.isDbConnected()) return Boolean(await Employee.exists(filter));
   const conditions = [];
   const values = [];
   for (const [key, value] of Object.entries(filter || {})) {
@@ -224,7 +224,7 @@ const create = async (data) => {
   const id = data.id || newId();
   assertCurrentDutyPriority(data.currentDuty);
   const row = toRow(data, id);
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     await query(
       `INSERT INTO employees (${EMP_COLS.join(", ")})
        VALUES (${EMP_COLS.map((_, i) => `$${i + 1}`).join(", ")})
@@ -241,7 +241,7 @@ const create = async (data) => {
 
 const updateById = async (id, updates, { returnDoc = true } = {}) => {
   if (!id) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const fields = [];
     const values = [];
     const apply = (dbCol, value) => {
@@ -421,7 +421,7 @@ const buildEmployeeFilter = (filter) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { createdAt: -1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = Employee.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -440,7 +440,7 @@ const findMany = async (options = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return Employee.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return Employee.countDocuments(filter);
   const { where, values } = buildEmployeeFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM employees ${where}`, values);
   return rows[0]?.count || 0;
@@ -448,7 +448,7 @@ const count = async (filter = {}) => {
 
 const removeById = async (id) => {
   if (!id) return false;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`DELETE FROM employees WHERE id = $1 RETURNING id`, [String(id)]);
     return rows.length > 0;
   }
@@ -457,7 +457,7 @@ const removeById = async (id) => {
 
 const destroyUser = async (id) => {
   if (!id) return false;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`DELETE FROM employees WHERE id = $1 RETURNING id`, [String(id)]);
     return rows.length > 0;
   }
@@ -465,7 +465,7 @@ const destroyUser = async (id) => {
 };
 
 const latestEmployeeIdInPrefix = async (prefix) => {
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const doc = await Employee.findOne({ employeeId: { $regex: `^${prefix}` } }).sort({ employeeId: -1 }).select("employeeId").lean();
     return doc?.employeeId || null;
   }

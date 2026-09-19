@@ -1,5 +1,5 @@
 const { query, getPool } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const Bill = require("../models/Bill");
 const billItemRepository = require("./billItemRepository");
 const crypto = require("crypto");
@@ -193,7 +193,7 @@ const normalizeItems = (items) => {
 
 const findById = async (id) => {
   if (!id) return null;
-  if (!isDbConnected()) return Bill.findById(String(id));
+  if (!dbConfig.isDbConnected()) return Bill.findById(String(id));
   const { rows } = await query(`SELECT ${BILL_COLS.join(", ")} FROM bills WHERE id = $1 LIMIT 1`, [String(id)]);
   if (!rows[0]) return null;
   const items = await billItemRepository.findByBillId(rows[0].id);
@@ -201,7 +201,7 @@ const findById = async (id) => {
 };
 
 const findOne = async (filter = {}) => {
-  if (!isDbConnected()) return Bill.findOne(filter);
+  if (!dbConfig.isDbConnected()) return Bill.findOne(filter);
   const { where, values } = buildBillFilter(filter);
   if (!where) return null;
   const { rows } = await query(`SELECT ${BILL_COLS.join(", ")} FROM bills ${where} ORDER BY bill_date DESC, created_at DESC LIMIT 1`, values);
@@ -212,7 +212,7 @@ const findOne = async (filter = {}) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { billDate: -1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = Bill.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -240,7 +240,7 @@ const create = async (data) => {
   assertEnum(data.status, STATUSES, "status");
   const items = normalizeItems(data.items);
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return Bill.create({ ...data, items });
   }
 
@@ -280,7 +280,7 @@ const updateById = async (id, updates = {}) => {
   assertEnum(updates.status, STATUSES, "status");
   if (updates.amount !== undefined) assertAmount(updates.amount);
 
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     return Bill.findByIdAndUpdate(String(id), updates, { new: true, runValidators: true });
   }
 
@@ -337,7 +337,7 @@ const replaceItems = async (billId, items = []) => {
     }
   }
   const normalized = normalizeItems(items);
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const bill = await Bill.findById(String(billId));
     if (!bill) return;
     bill.items = normalized;
@@ -366,7 +366,7 @@ const replaceItems = async (billId, items = []) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return Bill.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return Bill.countDocuments(filter);
   const { where, values } = buildBillFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM bills ${where}`, values);
   return rows[0]?.count || 0;
@@ -374,7 +374,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (!isDbConnected()) return Boolean(await Bill.findByIdAndDelete(String(id)));
+  if (!dbConfig.isDbConnected()) return Boolean(await Bill.findByIdAndDelete(String(id)));
   const { rows } = await query(`DELETE FROM bills WHERE id = $1 RETURNING id`, [String(id)]);
   return rows.length > 0;
 };
@@ -399,7 +399,7 @@ const updateManyBySourceId = async (sourceId, updates = {}) => {
 
 const deleteManyBySourceId = async (sourceId) => {
   if (!sourceId) return 0;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const result = await Bill.deleteMany({ sourceId: String(sourceId) });
     return result.deletedCount || 0;
   }

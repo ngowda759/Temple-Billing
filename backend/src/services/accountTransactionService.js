@@ -1,4 +1,4 @@
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const AccountTransaction = require("../models/AccountTransaction");
 const accountTransactionRepository = require("../repositories/accountTransactionRepository");
 const accountHeadService = require("./accountHeadService");
@@ -13,7 +13,7 @@ const ACCOUNT_TRANSACTION_SOURCES = new Set([
   "Kitchen", "Cleaning",
 ]);
 
-const isConnected = () => isDbConnected();
+const isConnected = () => dbConfig.isDbConnected();
 
 const getFinancialYear = (date) => {
   const d = date ? new Date(date) : new Date();

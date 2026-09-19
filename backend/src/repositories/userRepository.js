@@ -1,6 +1,6 @@
 const { query } = require("../config/postgres");
 const { getEmailAliases } = require("../utils/email");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const User = require("../models/User");
 const {
   findUserByEmail: findFileUserByEmail,
@@ -86,7 +86,7 @@ const pickCols = (cols, includePasswordImplicit = true) => cols.join(", ");
 const findUserByEmail = async (email) => {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const aliases = pickEmailAliases(normalized);
     const { rows } = await query(
       `SELECT ${ROW_COLS.join(", ")} FROM users WHERE email IN (${aliases.map((_, i) => `$${i + 1}`).join(", ")}) ORDER BY created_at ASC LIMIT 1`,
@@ -101,7 +101,7 @@ const findUserByEmail = async (email) => {
 const findUserByPhone = async (phone) => {
   const trimmed = String(phone || "").trim();
   if (!trimmed) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query("SELECT id FROM users WHERE phone = $1 LIMIT 1", [trimmed]);
     if (rows[0]) return { id: rows[0].id };
     return null;
@@ -112,7 +112,7 @@ const findUserByPhone = async (phone) => {
 
 const findUserById = async (id) => {
   if (!id) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(
       `SELECT ${ROW_COLS.join(", ")} FROM users WHERE id = $1 LIMIT 1`,
       [String(id)]
@@ -125,7 +125,7 @@ const findUserById = async (id) => {
 const findByUsernameOrEmail = async (identifier) => {
   const normalized = normalizeEmail(identifier);
   if (!normalized) return Promise.resolve(null);
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const aliases = pickEmailAliases(normalized);
     const { rows } = await query(
       `SELECT ${ROW_COLS.join(", ")} FROM users
@@ -164,7 +164,7 @@ const createUser = async (data) => {
     updatedAt: data.updatedAt || now(),
   };
 
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     await query(
       `INSERT INTO users (${ROW_COLS.join(", ")})
        VALUES (${ROW_COLS.map((_, i) => `$${i + 1}`).join(", ")})
@@ -207,7 +207,7 @@ const updateUserById = async (id, updates) => {
   const existing = await findUserById(id);
   if (!existing?._id) return null;
 
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const fields = [];
     const values = [];
     const apply = (dbCol, value) => {
@@ -249,7 +249,7 @@ const updateUserById = async (id, updates) => {
 };
 
 const countUsers = async (filter = {}) => {
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const users = await getAllFileUsers();
     return users.filter((u) => (!filter.role || u.role === filter.role)).length;
   }
@@ -262,7 +262,7 @@ const countUsers = async (filter = {}) => {
 };
 
 const listUsers = async ({ role, excludePassword = true } = {}) => {
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     const users = (await getAllFileUsers()).filter((u) => (!role || u.role === role));
     return excludePassword
       ? users.map((u) => { const { password, ...rest } = u; return rest; })
@@ -281,13 +281,13 @@ const listUsers = async ({ role, excludePassword = true } = {}) => {
 };
 
 const removeFromRole = async (role) => {
-  if (!isDbConnected()) return;
+  if (!dbConfig.isDbConnected()) return;
   await query("UPDATE users SET account_enabled = FALSE WHERE role = $1", [role]);
 };
 
 const destroyUser = async (id) => {
   if (!id) return false;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query("DELETE FROM users WHERE id = $1 RETURNING id", [String(id)]);
     return rows.length > 0;
   }

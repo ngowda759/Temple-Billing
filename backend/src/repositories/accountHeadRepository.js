@@ -1,5 +1,5 @@
 const { query } = require("../config/postgres");
-const { isDbConnected } = require("../config/db");
+const dbConfig = require("../config/db");
 const AccountHead = require("../models/AccountHead");
 const crypto = require("crypto");
 
@@ -46,7 +46,7 @@ const toRow = (data, id = newId()) => ({
 
 const findById = async (id) => {
   if (!id) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`SELECT ${HEAD_COLS.join(", ")} FROM account_heads WHERE id = $1 LIMIT 1`, [String(id)]);
     return toDoc(rows[0]);
   }
@@ -55,7 +55,7 @@ const findById = async (id) => {
 
 const findByName = async (name) => {
   if (!name) return null;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`SELECT ${HEAD_COLS.join(", ")} FROM account_heads WHERE name = $1 LIMIT 1`, [String(name)]);
     return toDoc(rows[0]);
   }
@@ -119,7 +119,7 @@ const create = async (data) => {
   assertHeadType(data.type);
   const id = data.id || newId();
   const row = toRow(data, id);
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     await query(
       `INSERT INTO account_heads (${HEAD_COLS.join(", ")})
        VALUES (${HEAD_COLS.map((_, i) => `$${i + 1}`).join(", ")})
@@ -137,7 +137,7 @@ const create = async (data) => {
 const updateById = async (id, updates = {}) => {
   if (!id) return null;
   assertHeadType(updates.type);
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const existing = await findById(id);
     if (!existing?._id) return null;
 
@@ -168,7 +168,7 @@ const updateById = async (id, updates = {}) => {
 
 const findMany = async (options = {}) => {
   const { filter = {}, sort = { name: 1 }, limit, offset } = options;
-  if (!isDbConnected()) {
+  if (!dbConfig.isDbConnected()) {
     let q = AccountHead.find(filter).sort(sort);
     if (limit) q = q.limit(limit);
     if (offset) q = q.skip(offset);
@@ -185,7 +185,7 @@ const findMany = async (options = {}) => {
 };
 
 const count = async (filter = {}) => {
-  if (!isDbConnected()) return AccountHead.countDocuments(filter);
+  if (!dbConfig.isDbConnected()) return AccountHead.countDocuments(filter);
   const { where, values } = buildHeadFilter(filter);
   const { rows } = await query(`SELECT COUNT(*)::int AS count FROM account_heads ${where}`, values);
   return rows[0]?.count || 0;
@@ -193,7 +193,7 @@ const count = async (filter = {}) => {
 
 const destroy = async (id) => {
   if (!id) return false;
-  if (isDbConnected()) {
+  if (dbConfig.isDbConnected()) {
     const { rows } = await query(`DELETE FROM account_heads WHERE id = $1 RETURNING id`, [String(id)]);
     return rows.length > 0;
   }
