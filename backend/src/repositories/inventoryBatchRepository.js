@@ -1,6 +1,7 @@
 const { query } = require("../config/postgres");
 const dbConfig = require("../config/db");
 const InventoryBatch = require("../models/InventoryBatch");
+const { resolveStatusTransition } = require("../utils/inventoryBatchStatus");
 const crypto = require("crypto");
 
 const newId = () => crypto.randomBytes(12).toString("hex");
@@ -287,13 +288,12 @@ const create = async (data) => {
   const id = data.id || newId();
   const row = toRow(data, id);
 
-  // Mirror of the Mongo pre('save') hook decisions.
-  if (Number(row.current_quantity) === 0 && row.status === "Active") {
-    row.status = "Consumed";
-  }
-  if (row.expiry_date && new Date() > new Date(row.expiry_date) && row.status === "Active") {
-    row.status = "Expired";
-  }
+  // Mirror of the Mongo pre('save') hook decisions (single shared source).
+  row.status = resolveStatusTransition({
+    currentQuantity: row.current_quantity,
+    expiryDate: row.expiry_date,
+    status: row.status,
+  });
 
   await query(
     `INSERT INTO inventory_batches (${INVENTORY_BATCH_COLS.join(", ")})
@@ -370,6 +370,44 @@ const updateById = async (id, updates = {}) => {
   return findById(id);
 };
 
+/**
+ * Applies an update with Mongoose `save()` semantics: the pre('save') status
+ * transition runs against the *post-update* values, exactly as Mongoose does
+ * when a loaded document is mutated and saved.
+ *
+ * This is deliberately separate from `updateById`, which mirrors
+ * `findByIdAndUpdate` and therefore never runs the hook. Callers that mutate a
+ * loaded batch (kitchen consumption, damage, manual status flips) use this
+ * method so the Active → Consumed / Active → Expired invariant keeps firing on
+ * the PostgreSQL path.
+ */
+const updateByIdWithStatusTransition = async (id, updates = {}, now = new Date()) => {
+  if (!id) return null;
+
+  const existing = await findById(id);
+  if (!existing?._id) return null;
+
+  const merged = { ...existing, ...updates };
+  const transitioned = resolveStatusTransition(
+    {
+      currentQuantity: merged.currentQuantity,
+      expiryDate: merged.expiryDate,
+      status: merged.status,
+    },
+    now
+  );
+
+  // An explicit status passed by the caller wins unless it is still the
+  // auto-transitionable 'Active' value, which the hook is allowed to flip —
+  // identical to Mongoose, where the hook reads the document's current status.
+  const nextUpdates = { ...updates };
+  if (transitioned !== merged.status) {
+    nextUpdates.status = transitioned;
+  }
+
+  return updateById(id, nextUpdates);
+};
+
 const count = async (filter = {}) => {
   if (!dbConfig.isDbConnected()) return InventoryBatch.countDocuments(filter);
   const { where, values } = buildInventoryBatchFilter(filter);
@@ -409,6 +447,7 @@ module.exports = {
   findMany,
   create,
   updateById,
+  updateByIdWithStatusTransition,
   count,
   destroy,
   findActiveByItemFifo,
