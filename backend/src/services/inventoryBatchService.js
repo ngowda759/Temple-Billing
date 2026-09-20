@@ -146,6 +146,45 @@ const updateById = async (id, updates) => {
   return InventoryBatch.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
 };
 
+/**
+ * Save-equivalent update: the pre('save') status transition is applied to the
+ * post-update values on BOTH datasources.
+ *
+ * The Mongoose path mirrors the model's own pre('save') hook by loading the
+ * document, applying the changes and calling `save()`. The PostgreSQL path uses
+ * `updateByIdWithStatusTransition`, which runs the same shared transition
+ * predicate. `updateById` above intentionally stays hook-free to preserve
+ * `findByIdAndUpdate` parity.
+ */
+const updateByIdWithStatusTransition = async (id, updates = {}) => {
+  if (updates) {
+    assertEnum(updates.status, STATUSES, "status");
+    if (updates.item !== undefined && updates.item !== null && String(updates.item).trim() === "") {
+      throw new Error("item is required");
+    }
+    if (updates.batchNumber !== undefined && String(updates.batchNumber).trim() === "") {
+      throw new Error("batchNumber is required");
+    }
+    if (updates.originalQuantity !== undefined) assertQuantity(updates.originalQuantity, "originalQuantity");
+    if (updates.currentQuantity !== undefined) assertQuantity(updates.currentQuantity, "currentQuantity");
+    assertPrice(updates.purchasePrice, "purchasePrice");
+  }
+
+  if (await usePostgres()) {
+    return inventoryBatchRepository.updateByIdWithStatusTransition(id, updates);
+  }
+
+  if (!id) return null;
+  const existing = await InventoryBatch.findById(id);
+  if (!existing) return null;
+  for (const [key, value] of Object.entries(updates)) {
+    existing[key] = value;
+  }
+  // save() runs the model's pre('save') hook, which is the same shared
+  // predicate the PostgreSQL path applies.
+  return existing.save();
+};
+
 const count = async (filter = {}) =>
   (await usePostgres()) ? inventoryBatchRepository.count(filter) : InventoryBatch.countDocuments(filter);
 
@@ -172,6 +211,7 @@ module.exports = {
   findOne,
   findMany,
   updateById,
+  updateByIdWithStatusTransition,
   count,
   destroy,
   findActiveByItemFifo,

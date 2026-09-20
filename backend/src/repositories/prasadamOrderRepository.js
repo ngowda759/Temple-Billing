@@ -368,6 +368,88 @@ const count = async (filter = {}) => {
   return rows[0]?.count || 0;
 };
 
+/**
+ * Sales report aggregates for the Prasadam Order domain.
+ *
+ * These move `prasadamController.getSalesReports`' aggregation off the
+ * controller so the read follows the same repository seam as every other
+ * Prasadam Order read, while preserving the exact Mongo semantics:
+ *
+ *   Mongo:  [{ $match: { createdAt: { $gte: from } } },
+ *            { $group: { _id: null, totalRevenue: { $sum: "$amount" },
+ *                        totalOrders: { $sum: 1 } } }]
+ *   PG:     SELECT COALESCE(SUM(amount), 0)::numeric AS total_revenue,
+ *                  COUNT(*)::int AS total_orders
+ *           FROM prasadam_orders WHERE created_at >= $1
+ *
+ * Date semantics match because created_at is TIMESTAMPTZ and the boundary is
+ * passed as the same JS Date the caller already computed. An empty match set
+ * returns zeros from both datasources (Mongo yields an empty array and the
+ * caller substitutes zeros; COALESCE/COUNT yield one zero row here), so the
+ * empty-result shape is identical. Amounts stay NUMERIC in PostgreSQL and are
+ * converted only at the response boundary, so no financial precision is lost.
+ */
+const aggregateSalesTotals = async (from) => {
+  if (!dbConfig.isDbConnected()) {
+    const rows = await PrasadamOrder.aggregate([
+      { $match: { createdAt: { $gte: new Date(from) } } },
+      { $group: { _id: null, totalRevenue: { $sum: "$amount" }, totalOrders: { $sum: 1 } } },
+    ]);
+    const row = rows[0];
+    return {
+      totalRevenue: row ? Number(row.totalRevenue) || 0 : 0,
+      totalOrders: row ? Number(row.totalOrders) || 0 : 0,
+    };
+  }
+
+  const { rows } = await query(
+    `SELECT COALESCE(SUM(amount), 0)::numeric AS total_revenue, COUNT(*)::int AS total_orders
+     FROM prasadam_orders WHERE created_at >= $1`,
+    [new Date(from)]
+  );
+  const row = rows[0] || {};
+  return {
+    totalRevenue: row.total_revenue === null || row.total_revenue === undefined ? 0 : Number(row.total_revenue),
+    totalOrders: row.total_orders || 0,
+  };
+};
+
+/**
+ * Top-selling items by summed quantity since `from`, mirroring:
+ *
+ *   Mongo:  [{ $match }, { $group: { _id: "$itemName",
+ *                                    totalQuantity: { $sum: "$quantity" } } },
+ *            { $sort: { totalQuantity: -1 } }, { $limit: limit }]
+ *   PG:     SELECT item_name, SUM(quantity)::numeric AS total_quantity
+ *           FROM prasadam_orders WHERE created_at >= $1
+ *           GROUP BY item_name ORDER BY total_quantity DESC LIMIT $2
+ *
+ * The response buckets keep the Mongo `{ _id, totalQuantity }` shape so the
+ * endpoint payload is unchanged. Tie ordering is unspecified in both, exactly
+ * as it was before.
+ */
+const aggregateTopSelling = async (from, limit = 5) => {
+  const safeLimit = Math.max(1, Number(limit) || 5);
+
+  if (!dbConfig.isDbConnected()) {
+    const rows = await PrasadamOrder.aggregate([
+      { $match: { createdAt: { $gte: new Date(from) } } },
+      { $group: { _id: "$itemName", totalQuantity: { $sum: "$quantity" } } },
+      { $sort: { totalQuantity: -1 } },
+      { $limit: safeLimit },
+    ]);
+    return rows.map((row) => ({ _id: row._id, totalQuantity: Number(row.totalQuantity) }));
+  }
+
+  const { rows } = await query(
+    `SELECT item_name, SUM(quantity)::numeric AS total_quantity
+     FROM prasadam_orders WHERE created_at >= $1
+     GROUP BY item_name ORDER BY total_quantity DESC LIMIT $2`,
+    [new Date(from), safeLimit]
+  );
+  return rows.map((row) => ({ _id: row.item_name, totalQuantity: Number(row.total_quantity) }));
+};
+
 const destroy = async (id) => {
   if (!id) return false;
   if (!dbConfig.isDbConnected()) return Boolean(await PrasadamOrder.findByIdAndDelete(String(id)));
@@ -383,4 +465,6 @@ module.exports = {
   updateById,
   count,
   destroy,
+  aggregateSalesTotals,
+  aggregateTopSelling,
 };

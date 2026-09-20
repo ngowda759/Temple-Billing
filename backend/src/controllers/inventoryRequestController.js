@@ -2,7 +2,8 @@
 // PostgreSQL when the Inventory Request path is explicitly used and PostgreSQL
 // is reachable, and otherwise falls back to the existing Mongoose model. The
 // standalone request endpoints (create/read/status) go through this seam; the
-// multi-entity flows below document where they intentionally stay on Mongo.
+// multi-entity issue flow stays on Mongo but refuses PostgreSQL-backed requests
+// it cannot yet issue atomically (see exports.issueInventoryRequest).
 const inventoryRequestService = require("../services/inventoryRequestService");
 // Direct model import retained for exports.issueInventoryRequest, which keeps
 // its single Mongo multi-document transaction (InventoryItem +
@@ -256,26 +257,47 @@ exports.updateInventoryRequestStatus = async (req, res) => {
 
 // POST /api/admin/inventory-requests/:id/issue
 //
-// Intentionally stays on the existing Mongoose path (NOT routed through the
-// Phase 2L service). Issuing is a cross-entity business operation: it loads the
-// request, decrements InventoryItem.availableStock / increments
+// Issuing is an atomic cross-entity business operation: it loads the request,
+// decrements InventoryItem.availableStock / increments
 // InventoryItem.issuedStock, writes an InventoryIssue row and sets the
-// request's status to 'Issued' — all inside ONE Mongo multi-document
-// transaction (mongoose.startSession). InventoryIssue is still Mongo-backed
-// (no Phase 2L migration) and the app performs no such atomic cross-entity
-// operation on PostgreSQL, so routing only the request-side of this flow to PG
-// would split the transaction across two databases and lose atomicity. The
-// inventory_requests table/repository is reached through the standalone
-// endpoints only (create / list / summary / approve / reject).
+// request's status to 'Issued', all inside ONE Mongo multi-document
+// transaction (mongoose.startSession).
+//
+// InventoryIssue is still Mongo-backed and PostgreSQL has no inventory_issues
+// table (Phase 2AC audit, "MongoDB-only models"), so a Mongo session and a
+// PostgreSQL pool cannot participate in one atomic unit. Splitting the flow
+// would leave partial state (stock decremented with no issue record, or vice
+// versa), which is worse than not supporting the operation on PostgreSQL.
+// Issuing therefore stays wholly on the Mongoose path and is the single
+// datasource for the whole operation; the standalone request endpoints
+// (create / list / summary / approve / reject) keep the Phase 2L seam.
+//
+// Because create/approve can persist a request to PostgreSQL, this handler
+// refuses an operation it cannot perform correctly instead of failing with a
+// misleading "not found": when the seam selects PostgreSQL and the request
+// exists there, it returns 409 with the explicit limitation.
 exports.issueInventoryRequest = async (req, res) => {
   const mongoose = require("mongoose");
+  const { id } = req.params;
+
+  if (await inventoryRequestService.usePostgres()) {
+    const postgresRequest = await inventoryRequestService.findById(id).catch(() => null);
+    if (postgresRequest) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Issuing is not yet available for requests stored in PostgreSQL: the operation " +
+          "also writes an InventoryIssue record, which has no PostgreSQL table, so it " +
+          "cannot share one transaction. Use the MongoDB path to issue this request.",
+      });
+    }
+  }
+
   const session = await mongoose.startSession();
   
   try {
     let resultRequest, resultIssue;
     await session.withTransaction(async () => {
-      const { id } = req.params;
-      
       const request = await InventoryRequest.findById(id).session(session);
       if (!request) throw new Error("Inventory request not found");
       
