@@ -65,6 +65,16 @@ const createMockRes = () => {
   return res;
 };
 
+const pgQuery = async (sql, params = []) => {
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const { rows } = await pool.query(sql, params);
+    return rows;
+  } finally {
+    await pool.end();
+  }
+};
+
 const orderBase = (overrides = {}) => ({
   channel: "devotee",
   devoteeName: `Radha ${unique()}`,
@@ -291,13 +301,11 @@ test("PG path: admin status update persists on PG and syncs Bill ledger, transac
 
   const originalBillUpdateMany = Bill.updateMany;
   const originalNotificationCreate = notificationPersistenceService.create;
-  const originalTxFindOne = AccountTransaction.findOne;
-  const originalTxSave = AccountTransaction.prototype.save;
+  const originalTxCreate = AccountTransaction.create;
   const originalHeadFindOne = AccountHead.findOne;
   const originalHeadCreate = AccountHead.create;
 
   let billUpdate = null;
-  let txSaved = null;
   let notificationPayload = null;
 
   Bill.updateMany = async (filter, update) => {
@@ -308,10 +316,10 @@ test("PG path: admin status update persists on PG and syncs Bill ledger, transac
     notificationPayload = payload;
     return {};
   };
-  AccountTransaction.findOne = async () => null;
-  AccountTransaction.prototype.save = async function () {
-    txSaved = this.toObject ? this.toObject() : { ...this };
-    return this;
+  // Phase 2AF: the PG path no longer calls AccountTransaction.prototype.save;
+  // if it ever did, the Mongoose write would land here.
+  AccountTransaction.create = async () => {
+    throw new Error("Mongoose AccountTransaction.create must not be used on the PG path");
   };
   AccountHead.findOne = async () => null;
   AccountHead.create = async () => ({});
@@ -332,14 +340,23 @@ test("PG path: admin status update persists on PG and syncs Bill ledger, transac
     assert.strictEqual(billUpdate.filter.sourceId, order._id.toString());
     assert.strictEqual(billUpdate.update.$set.status, "Paid");
 
-    assert.ok(txSaved, "AccountTransaction saved");
-    assert.strictEqual(txSaved.transactionType, "Credit");
-    assert.strictEqual(txSaved.source, "Prasadam");
-    assert.strictEqual(txSaved.category, "Prasadam Sales");
-    // referenceId is a Mongo ObjectId field; the PG hex _id casts cleanly to
-    // the same 24-hex ObjectId, so the reference is preserved.
-    assert.strictEqual(String(txSaved.referenceId), order._id);
-    assert.strictEqual(txSaved.referenceModel, "PrasadamOrder");
+    // The transaction is written to PostgreSQL, not MongoDB.
+    const txRows = await pgQuery(
+      `SELECT transaction_type, source, category, status, reference_id, reference_model, amount::text AS amount
+         FROM account_transactions WHERE reference_id = $1 AND reference_model = 'PrasadamOrder'`,
+      [order._id.toString()]
+    );
+    assert.strictEqual(txRows.length, 1, "exactly one PostgreSQL ledger row was written");
+    assert.strictEqual(txRows[0].transaction_type, "Credit");
+    assert.strictEqual(txRows[0].source, "Prasadam");
+    assert.strictEqual(txRows[0].category, "Prasadam Sales");
+    assert.strictEqual(txRows[0].status, "Completed");
+    assert.strictEqual(txRows[0].reference_model, "PrasadamOrder");
+    assert.strictEqual(String(txRows[0].reference_id), order._id.toString());
+
+    const headRows = await pgQuery("SELECT type FROM account_heads WHERE name = 'Prasadam Sales'");
+    assert.strictEqual(headRows.length, 1, "the account head was created in PostgreSQL");
+    assert.strictEqual(headRows[0].type, "Income");
 
     assert.ok(notificationPayload, "staff notification created");
     assert.strictEqual(notificationPayload.audienceRole, "admin");
@@ -347,8 +364,7 @@ test("PG path: admin status update persists on PG and syncs Bill ledger, transac
   } finally {
     Bill.updateMany = originalBillUpdateMany;
     notificationPersistenceService.create = originalNotificationCreate;
-    AccountTransaction.findOne = originalTxFindOne;
-    AccountTransaction.prototype.save = originalTxSave;
+    AccountTransaction.create = originalTxCreate;
     AccountHead.findOne = originalHeadFindOne;
     AccountHead.create = originalHeadCreate;
   }
@@ -469,24 +485,23 @@ test("PG path: recordTransaction failure in admin update does not revert the PG 
   const admin = require("../src/controllers/prasadamAdminController");
   const Bill = require("../src/models/Bill");
   const notificationPersistenceService = require("../src/services/notificationPersistenceService");
-  const AccountTransaction = require("../src/models/AccountTransaction");
-  const AccountHead = require("../src/models/AccountHead");
+  const accountTransactionService = require("../src/services/accountTransactionService");
 
   const order = await svc.create(orderBase());
 
   const originalBillUpdateMany = Bill.updateMany;
   const originalNotificationCreate = notificationPersistenceService.create;
-  const originalTxFindOne = AccountTransaction.findOne;
-  const originalTxSave = AccountTransaction.prototype.save;
-  const originalHeadFindOne = AccountHead.findOne;
+  const originalRecordTransaction = accountTransactionService.recordTransaction;
 
   Bill.updateMany = async () => ({ modifiedCount: 1 });
   notificationPersistenceService.create = async () => ({});
-  AccountTransaction.findOne = async () => null;
-  AccountTransaction.prototype.save = async function () {
+
+  // Simulate the accounting write failing: the PostgreSQL unit of work errors,
+  // exercising the controller's error handling. Phase 2AF routed the ledger
+  // write through accountTransactionService, so the failure is injected there.
+  accountTransactionService.recordTransaction = async () => {
     throw new Error("accounting exploded");
   };
-  AccountHead.findOne = async () => null;
 
   try {
     const req = { params: { id: order._id }, body: { status: "Collected" }, user: { id: "user1" } };
@@ -495,13 +510,11 @@ test("PG path: recordTransaction failure in admin update does not revert the PG 
 
     assert.strictEqual(res.statusCode, 500);
     const reread = await svc.findById(order._id);
-    assert.strictEqual(reread.status, "Collected");
+    assert.strictEqual(reread.status, "Collected", "the already-written PG status is not reverted");
   } finally {
     Bill.updateMany = originalBillUpdateMany;
     notificationPersistenceService.create = originalNotificationCreate;
-    AccountTransaction.findOne = originalTxFindOne;
-    AccountTransaction.prototype.save = originalTxSave;
-    AccountHead.findOne = originalHeadFindOne;
+    accountTransactionService.recordTransaction = originalRecordTransaction;
   }
 });
 
