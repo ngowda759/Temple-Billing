@@ -459,6 +459,107 @@ test("PG path: duplicate (item, batchNumber) is rejected; same batchNumber allow
   await inventoryBatchRepository.create(batchBase({ item: item2._id, batchNumber: bn }));
   assert.strictEqual(await inventoryBatchRepository.count({ item: item1._id, batchNumber: bn }), 1);
 });
+// ─── Phase 2AG: shared save-equivalent status transition ────────────────────
+// updateByIdWithStatusTransition reproduces the Mongoose pre('save') hook on
+// both datasources, while updateById keeps its findByIdAndUpdate parity.
+test("PG path: full consumption through the save-equivalent update transitions Active → Consumed", async () => {
+  const item = await makeItem();
+  const batch = await inventoryBatchService.create(
+    batchBase({ item: item._id, originalQuantity: 10, currentQuantity: 10, expiryDate: new Date("2099-01-01T00:00:00Z") })
+  );
+  assert.strictEqual(batch.status, "Active");
+
+  // Partial consumption keeps the batch Active (remaining > 0).
+  const partial = await inventoryBatchService.updateByIdWithStatusTransition(batch._id, { currentQuantity: 4 });
+  assert.strictEqual(partial.currentQuantity, 4);
+  assert.strictEqual(partial.status, "Active");
+
+  // Reaching zero flips it to Consumed, exactly like Mongo save().
+  const consumed = await inventoryBatchService.updateByIdWithStatusTransition(batch._id, { currentQuantity: 0 });
+  assert.strictEqual(consumed.currentQuantity, 0);
+  assert.strictEqual(consumed.status, "Consumed");
+
+  // The bare updateById remains hook-free (findByIdAndUpdate parity).
+  const other = await inventoryBatchService.create(
+    batchBase({ item: item._id, originalQuantity: 3, currentQuantity: 3, expiryDate: new Date("2099-01-01T00:00:00Z") })
+  );
+  const noHook = await inventoryBatchService.updateById(other._id, { currentQuantity: 0 });
+  assert.strictEqual(noHook.status, "Active");
+});
+
+test("PG path: an expired Active batch transitions to Expired through the save-equivalent update", async () => {
+  const item = await makeItem();
+  const batch = await inventoryBatchService.create(
+    batchBase({ item: item._id, currentQuantity: 5, expiryDate: new Date("2099-01-01T00:00:00Z") })
+  );
+  assert.strictEqual(batch.status, "Active");
+
+  const expired = await inventoryBatchService.updateByIdWithStatusTransition(batch._id, {
+    expiryDate: new Date("2020-01-01T00:00:00Z"),
+  });
+  assert.strictEqual(expired.status, "Expired");
+});
+
+test("PG path: empty and past-expiry together resolve to Consumed (hook ordering preserved)", async () => {
+  const item = await makeItem();
+  const batch = await inventoryBatchService.create(
+    batchBase({ item: item._id, originalQuantity: 1, currentQuantity: 1, expiryDate: new Date("2020-01-01T00:00:00Z") })
+  );
+  assert.strictEqual(batch.status, "Expired", "created already past expiry");
+
+  // Reset to Active with a future expiry, then drive both conditions at once.
+  await inventoryBatchService.updateByIdWithStatusTransition(batch._id, {
+    status: "Active",
+    expiryDate: new Date("2099-01-01T00:00:00Z"),
+  });
+  const both = await inventoryBatchService.updateByIdWithStatusTransition(batch._id, {
+    currentQuantity: 0,
+    expiryDate: new Date("2020-01-01T00:00:00Z"),
+  });
+  assert.strictEqual(both.status, "Consumed", "the Consumed check runs before the Expired check");
+});
+
+test("PG path: a non-Active status is never auto-flipped by the save-equivalent update", async () => {
+  const item = await makeItem();
+  for (const status of ["Quarantine", "Returned", "Disposed", "Consumed"]) {
+    const batch = await inventoryBatchService.create(
+      batchBase({ item: item._id, currentQuantity: 5, expiryDate: new Date("2099-01-01T00:00:00Z") })
+    );
+    const updated = await inventoryBatchService.updateByIdWithStatusTransition(batch._id, {
+      status,
+      currentQuantity: 0,
+      expiryDate: new Date("2020-01-01T00:00:00Z"),
+    });
+    assert.strictEqual(updated.status, status, `${status} must not be auto-transitioned`);
+  }
+});
+
+test("PG path: the save-equivalent update rejects invalid quantities and enums", async () => {
+  const item = await makeItem();
+  const batch = await inventoryBatchService.create(batchBase({ item: item._id }));
+  await assert.rejects(
+    () => inventoryBatchService.updateByIdWithStatusTransition(batch._id, { currentQuantity: -1 }),
+    /currentQuantity must be a number >= 0/
+  );
+  await assert.rejects(
+    () => inventoryBatchService.updateByIdWithStatusTransition(batch._id, { status: "Nope" }),
+    /Invalid status/
+  );
+  await assert.rejects(
+    () => inventoryBatchService.updateByIdWithStatusTransition(batch._id, { batchNumber: "  " }),
+    /batchNumber is required/
+  );
+});
+
+test("PG path: the save-equivalent update returns null for an unknown id", async () => {
+  const result = await inventoryBatchService.updateByIdWithStatusTransition("0000000000000000000000ff", { currentQuantity: 0 });
+  assert.strictEqual(result, null);
+});
+
+test("PG path: updateByIdWithStatusTransition is exposed through the service seam", async () => {
+  assert.strictEqual(typeof inventoryBatchRepository.updateByIdWithStatusTransition, "function");
+  assert.strictEqual(typeof inventoryBatchService.updateByIdWithStatusTransition, "function");
+});
 
 // ─── InventoryItem relationship ─────────────────────────────────────────────
 test("PG path: batches point at real inventory_items; invalid items are rejected", async () => {

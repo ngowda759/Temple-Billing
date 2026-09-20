@@ -282,3 +282,149 @@ test("PG path: findOneByRazorpayOrderId resolves via the active path", async () 
 test("PG path: updateById on unknown id returns null", async () => {
   assert.strictEqual(await prasadamOrderService.updateById(crypto.randomBytes(12).toString("hex"), { status: "Collected" }), null);
 });
+// ─── Phase 2AG: report/aggregate reads go through the repository seam ───────
+// aggregateSalesTotals / aggregateTopSelling reproduce the Mongo aggregation
+// pipelines exactly, so a sales report reads one datasource only.
+const reportBase = (overrides = {}) => orderBase(overrides);
+
+test("report: aggregateSalesTotals sums revenue and counts orders inside the date range", async () => {
+  const from = new Date();
+  const before = await prasadamOrderService.aggregateSalesTotals(from);
+  assert.strictEqual(typeof before.totalRevenue, "number");
+  assert.strictEqual(typeof before.totalOrders, "number");
+
+  await prasadamOrderService.create(reportBase({ amount: 100.5, quantity: 1 }));
+  await prasadamOrderService.create(reportBase({ amount: 49.5, quantity: 1 }));
+
+  const after = await prasadamOrderService.aggregateSalesTotals(from);
+  assert.strictEqual(after.totalOrders, before.totalOrders + 2);
+  assert.strictEqual(after.totalRevenue, Number((before.totalRevenue + 150).toFixed(2)));
+});
+
+test("report: aggregateSalesTotals includes rows after the boundary and excludes rows before it", async () => {
+  const itemName = `Bound-${unique()}`;
+  const old = await prasadamOrderService.create(
+    reportBase({ itemName, amount: 777, createdAt: new Date("2020-01-01T00:00:00Z") })
+  );
+  assert.ok(old._id);
+
+  const excluded = await prasadamOrderService.aggregateSalesTotals(new Date("2024-01-01T00:00:00Z"));
+  const included = await prasadamOrderService.aggregateSalesTotals(new Date("2019-01-01T00:00:00Z"));
+
+  // The 777 row is the only quantity-1 order with this amount in the fixture
+  // set, so the widened window must be exactly 777 richer.
+  assert.strictEqual(
+    Number((included.totalRevenue - excluded.totalRevenue).toFixed(2)),
+    777,
+    "the pre-boundary row is counted only by the wider range"
+  );
+  assert.strictEqual(included.totalOrders, excluded.totalOrders + 1);
+});
+
+test("report: aggregateSalesTotals returns zeros for a range with no orders", async () => {
+  const empty = await prasadamOrderService.aggregateSalesTotals(new Date("2099-01-01T00:00:00Z"));
+  assert.strictEqual(empty.totalRevenue, 0);
+  assert.strictEqual(empty.totalOrders, 0);
+});
+
+test("report: aggregateTopSelling groups by item name, sums quantity and orders desc", async () => {
+  const from = new Date();
+  const itemA = `Top-A-${unique()}`;
+  const itemB = `Top-B-${unique()}`;
+
+  // Same item name across rows: quantities must be summed.
+  await prasadamOrderService.create(reportBase({ itemName: itemA, quantity: 3, amount: 30 }));
+  await prasadamOrderService.create(reportBase({ itemName: itemA, quantity: 4, amount: 40 }));
+  await prasadamOrderService.create(reportBase({ itemName: itemB, quantity: 2, amount: 20 }));
+
+  const top = await prasadamOrderService.aggregateTopSelling(from, 5);
+  const bucketA = top.find((row) => row._id === itemA);
+  const bucketB = top.find((row) => row._id === itemB);
+
+  assert.ok(bucketA, "item A aggregated");
+  assert.strictEqual(bucketA.totalQuantity, 7, "quantities summed across rows");
+  assert.ok(bucketB);
+  assert.strictEqual(bucketB.totalQuantity, 2);
+
+  // Ordering is descending by total quantity.
+  const quantities = top.map((row) => row.totalQuantity);
+  const sorted = [...quantities].sort((a, b) => b - a);
+  assert.deepStrictEqual(quantities, sorted, "top sellers are sorted descending");
+});
+
+test("report: aggregateTopSelling honours the limit", async () => {
+  const from = new Date();
+  for (let i = 0; i < 3; i += 1) {
+    await prasadamOrderService.create(reportBase({ itemName: `Limit-${unique()}`, quantity: i + 1 }));
+  }
+  const top = await prasadamOrderService.aggregateTopSelling(from, 2);
+  assert.strictEqual(top.length, 2);
+});
+
+test("report: aggregateTopSelling sums multiple rows for one item", async () => {
+  const from = new Date();
+  const itemName = `Sum-${unique()}`;
+  await prasadamOrderService.create(reportBase({ itemName, quantity: 1 }));
+  await prasadamOrderService.create(reportBase({ itemName, quantity: 2 }));
+  const top = await prasadamOrderService.aggregateTopSelling(from, 5);
+  const bucket = top.find((row) => row._id === itemName);
+  assert.strictEqual(bucket.totalQuantity, 3);
+});
+
+test("report: aggregateTopSelling returns an empty array for a range with no orders", async () => {
+  const top = await prasadamOrderService.aggregateTopSelling(new Date("2099-01-01T00:00:00Z"), 5);
+  assert.deepStrictEqual(top, []);
+});
+
+test("report: the repository exposes both aggregate methods; the controller no longer aggregates directly", async () => {
+  assert.strictEqual(typeof prasadamOrderRepository.aggregateSalesTotals, "function");
+  assert.strictEqual(typeof prasadamOrderRepository.aggregateTopSelling, "function");
+  assert.strictEqual(typeof prasadamOrderService.aggregateSalesTotals, "function");
+  assert.strictEqual(typeof prasadamOrderService.aggregateTopSelling, "function");
+
+  const fs = require("fs");
+  const path = require("path");
+  const controllerSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "controllers", "prasadamController.js"),
+    "utf8"
+  );
+  assert.ok(
+    !/PrasadamOrder\.aggregate/.test(controllerSource),
+    "the controller no longer runs a Mongo aggregation directly"
+  );
+  assert.ok(
+    !/FROM prasadam_orders/.test(controllerSource),
+    "the controller no longer embeds raw PostgreSQL aggregate SQL"
+  );
+});
+
+test("report: getSalesReports keeps the response shape and reads through the service", async () => {
+  const prasadamController = require("../src/controllers/prasadamController");
+  const res = {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+  };
+
+  const itemName = `Shape-${unique()}`;
+  await prasadamOrderService.create(reportBase({ itemName, quantity: 9, amount: 90 }));
+
+  await prasadamController.getSalesReports({}, res);
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(res.body.success, true);
+  assert.ok(res.body.reports.today);
+  assert.ok(res.body.reports.monthly);
+  assert.ok(Array.isArray(res.body.reports.topSelling));
+  assert.strictEqual(typeof res.body.reports.today.totalRevenue, "number");
+  assert.strictEqual(typeof res.body.reports.today.totalOrders, "number");
+  const bucket = res.body.reports.topSelling.find((row) => row._id === itemName);
+  assert.ok(bucket, "the new order appears in top selling");
+  assert.strictEqual(bucket.totalQuantity, 9);
+});

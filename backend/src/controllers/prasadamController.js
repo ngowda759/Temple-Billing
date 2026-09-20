@@ -1,4 +1,3 @@
-const PrasadamOrder = require("../models/PrasadamOrder");
 const { createStaffNotification } = require("../utils/notificationService");
 const prasadamOrderService = require("../services/prasadamOrderService");
 const prasadamService = require("../services/prasadamService");
@@ -150,80 +149,26 @@ const getSalesReports = async (req, res) => {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    // PostgreSQL path (additive): when Prasadam Orders use the PostgreSQL
-    // repository, sales reports are computed from the same normalized records.
-    // The aggregation mirrors the Mongo aggregate below.
-    if (await prasadamOrderService.usePostgres()) {
-      const { query } = require("../config/postgres");
-      const [todaySales, monthlySales] = await Promise.all([
-        (async () => {
-          const { rows } = await query(
-            `SELECT COALESCE(SUM(amount), 0)::numeric AS total_revenue, COUNT(*)::int AS total_orders
-             FROM prasadam_orders WHERE created_at >= $1`,
-            [todayStart]
-          );
-          return rows[0];
-        })(),
-        (async () => {
-          const { rows } = await query(
-            `SELECT COALESCE(SUM(amount), 0)::numeric AS total_revenue, COUNT(*)::int AS total_orders
-             FROM prasadam_orders WHERE created_at >= $1`,
-            [monthStart]
-          );
-          return rows[0];
-        })(),
-      ]);
-      const { rows: topSelling } = await query(
-        `SELECT item_name, SUM(quantity)::numeric AS total_quantity
-         FROM prasadam_orders WHERE created_at >= $1
-         GROUP BY item_name ORDER BY total_quantity DESC LIMIT 5`,
-        [monthStart]
-      );
-
-      return res.json({
-        success: true,
-        reports: {
-          today: {
-            totalRevenue: todaySales.total_revenue === null ? 0 : Number(todaySales.total_revenue),
-            totalOrders: todaySales.total_orders || 0,
-          },
-          monthly: {
-            totalRevenue: monthlySales.total_revenue === null ? 0 : Number(monthlySales.total_revenue),
-            totalOrders: monthlySales.total_orders || 0,
-          },
-          topSelling: topSelling.map((r) => ({
-            _id: r.item_name,
-            totalQuantity: Number(r.total_quantity),
-          })),
-        },
-      });
-    }
-
-    const [todaySales, monthlySales] = await Promise.all([
-      PrasadamOrder.aggregate([
-        { $match: { createdAt: { $gte: todayStart } } },
-        { $group: { _id: null, totalRevenue: { $sum: "$amount" }, totalOrders: { $sum: 1 } } }
-      ]),
-      PrasadamOrder.aggregate([
-        { $match: { createdAt: { $gte: monthStart } } },
-        { $group: { _id: null, totalRevenue: { $sum: "$amount" }, totalOrders: { $sum: 1 } } }
-      ])
-    ]);
-
-    const topSelling = await PrasadamOrder.aggregate([
-      { $match: { createdAt: { $gte: monthStart } } },
-      { $group: { _id: "$itemName", totalQuantity: { $sum: "$quantity" } } },
-      { $sort: { totalQuantity: -1 } },
-      { $limit: 5 }
+    // Reports read through the Prasadam Order service so they follow the same
+    // datasource seam as every other Prasadam Order read: PostgreSQL when the
+    // Prasadam Order path is active and PostgreSQL is reachable, the Mongoose
+    // model otherwise. The repository owns the branch (like findMany/count), so
+    // an unreachable PostgreSQL falls back to the Mongo aggregation instead of
+    // failing the endpoint. The aggregation semantics — date filters, grouping,
+    // sorting, LIMIT 5 and the response shape — are unchanged.
+    const [todaySales, monthlySales, topSelling] = await Promise.all([
+      prasadamOrderService.aggregateSalesTotals(todayStart),
+      prasadamOrderService.aggregateSalesTotals(monthStart),
+      prasadamOrderService.aggregateTopSelling(monthStart, 5),
     ]);
 
     return res.json({
       success: true,
       reports: {
-        today: todaySales[0] || { totalRevenue: 0, totalOrders: 0 },
-        monthly: monthlySales[0] || { totalRevenue: 0, totalOrders: 0 },
+        today: todaySales,
+        monthly: monthlySales,
         topSelling,
-      }
+      },
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

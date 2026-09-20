@@ -84,6 +84,22 @@ const stubOrdersCollection = () => {
   const countDocuments = async () => 0;
   const deleteMany = async () => ({ deletedCount: 0 });
 
+  // The aggregate channel is what the report reads use on the fallback branch.
+  // It records the pipeline so tests can prove the Mongo aggregation really ran
+  // and that it received the expected $match/$group/$sort/$limit stages.
+  const aggregateCalls = [];
+  const aggregate = async (pipeline) => {
+    aggregateCalls.push(pipeline);
+    const group = pipeline.find((stage) => stage.$group);
+    if (group && group.$group._id === "$itemName") {
+      return [{ _id: "Fallback Item", totalQuantity: 7 }];
+    }
+    if (group && group.$group._id === null) {
+      return [{ _id: null, totalRevenue: 123.45, totalOrders: 2 }];
+    }
+    return [];
+  };
+
   PrasadamOrder.create = create;
   PrasadamOrder.findById = findById;
   PrasadamOrder.findOne = findOne;
@@ -92,7 +108,8 @@ const stubOrdersCollection = () => {
   PrasadamOrder.findByIdAndDelete = findByIdAndDelete;
   PrasadamOrder.countDocuments = countDocuments;
   PrasadamOrder.deleteMany = deleteMany;
-  return { saved };
+  PrasadamOrder.aggregate = aggregate;
+  return { saved, aggregateCalls };
 };
 
 // ─── Fallback requirement 2: Mongo/Mongoose path remains when PG unavailable ─
@@ -263,4 +280,106 @@ test("fallback: Mongo path leaves no partial or duplicate rows in PostgreSQL", a
   assert.strictEqual(saved.length, 1, "create went to the Mongo model");
   const after = await rowCount();
   assert.strictEqual(after, before, "no partial/duplicate PG row on Mongo fallback");
+// ─── Phase 2AG: report aggregates keep the Mongo pipeline on the fallback ───
+});
+test("fallback: aggregateSalesTotals runs the Mongo pipeline and preserves the zero default", async () => {
+  pinMongoFallback();
+  const { aggregateCalls } = stubOrdersCollection();
+
+  const from = new Date("2024-06-01T00:00:00Z");
+  const totals = await prasadamOrderService.aggregateSalesTotals(from);
+
+  assert.strictEqual(aggregateCalls.length, 1, "the fallback used MongoDB aggregate");
+  const pipeline = aggregateCalls[0];
+  assert.ok(pipeline[0].$match.createdAt.$gte instanceof Date);
+  assert.strictEqual(pipeline[0].$match.createdAt.$gte.toISOString(), from.toISOString());
+  assert.deepStrictEqual(pipeline[1].$group, {
+    _id: null,
+    totalRevenue: { $sum: "$amount" },
+    totalOrders: { $sum: 1 },
+  });
+  assert.strictEqual(totals.totalRevenue, 123.45);
+  assert.strictEqual(totals.totalOrders, 2);
+});
+
+test("fallback: aggregateSalesTotals substitutes zeros when Mongo returns no rows", async () => {
+  pinMongoFallback();
+  PrasadamOrder.aggregate = async () => [];
+
+  const totals = await prasadamOrderService.aggregateSalesTotals(new Date());
+  assert.deepStrictEqual(totals, { totalRevenue: 0, totalOrders: 0 });
+});
+
+test("fallback: aggregateTopSelling runs the Mongo pipeline with a descending sort and limit", async () => {
+  pinMongoFallback();
+  const { aggregateCalls } = stubOrdersCollection();
+
+  const from = new Date("2024-06-01T00:00:00Z");
+  const top = await prasadamOrderService.aggregateTopSelling(from, 3);
+
+  assert.strictEqual(aggregateCalls.length, 1);
+  const pipeline = aggregateCalls[0];
+  assert.deepStrictEqual(pipeline[1].$group, { _id: "$itemName", totalQuantity: { $sum: "$quantity" } });
+  assert.deepStrictEqual(pipeline[2].$sort, { totalQuantity: -1 });
+  assert.deepStrictEqual(pipeline[3].$limit, 3);
+  assert.deepStrictEqual(top, [{ _id: "Fallback Item", totalQuantity: 7 }]);
+});
+
+test("fallback: aggregateTopSelling defaults the limit to 5 and returns an empty array", async () => {
+  pinMongoFallback();
+  const { aggregateCalls } = stubOrdersCollection();
+  PrasadamOrder.aggregate = async (pipeline) => {
+    aggregateCalls.push(pipeline);
+    return [];
+  };
+
+  const top = await prasadamOrderService.aggregateTopSelling(new Date());
+  assert.deepStrictEqual(top, []);
+  assert.deepStrictEqual(aggregateCalls[0][3].$limit, 5);
+});
+
+test("fallback: the report reads never touch PostgreSQL rows when the seam is disconnected", async () => {
+  pinMongoFallback();
+  const { aggregateCalls } = stubOrdersCollection();
+  ensurePrasadamTable();
+
+  const pool = new Pool({ connectionString: TEST_DB_URL });
+  try {
+    const before = (await pool.query("SELECT COUNT(*)::int AS n FROM prasadam_orders")).rows[0].n;
+    await prasadamOrderService.aggregateSalesTotals(new Date("2000-01-01T00:00:00Z"));
+    await prasadamOrderService.aggregateTopSelling(new Date("2000-01-01T00:00:00Z"), 5);
+    const after = (await pool.query("SELECT COUNT(*)::int AS n FROM prasadam_orders")).rows[0].n;
+    assert.strictEqual(after, before, "report reads made no PostgreSQL writes");
+    assert.strictEqual(aggregateCalls.length, 2, "both reads used the Mongo aggregate channel");
+  } finally {
+    await pool.end();
+  }
+});
+
+test("fallback: report reads go to Mongo when DATABASE_URL points at a dead PostgreSQL", async () => {
+  const { aggregateCalls } = stubOrdersCollection();
+  process.env.DATABASE_URL = "postgresql://temple_test:wrong@127.0.0.1:1/nonexistent";
+  dbConfig.isDbConnected = () => true; // seam connected, but PG is unreachable
+  try {
+    const totals = await prasadamOrderService.aggregateSalesTotals(new Date("2024-06-01T00:00:00Z"));
+    const top = await prasadamOrderService.aggregateTopSelling(new Date("2024-06-01T00:00:00Z"), 5);
+    assert.strictEqual(aggregateCalls.length, 2, "an unreachable PG falls back to the Mongo aggregate");
+    assert.deepStrictEqual(totals, { totalRevenue: 123.45, totalOrders: 2 });
+    assert.deepStrictEqual(top, [{ _id: "Fallback Item", totalQuantity: 7 }]);
+  } finally {
+    pinMongoFallback();
+    delete process.env.DATABASE_URL;
+  }
+});
+
+test("fallback: the repository aggregate branches stay Mongo-side when the seam is disconnected", async () => {
+  pinMongoFallback();
+  const { aggregateCalls } = stubOrdersCollection();
+
+  const totals = await prasadamOrderRepository.aggregateSalesTotals(new Date("2024-06-01T00:00:00Z"));
+  const top = await prasadamOrderRepository.aggregateTopSelling(new Date("2024-06-01T00:00:00Z"), 2);
+
+  assert.strictEqual(aggregateCalls.length, 2, "the repository used the Mongo aggregate channel");
+  assert.deepStrictEqual(totals, { totalRevenue: 123.45, totalOrders: 2 });
+  assert.deepStrictEqual(top, [{ _id: "Fallback Item", totalQuantity: 7 }]);
 });

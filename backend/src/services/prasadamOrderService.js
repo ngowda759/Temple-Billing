@@ -162,6 +162,45 @@ const updateById = async (id, updates) => {
 const count = async (filter = {}) =>
   (await usePostgres()) ? prasadamOrderRepository.count(filter) : PrasadamOrder.countDocuments(filter);
 
+/**
+ * Sales report reads.
+ *
+ * These follow the same datasource seam as every other Prasadam Order read
+ * (findMany/count/destroy above): PostgreSQL when the service selects it,
+ * Mongoose otherwise. `usePostgres()` also returns false when PostgreSQL is
+ * unreachable, so a dead database falls back to Mongo instead of throwing —
+ * exactly the safety property the rest of the service already guarantees.
+ * Both branches return the same `{ totalRevenue, totalOrders }` /
+ * `{ _id, totalQuantity }` shapes.
+ */
+const aggregateSalesTotals = async (from) =>
+  (await usePostgres())
+    ? prasadamOrderRepository.aggregateSalesTotals(from)
+    : PrasadamOrder.aggregate([
+        { $match: { createdAt: { $gte: new Date(from) } } },
+        { $group: { _id: null, totalRevenue: { $sum: "$amount" }, totalOrders: { $sum: 1 } } },
+      ]).then((rows) => {
+        const row = rows[0];
+        return {
+          totalRevenue: row ? Number(row.totalRevenue) || 0 : 0,
+          totalOrders: row ? Number(row.totalOrders) || 0 : 0,
+        };
+      });
+
+const aggregateTopSelling = async (from, limit = 5) => {
+  if (await usePostgres()) {
+    return prasadamOrderRepository.aggregateTopSelling(from, limit);
+  }
+  const safeLimit = Math.max(1, Number(limit) || 5);
+  const rows = await PrasadamOrder.aggregate([
+    { $match: { createdAt: { $gte: new Date(from) } } },
+    { $group: { _id: "$itemName", totalQuantity: { $sum: "$quantity" } } },
+    { $sort: { totalQuantity: -1 } },
+    { $limit: safeLimit },
+  ]);
+  return rows.map((row) => ({ _id: row._id, totalQuantity: Number(row.totalQuantity) }));
+};
+
 const destroy = async (id) =>
   (await usePostgres()) ? prasadamOrderRepository.destroy(id) : Boolean(await PrasadamOrder.findByIdAndDelete(id));
 
@@ -177,4 +216,6 @@ module.exports = {
   updateById,
   count,
   destroy,
+  aggregateSalesTotals,
+  aggregateTopSelling,
 };

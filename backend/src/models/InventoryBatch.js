@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { resolveStatusTransition } = require("../utils/inventoryBatchStatus");
 
 const inventoryBatchSchema = new mongoose.Schema(
   {
@@ -51,15 +52,15 @@ const inventoryBatchSchema = new mongoose.Schema(
 
 inventoryBatchSchema.index({ item: 1, batchNumber: 1 }, { unique: true });
 
-// Auto-update status based on current quantity
+// Auto-update status based on current quantity / expiry. The decision lives in
+// utils/inventoryBatchStatus.js so the PostgreSQL write path applies the exact
+// same rules from one source.
 inventoryBatchSchema.pre("save", function(next) {
-  if (this.currentQuantity === 0 && this.status === "Active") {
-    this.status = "Consumed";
-  }
-  // Optional: check expiry if expiryDate is set and past today.
-  if (this.expiryDate && new Date() > this.expiryDate && this.status === "Active") {
-    this.status = "Expired";
-  }
+  this.status = resolveStatusTransition({
+    currentQuantity: this.currentQuantity,
+    expiryDate: this.expiryDate,
+    status: this.status,
+  });
   next();
 });
 

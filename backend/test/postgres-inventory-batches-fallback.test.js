@@ -105,6 +105,101 @@ const stubBatchesCollection = () => {
   InventoryBatch.deleteMany = deleteMany;
   return { saved, calls };
 };
+// ─── Phase 2AG: the transition decision is shared by both datasources ───────
+// The Mongoose pre('save') hook and the PostgreSQL repository `create` both
+// delegate to utils/inventoryBatchStatus.js, so the rules cannot drift. These
+// tests pin the hook itself (the behaviour the PG side must reproduce) plus the
+// pure predicate.
+const invokeBatchPreSaveHook = (attrs) => {
+  const hooks = InventoryBatch.schema.s.hooks._pres.get("save");
+  const hook = hooks.find((h) => /resolveStatusTransition/.test(h.fn.toString()));
+  assert.ok(hook, "the batch pre-save hook delegates to the shared transition helper");
+  const doc = new InventoryBatch({
+    item: "000000000000000000000001",
+    batchNumber: `hook-${Math.random().toString(16).slice(2)}`,
+    originalQuantity: 5,
+    currentQuantity: 5,
+    ...attrs,
+  });
+  hook.fn.call(doc, () => {});
+  return doc.status;
+};
+
+test("transition: the Mongoose pre-save hook reproduces the original Mongo behaviour", () => {
+  assert.strictEqual(invokeBatchPreSaveHook({ currentQuantity: 0 }), "Consumed");
+  assert.strictEqual(invokeBatchPreSaveHook({ expiryDate: new Date("2020-01-01T00:00:00Z") }), "Expired");
+  // Zero quantity wins over expiry, matching the original hook ordering.
+  assert.strictEqual(
+    invokeBatchPreSaveHook({ currentQuantity: 0, expiryDate: new Date("2020-01-01T00:00:00Z") }),
+    "Consumed"
+  );
+  // A non-Active status is never auto-flipped.
+  assert.strictEqual(
+    invokeBatchPreSaveHook({ status: "Quarantine", currentQuantity: 0, expiryDate: new Date("2020-01-01T00:00:00Z") }),
+    "Quarantine"
+  );
+  // Partial consumption keeps the batch Active.
+  assert.strictEqual(invokeBatchPreSaveHook({ currentQuantity: 4 }), "Active");
+  // No expiry date set means only the quantity rule can apply.
+  assert.strictEqual(invokeBatchPreSaveHook({ currentQuantity: 3 }), "Active");
+});
+
+test("transition: the shared predicate is pure and injectable so both paths agree", () => {
+  const { resolveStatusTransition, applyStatusTransition } = require("../src/utils/inventoryBatchStatus");
+
+  const now = new Date("2030-01-01T00:00:00Z");
+  assert.strictEqual(resolveStatusTransition({ currentQuantity: 0, status: "Active" }, now), "Consumed");
+  assert.strictEqual(
+    resolveStatusTransition({ currentQuantity: 5, expiryDate: new Date("2020-01-01"), status: "Active" }, now),
+    "Expired"
+  );
+  assert.strictEqual(
+    resolveStatusTransition({ currentQuantity: 0, expiryDate: new Date("2020-01-01"), status: "Active" }, now),
+    "Consumed"
+  );
+  // The injected clock controls the expiry comparison deterministically.
+  assert.strictEqual(
+    resolveStatusTransition({ currentQuantity: 5, expiryDate: new Date("2099-01-01"), status: "Active" }, now),
+    "Active"
+  );
+  assert.strictEqual(resolveStatusTransition({ currentQuantity: 4, status: "Active" }, now), "Active");
+  assert.strictEqual(resolveStatusTransition({ currentQuantity: 0, status: "Returned" }, now), "Returned");
+
+  // applyStatusTransition returns null when nothing changes.
+  assert.strictEqual(applyStatusTransition({ currentQuantity: 4, status: "Active" }, now), null);
+  assert.strictEqual(applyStatusTransition({ currentQuantity: 0, status: "Active" }, now), "Consumed");
+});
+
+test("transition: Mongo fallback uses save() semantics so the hook still fires", async () => {
+  const { saved } = stubBatchesCollection();
+  const originalSave = InventoryBatch.prototype.save;
+
+  // Emulate a loaded document being mutated and saved: the hook must run.
+  const loaded = new InventoryBatch({
+    item: "000000000000000000000001",
+    batchNumber: "fallback-save",
+    originalQuantity: 10,
+    currentQuantity: 4,
+    status: "Active",
+    expiryDate: new Date("2099-01-01T00:00:00Z"),
+  });
+  InventoryBatch.findById = async () => loaded;
+  InventoryBatch.prototype.save = async function () {
+    const hooks = InventoryBatch.schema.s.hooks._pres.get("save");
+    const hook = hooks.find((h) => /resolveStatusTransition/.test(h.fn.toString()));
+    hook.fn.call(this, () => {});
+    saved.push(this);
+    return this;
+  };
+
+  try {
+    const result = await inventoryBatchService.updateByIdWithStatusTransition(loaded._id || "1", { currentQuantity: 0 });
+    assert.strictEqual(result.status, "Consumed", "the Mongo fallback save() ran the transition hook");
+    assert.strictEqual(saved.length, 1, "the fallback persisted through the Mongoose document");
+  } finally {
+    InventoryBatch.prototype.save = originalSave;
+  }
+});
 
 // ─── Fallback requirement 2: Mongo/Mongoose path remains when PG unavailable ─
 test("fallback: service selects MongoDB when the datasource seam is disconnected", async () => {
