@@ -17,7 +17,7 @@ const { spawnSync } = require("child_process");
 
 const { closePostgres } = require("../src/config/postgres");
 const dbConfig = require("../src/config/db");
-const Task = require("../src/models/Task");
+const taskService = require("../src/services/taskService");
 
 const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ||
@@ -190,8 +190,8 @@ test("shift controller (PG): deleteShift removes the shift and cascades onto Tas
   // Record the application-level cascade (deleteShift runs
   // Task.deleteMany({ shiftId })) without touching a real Mongo.
   const cascadeCalls = [];
-  const originalDeleteMany = Task.deleteMany;
-  Task.deleteMany = async (filter) => {
+  const originalDeleteMany = taskService.deleteMany;
+  taskService.deleteMany = async (filter) => {
     cascadeCalls.push(filter);
     return { acknowledged: true, deletedCount: 0 };
   };
@@ -208,7 +208,7 @@ test("shift controller (PG): deleteShift removes the shift and cascades onto Tas
     const rows = await pgQuery("SELECT id FROM shifts WHERE id = $1", [id]);
     assert.strictEqual(rows.length, 0, "the shift row is gone from PostgreSQL");
   } finally {
-    Task.deleteMany = originalDeleteMany;
+    taskService.deleteMany = originalDeleteMany;
   }
 });
 
@@ -237,8 +237,7 @@ test("shift controller (Mongo fallback): the same handlers route to Mongoose", a
     const calls = [];
     const saved = [];
     const original = {
-      create: Task.create,
-      deleteMany: Task.deleteMany,
+      deleteMany: taskService.deleteMany,
       ShiftCreate: require("../src/models/Shift").create,
       ShiftFindById: require("../src/models/Shift").findById,
     };
@@ -287,7 +286,7 @@ test("shift controller (Mongo fallback): the same handlers route to Mongoose", a
       };
       return q;
     };
-    Task.deleteMany = async (filter) => { calls.push(["taskDeleteMany", filter]); return { acknowledged: true }; };
+    taskService.deleteMany = async (filter) => { calls.push(["taskDeleteMany", filter]); return { acknowledged: true }; };
 
     try {
       const created = createMockRes();
@@ -329,8 +328,7 @@ test("shift controller (Mongo fallback): the same handlers route to Mongoose", a
     } finally {
       Shift.create = original.ShiftCreate;
       Shift.findById = original.ShiftFindById;
-      Task.create = original.create;
-      Task.deleteMany = original.deleteMany;
+      taskService.deleteMany = original.deleteMany;
     }
   } finally {
     dbConfig.isDbConnected = () => true;

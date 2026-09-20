@@ -117,9 +117,8 @@ const updateById = async (id, updates) => {
   return Shift.findByIdAndUpdate(id, updates, { new: true });
 };
 
-// Mirrors Shift.findByIdAndDelete(id). The controller's follow-up
-// Task.deleteMany({ shiftId }) is unchanged — Task is a different domain and is
-// not migrated in this phase.
+// Mirrors Shift.findByIdAndDelete(id). The controller's follow-up Task cascade
+// is unchanged and routes through taskService — Task is a different domain.
 const destroy = async (id) =>
   (await usePostgres()) ? shiftRepository.destroy(id) : Shift.findByIdAndDelete(id);
 

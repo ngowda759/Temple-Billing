@@ -6,7 +6,7 @@ const Employee = require("../models/Employee");
 const User = require("../models/User");
 const attendanceService = require("../services/attendanceService");
 const leaveService = require("../services/leaveService");
-const Task = require("../models/Task");
+const taskService = require("../services/taskService");
 const notificationPersistenceService = require("../services/notificationPersistenceService");
 const { canLoginForStatus, getRoleAccess } = require("../utils/employeeAccess");
 const { sendEmail } = require("../utils/communicationService");
@@ -374,13 +374,17 @@ exports.getEmployeeById = async (req, res) => {
         sort: { fromDate: -1 },
         limit: 100,
       }),
-      Task.find({
-        $or: [
-          { employeeId: { $in: identifiers } },
-          { staffId: { $in: identifiers } },
-          { staffEmail: employee.email },
-        ],
-      }).sort({ dueDate: -1, createdAt: -1 }).limit(100),
+      taskService.findMany({
+        filter: {
+          $or: [
+            { employeeId: { $in: identifiers } },
+            { staffId: { $in: identifiers } },
+            { staffEmail: employee.email },
+          ],
+        },
+        sort: { dueDate: -1, createdAt: -1 },
+        limit: 100,
+      }),
     ]);
 
     return res.json({
