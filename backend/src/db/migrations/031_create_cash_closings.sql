@@ -1,11 +1,22 @@
 -- Phase 2AH: cash_closings (MongoDB → PostgreSQL migration).
 --
--- Numbered 031 rather than 030 deliberately: Phase 2AH also adds
--- 030_create_tasks.sql on its own branch. The two files would otherwise share
--- the 030 prefix, which is the same collision 028→029 already had to be
--- renumbered for — the runner sorts filenames, so the intended apply order
--- would be ambiguous. The gap at 030 on this branch is expected and harmless;
--- schema_migrations records names, not sequence numbers.
+-- Numbered 031 rather than 030 deliberately. 030 is already claimed by
+-- 030_create_tasks.sql on the sibling Phase 2AH branch
+-- (phase-2ah-mongo-only-model-audit / PR #36). Two files sharing the 030 prefix
+-- is the same collision 028→029 had to be renumbered for: the runner sorts
+-- filenames (migrate.js), so a shared prefix makes the apply order ambiguous.
+--
+-- The final sequence is deterministic once both branches are merged:
+--
+--     029_create_audit_logs.sql
+--     030_create_tasks.sql          (sibling Phase 2AH branch)
+--     031_create_cash_closings.sql  (this migration)
+--
+-- The gap at 030 on this branch alone is temporary and harmless — the sibling
+-- branch fills it. There is no duplicate number in either the merged tree or
+-- this branch, and schema_migrations records filenames, not sequence numbers,
+-- so the temporary gap cannot corrupt migration state. Verified against the
+-- merged tree: 31 migrations, applied in order, no duplicate prefix.
 --
 -- Mirrors backend/src/models/CashClosing.js and every real usage of the
 -- CashClosing model. Before this phase the domain had NO repository and NO
