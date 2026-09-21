@@ -1,4 +1,4 @@
-const Task = require("../models/Task");
+const taskService = require("../services/taskService");
 const Employee = require("../models/Employee");
 const User = require("../models/User");
 const mongoose = require("mongoose");
@@ -95,7 +95,7 @@ exports.getAllTasks = async (req, res) => {
       query.status = status;
     }
 
-    const tasks = await Task.find(query).sort({ createdAt: -1 });
+    const tasks = await taskService.findMany({ filter: query, sort: { createdAt: -1 } });
     return res.json(tasks);
   } catch (error) {
     return res.status(500).json({
@@ -108,7 +108,10 @@ exports.getAllTasks = async (req, res) => {
 exports.getTasks = async (req, res) => {
   try {
     const { staffId } = req.params;
-    const tasks = await Task.find({ staffId: { $in: await getStaffIdCandidates(staffId) } }).sort({ createdAt: -1 });
+    const tasks = await taskService.findMany({
+      filter: { staffId: { $in: await getStaffIdCandidates(staffId) } },
+      sort: { createdAt: -1 },
+    });
 
     return res.json(tasks);
   } catch (error) {
@@ -131,11 +134,7 @@ exports.updateTaskStatus = async (req, res) => {
       });
     }
 
-    const updated = await Task.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true }
-    );
+    const updated = await taskService.updateById(id, { status });
 
     if (!updated) {
       return res.status(404).json({
@@ -190,7 +189,7 @@ exports.deleteTask = async (req, res) => {
       });
     }
 
-    const deleted = await Task.findByIdAndDelete(id);
+    const deleted = await taskService.destroy(id);
 
     if (!deleted) {
       return res.status(404).json({
@@ -415,7 +414,7 @@ exports.assignTask = async (req, res) => {
       });
     }
      
-    const task = await Task.create({
+    const task = await taskService.create({
       assignmentType: "Duty & Shift",
       staffId: resolvedStaff.staffId,
       staffName: resolvedStaff.staffName,

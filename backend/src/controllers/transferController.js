@@ -1,6 +1,6 @@
 const TransferRequest = require("../models/TransferRequest");
 const Booking = require("../models/Booking");
-const Task = require("../models/Task");
+const taskService = require("../services/taskService");
 const notificationPersistenceService = require("../services/notificationPersistenceService");
 const User = require("../models/User");
 const { sendEmail } = require("../utils/communicationService");
@@ -29,7 +29,7 @@ exports.getAllTransferRequests = async (req, res) => {
             time = new Date(booking.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           }
         } else if (req.referenceType === "Task") {
-          const task = await Task.findById(req.referenceId);
+          const task = await taskService.findById(req.referenceId);
           if (task) {
             dutyName = task.title || task.dutyName || task.duty;
             date = task.dateKey || new Date(task.createdAt).toLocaleDateString();
@@ -106,7 +106,7 @@ exports.resolveTransferRequest = async (req, res) => {
           priestName: newPriest ? newPriest.name : "",
         });
       } else if (request.referenceType === "Task") {
-        await Task.findByIdAndUpdate(request.referenceId, {
+        await taskService.updateById(request.referenceId, {
           status: "Assigned",
           staffId: newPriestId,
           staffName: newPriest ? newPriest.name : "",
@@ -118,7 +118,7 @@ exports.resolveTransferRequest = async (req, res) => {
         const origEmp = await Employee.findById(request.referenceId);
         if (origEmp) {
           const dutyName = origEmp.currentDuty?.dutyName || origEmp.defaultDuty || "Daily Duties";
-          await Task.create({
+          await taskService.create({
             title: dutyName,
             category: "Priest Duty",
             staffId: newPriestId,
@@ -134,7 +134,7 @@ exports.resolveTransferRequest = async (req, res) => {
       if (request.referenceType === "Booking") {
         await Booking.findByIdAndUpdate(request.referenceId, { status: "Assigned" });
       } else if (request.referenceType === "Task") {
-        await Task.findByIdAndUpdate(request.referenceId, { status: "Assigned" });
+        await taskService.updateById(request.referenceId, { status: "Assigned" });
       }
       // No status update needed for DefaultDuty on rejection.
     }
@@ -171,7 +171,7 @@ exports.resolveTransferRequest = async (req, res) => {
             timeStr = new Date(booking.datetime).toLocaleTimeString();
           }
         } else if (request.referenceType === "Task") {
-          const task = await Task.findById(request.referenceId);
+          const task = await taskService.findById(request.referenceId);
           if (task) {
             dutyNameStr = task.title || task.dutyName || task.duty;
             dateStr = task.dateKey || new Date(task.createdAt).toLocaleDateString();
@@ -218,14 +218,15 @@ exports.directAdminTransfer = async (req, res) => {
       booking.status = "Assigned";
       await booking.save();
     } else if (referenceType === "Task") {
-      const task = await Task.findById(referenceId);
+      const task = await taskService.findById(referenceId);
       if (!task || task.status === "Completed") return res.status(400).json({ message: "Invalid or completed duty" });
-      
-      task.staffId = newPriestId;
-      task.staffName = newPriest.name;
-      task.staffEmail = newPriest.email;
-      task.status = "Assigned";
-      await task.save();
+
+      await taskService.updateById(referenceId, {
+        staffId: newPriestId,
+        staffName: newPriest.name,
+        staffEmail: newPriest.email,
+        status: "Assigned",
+      });
     } else {
       return res.status(400).json({ message: "Invalid reference type" });
     }

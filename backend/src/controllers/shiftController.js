@@ -3,7 +3,7 @@ const User = require("../models/User");
 const leaveService = require("../services/leaveService");
 const attendanceService = require("../services/attendanceService");
 const shiftService = require("../services/shiftService");
-const Task = require("../models/Task");
+const taskService = require("../services/taskService");
 const { createStaffNotification } = require("../utils/notificationService");
 const { sendEmail } = require("../utils/communicationService");
 
@@ -222,7 +222,7 @@ exports.getShiftDashboard = async (req, res) => {
 
     const [shifts, assignments, employees] = await Promise.all([
       shiftService.findMany({ sort: { createdAt: -1 } }),
-      Task.find({ dateKey: { $gte: toDateKey(weekStart), $lte: toDateKey(weekEnd) } }).sort({ dateKey: 1, startTime: 1 }),
+      taskService.findMany({ filter: { dateKey: { $gte: toDateKey(weekStart), $lte: toDateKey(weekEnd) } }, sort: { dateKey: 1, startTime: 1 } }),
       Employee.find().sort({ name: 1 }),
     ]);
 
@@ -356,7 +356,7 @@ exports.deleteShift = async (req, res) => {
       return res.status(404).json({ success: false, message: "Shift not found" });
     }
 
-    await Task.deleteMany({ shiftId: shift._id.toString() });
+    await taskService.deleteMany({ shiftId: shift._id.toString() });
     return res.json({ success: true, message: "Shift deleted successfully" });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -438,9 +438,11 @@ exports.assignShift = async (req, res) => {
       }
     }
 
-    const conflictingAssignments = await Task.find({
-      employeeId: employeeTargets.employee._id.toString(),
-      dateKey,
+    const conflictingAssignments = await taskService.findMany({
+      filter: {
+        employeeId: employeeTargets.employee._id.toString(),
+        dateKey,
+      },
     });
 
     const hasConflict = conflictingAssignments.some((assignment) => {
@@ -453,7 +455,7 @@ exports.assignShift = async (req, res) => {
       return res.status(409).json({ success: false, message: "Shift conflict detected with another temporary duty" });
     }
 
-    const assignment = await Task.create({
+    const assignment = await taskService.create({
       assignmentType,
       shiftId: shift._id.toString(),
       shiftName: shift.shiftName,
@@ -526,7 +528,7 @@ exports.assignShift = async (req, res) => {
 
 exports.deleteAssignment = async (req, res) => {
   try {
-    const assignment = await Task.findByIdAndDelete(req.params.id);
+    const assignment = await taskService.destroy(req.params.id);
     if (!assignment) {
       return res.status(404).json({ success: false, message: "Assignment not found" });
     }
@@ -555,7 +557,7 @@ exports.getAvailableEmployees = async (req, res) => {
     const employees = await Employee.find({ status: "Active" }).select("-password");
     
     // Get all tasks for that day
-    const dailyTasks = await Task.find({ dateKey, status: { $nin: ["Cancelled", "Rejected"] } });
+    const dailyTasks = await taskService.findMany({ filter: { dateKey, status: { $nin: ["Cancelled", "Rejected"] } } });
     
     // Get all default shifts
     const activeShifts = await shiftService.findMany({ filter: { active: true } });
