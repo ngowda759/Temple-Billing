@@ -1,22 +1,23 @@
 const Employee = require("../models/Employee");
-const Supplier = require("../models/Supplier");
+const supplierService = require("../services/supplierService");
 const assetService = require("../services/assetService");
 const repairTicketService = require("../services/repairTicketService");
 
 // Resolves the supplier of an asset on either datasource. The Mongoose
 // populate path leaves asset.supplier as the populated Supplier document (its
-// name is read directly); the plain-id path (PG rows store the Mongo supplier
-// id as TEXT, and the Mongo fallback without a populate returns the bare
-// ObjectId) resolves the Supplier by id from the Mongo collection — suppliers
-// stay Mongo-backed, so the same collection serves both paths.
+// name is read directly); the plain-id path (PG rows store the supplier id as
+// TEXT, and the Mongo fallback without a populate returns the bare ObjectId)
+// resolves the Supplier by id through supplierService, so the lookup follows
+// the selected datasource — suppliers are PostgreSQL-backed when the seam
+// selects PostgreSQL and Mongoose-backed otherwise.
 // Unresolvable suppliers return 'N/A', exactly the populate-null contract the
-// route had before this migration.
+// route had before suppliers became dual-datasource.
 const supplierName = async (asset) => {
   const value = asset && asset.supplier;
   if (!value) return "N/A";
   if (typeof value === "object" && value.name) return value.name;
   try {
-    const supplier = await Supplier.findById(String(value));
+    const supplier = await supplierService.findById(String(value));
     return supplier && supplier.name ? supplier.name : "N/A";
   } catch {
     return "N/A";
