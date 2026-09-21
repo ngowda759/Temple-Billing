@@ -1,6 +1,6 @@
 const AccountTransaction = require("../models/AccountTransaction");
 const AccountHead = require("../models/AccountHead");
-const CashClosing = require("../models/CashClosing");
+const cashClosingService = require("../services/cashClosingService");
 const { logAudit } = require("./auditLogController");
 
 // --- Account Heads ---
@@ -263,7 +263,10 @@ exports.getAnnualReport = async (req, res) => {
 // --- Cash Closing ---
 exports.getCashClosings = async (req, res) => {
   try {
-    const closings = await CashClosing.find().sort({ date: -1 }).populate("recordedBy", "name").populate("verifiedBy", "name");
+    const closings = await cashClosingService.findMany({
+      sort: { date: -1 },
+      populate: true,
+    });
     res.status(200).json(closings);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch cash closings", error: error.message });
@@ -307,7 +310,7 @@ exports.submitCashClosing = async (req, res) => {
     const expectedClosing = Number(openingCash) + cashCollected - Number(cashDeposited);
     const discrepancy = Number(closingCash) - expectedClosing;
 
-    const closing = new CashClosing({
+    const closing = await cashClosingService.create({
       date: targetDate,
       openingCash,
       cashCollected,
@@ -322,8 +325,6 @@ exports.submitCashClosing = async (req, res) => {
       recordedBy: req.user.id,
       status: "Pending Verification"
     });
-    
-    await closing.save();
 
     await logAudit(
       req.user.id,
@@ -344,12 +345,13 @@ exports.verifyCashClosing = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body; // "Verified" or "Disputed"
     
-    const closing = await CashClosing.findById(id);
-    if (!closing) return res.status(404).json({ message: "Cash closing not found" });
+    const existing = await cashClosingService.findById(id);
+    if (!existing) return res.status(404).json({ message: "Cash closing not found" });
 
-    closing.status = status;
-    closing.verifiedBy = req.user.id;
-    await closing.save();
+    const closing = await cashClosingService.updateById(id, {
+      status,
+      verifiedBy: req.user.id,
+    });
     
     res.status(200).json({ message: `Cash closing ${status}`, closing });
   } catch (error) {

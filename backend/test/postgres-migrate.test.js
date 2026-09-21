@@ -88,7 +88,80 @@ const resetTestDb = async (databaseUrl) => {
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_tickets CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS repair_requests CASCADE");
   await poolQuery(databaseUrl, "DROP TABLE IF EXISTS donations CASCADE");
+  await poolQuery(databaseUrl, "DROP TABLE IF EXISTS cash_closings CASCADE");
 };
+
+// Guards the Phase 2AH branch coordination. 030_create_tasks.sql lands on the
+// sibling branch (phase-2ah-mongo-only-model-audit) while this branch carries
+// 031_create_cash_closings.sql. Once both are merged the directory must hold a
+// deterministic, gap-free-prefix sequence with no duplicate numeric prefix.
+// migrate.js sorts filenames, so a duplicate prefix would make the apply order
+// ambiguous — exactly the 028→029 collision this numbering avoids.
+test("migration filenames are unique and deterministically ordered by prefix", () => {
+  const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql"));
+
+  // Unique numeric prefix — no two migrations may share one.
+  const prefixes = files.map((f) => f.slice(0, 3));
+  const dupes = prefixes.filter((p, i) => prefixes.indexOf(p) !== i);
+  assert.deepStrictEqual(dupes, [], `duplicate migration prefixes: ${dupes.join(", ")}`);
+
+  // Lexicographic sort (what migrate.js uses) must equal numeric prefix order,
+  // i.e. the sequence is what a reader would expect from the numbers.
+  const sorted = [...files].sort();
+  const byPrefix = [...files].sort((a, b) => Number(a.slice(0, 3)) - Number(b.slice(0, 3)));
+  assert.deepStrictEqual(sorted, byPrefix, "filename sort differs from numeric prefix order");
+
+  // Every prefix must be zero-padded to 3 digits so the sort stays correct.
+  for (const f of files) assert.match(f, /^\d{3}_[a-z0-9_]+\.sql$/, `bad migration filename: ${f}`);
+});
+
+test("the cash_closings migration creates the expected table", async () => {
+  const databaseUrl = TEST_DB_URL;
+  await resetTestDb(databaseUrl);
+  const { status } = runMigrate(databaseUrl);
+  assert.strictEqual(status, 0);
+
+  const cols = await poolQuery(databaseUrl, `
+    SELECT column_name, data_type, is_nullable, numeric_precision, numeric_scale
+      FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'cash_closings'
+     ORDER BY ordinal_position
+  `);
+  assert.strictEqual(cols.length, 17, "cash_closings has exactly 17 columns");
+
+  const byName = Object.fromEntries(cols.map((c) => [c.column_name, c]));
+  // Approved: plain NUMERIC everywhere — no precision, no scale.
+  for (const c of ["opening_cash", "cash_collected", "closing_cash", "discrepancy"]) {
+    assert.strictEqual(byName[c].data_type, "numeric", `${c} is numeric`);
+    assert.strictEqual(byName[c].numeric_precision, null, `${c} has no imposed precision`);
+    assert.strictEqual(byName[c].numeric_scale, null, `${c} has no imposed scale`);
+  }
+  assert.strictEqual(byName.status.is_nullable, "YES", "status accepts an explicit null, as Mongoose does");
+  assert.strictEqual(byName.recorded_by.is_nullable, "NO");
+
+  // Approved: no per-day UNIQUE and no FK on recorded_by.
+  const cons = await poolQuery(databaseUrl, `
+    SELECT conname, contype FROM pg_constraint
+     WHERE conrelid = 'public.cash_closings'::regclass ORDER BY contype
+  `);
+  const types = cons.map((c) => c.contype).sort();
+  assert.deepStrictEqual(types, ["c", "p"], "only a primary key and the status CHECK");
+  const fk = await poolQuery(databaseUrl, `
+    SELECT conname FROM pg_constraint
+     WHERE conrelid = 'public.cash_closings'::regclass AND contype = 'f'
+  `);
+  assert.deepStrictEqual(fk, [], "no foreign key — closing history survives cashier deletion");
+
+  // Approved: the three additive indexes.
+  const idx = await poolQuery(databaseUrl, `
+    SELECT indexname FROM pg_indexes
+     WHERE schemaname = 'public' AND tablename = 'cash_closings' ORDER BY indexname
+  `);
+  const names = idx.map((i) => i.indexname);
+  for (const n of ["idx_cash_closings_date", "idx_cash_closings_recorded_by", "idx_cash_closings_date_status"]) {
+    assert.ok(names.includes(n), `missing approved index ${n}`);
+  }
+});
 
 test("db:migrate runs clean from scratch on a fresh database", async () => {
   const databaseUrl = TEST_DB_URL;
