@@ -3,7 +3,7 @@ const attendanceService = require("../services/attendanceService");
 const Employee = require("../models/Employee");
 const leaveService = require("../services/leaveService");
 const shiftService = require("../services/shiftService");
-const Task = require("../models/Task");
+const taskService = require("../services/taskService");
 const User = require("../models/User");
 const attendanceSettingService = require("../services/attendanceSettingService");
 const { createNotification, createStaffNotification } = require("../utils/notificationService");
@@ -541,7 +541,10 @@ const buildDashboardResponse = async (staffId, monthValue) => {
     }),
   ]);
   // Also load today's special assignments (for extra duty / temporary shifts)
-  const todayTasks = await Task.find(await buildTaskQuery(staffId, todayKey)).sort({ dueDate: 1, time: 1, createdAt: -1 });
+  const todayTasks = await taskService.findMany({
+    filter: await buildTaskQuery(staffId, todayKey),
+    sort: { dueDate: 1, time: 1, createdAt: -1 },
+  });
   const dailyContext = await buildDailyAssignmentContext(staff, todayTasks);
 
   const attendanceByDate = new Map();
@@ -815,7 +818,7 @@ const buildAdminAttendanceDashboard = async (monthValue, filterEmployeeId = null
       },
       sort: { fromDate: -1, createdAt: -1 },
     }),
-    Task.find({ dueDate: todayKey }).sort({ createdAt: -1 }),
+    taskService.findMany({ filter: { dueDate: todayKey }, sort: { createdAt: -1 } }),
     shiftService.findMany({ filter: { active: true }, sort: { shiftName: 1 } }),
   ]);
 
@@ -1300,7 +1303,7 @@ exports.markAttendance = async (req, res) => {
         });
       }
     }
-    const todayTasks = await Task.find(await buildTaskQuery(staffId, dateKey));
+    const todayTasks = await taskService.findMany({ filter: await buildTaskQuery(staffId, dateKey) });
     const dailyContext = await buildDailyAssignmentContext(
       {
         defaultShift: employee?.defaultShift || employee?.shift || staff.defaultShift || staff.shift,

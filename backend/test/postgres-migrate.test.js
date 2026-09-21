@@ -201,7 +201,7 @@ test("db:migrate runs clean from scratch on a fresh database", async () => {
     "027_create_prasadams.sql",
     "028_create_settings.sql",
     "029_create_audit_logs.sql",
-    "031_create_cash_closings.sql",
+    "030_create_tasks.sql",
   ]);
 });
 
@@ -260,7 +260,7 @@ test("migration failure rolls back and is not recorded", async () => {
       "027_create_prasadams.sql",
     "028_create_settings.sql",
     "029_create_audit_logs.sql",
-    "031_create_cash_closings.sql",
+      "030_create_tasks.sql",
     ]);
 
     const tables = await poolQuery(databaseUrl, "SELECT to_regclass('public.broken_migration_test') AS t");

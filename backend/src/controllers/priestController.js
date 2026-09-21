@@ -1,5 +1,5 @@
 const Booking = require("../models/Booking");
-const Task = require("../models/Task");
+const taskService = require("../services/taskService");
 const notificationPersistenceService = require("../services/notificationPersistenceService");
 const User = require("../models/User");
 const mongoose = require("mongoose");
@@ -161,12 +161,14 @@ exports.getPriestDashboard = async (req, res) => {
 
     // 10. Fetch today's Seva duties (Tasks)
     const todayStr = new Date().toISOString().slice(0, 10);
-    const duties = await Task.find({
-      $or: [
-        { staffId: priestId },
-        { staffEmail: user.email }
-      ],
-      dateKey: todayStr
+    const duties = await taskService.findMany({
+      filter: {
+        $or: [
+          { staffId: priestId },
+          { staffEmail: user.email }
+        ],
+        dateKey: todayStr
+      }
     });
 
     const sevaDuties = duties.map(d => ({
@@ -521,23 +523,29 @@ exports.getSevaSchedule = async (req, res) => {
 
     const todayStr = new Date().toISOString().slice(0, 10);
     
-    let duties = await Task.find({
-      $or: [{ staffId: priestId }, { staffEmail: user.email }],
-      dateKey: todayStr,
+    let duties = await taskService.findMany({
+      filter: {
+        $or: [{ staffId: priestId }, { staffEmail: user.email }],
+        dateKey: todayStr,
+      },
     });
 
     if (duties.length === 0) {
-      const anyTasks = await Task.find({
-        $or: [{ staffId: priestId }, { staffEmail: user.email }],
+      const anyTasks = await taskService.findMany({
+        filter: {
+          $or: [{ staffId: priestId }, { staffEmail: user.email }],
+        },
       });
       if (anyTasks.length > 0) {
-        await Task.updateMany(
+        await taskService.updateMany(
           { $or: [{ staffId: priestId }, { staffEmail: user.email }] },
           { dateKey: todayStr }
         );
-        duties = await Task.find({
-          $or: [{ staffId: priestId }, { staffEmail: user.email }],
-          dateKey: todayStr,
+        duties = await taskService.findMany({
+          filter: {
+            $or: [{ staffId: priestId }, { staffEmail: user.email }],
+            dateKey: todayStr,
+          },
         });
       }
     }
@@ -779,10 +787,13 @@ exports.getSpecialDuties = async (req, res) => {
     const priestId = req.user.id;
     const user = await User.findById(priestId);
     
-    const duties = await Task.find({
-      $or: [{ staffId: priestId }, { staffEmail: user?.email }],
-      assignmentType: { $in: ["Special Duty", "Duty & Shift"] },
-    }).sort({ createdAt: -1 });
+    const duties = await taskService.findMany({
+      filter: {
+        $or: [{ staffId: priestId }, { staffEmail: user?.email }],
+        assignmentType: { $in: ["Special Duty", "Duty & Shift"] },
+      },
+      sort: { createdAt: -1 },
+    });
 
     const formatted = duties.map(d => ({
       id: d._id,
@@ -811,14 +822,15 @@ exports.acceptDuty = async (req, res) => {
     const priestId = req.user.id;
     const user = await User.findById(priestId);
 
-    const task = await Task.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
+    const task = await taskService.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
     if (!task) return res.status(404).json({ message: "Duty not found" });
 
-    task.status = "Accepted";
-    task.acceptedAt = new Date();
-    await task.save();
+    const updatedTask = await taskService.updateById(task._id, {
+      status: "Accepted",
+      acceptedAt: new Date(),
+    });
 
-    return res.status(200).json({ message: "Duty accepted", task });
+    return res.status(200).json({ message: "Duty accepted", task: updatedTask || task });
   } catch (error) {
     console.error("Error accepting duty:", error);
     return res.status(500).json({ message: "Failed to accept duty" });
@@ -832,13 +844,17 @@ exports.rejectDuty = async (req, res) => {
     const priestId = req.user.id;
     const user = await User.findById(priestId);
 
-    const task = await Task.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
+    const task = await taskService.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
     if (!task) return res.status(404).json({ message: "Duty not found" });
 
     task.status = "Rejected";
     task.rejectedAt = new Date();
     task.rejectionReason = rejectionReason;
-    await task.save();
+    await taskService.updateById(task._id, {
+      status: task.status,
+      rejectedAt: task.rejectedAt,
+      rejectionReason: task.rejectionReason,
+    });
 
     return res.status(200).json({ message: "Duty rejected", task });
   } catch (error) {
@@ -853,12 +869,15 @@ exports.completeDuty = async (req, res) => {
     const priestId = req.user.id;
     const user = await User.findById(priestId);
 
-    const task = await Task.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
+    const task = await taskService.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
     if (!task) return res.status(404).json({ message: "Duty not found" });
 
     task.status = "Completed";
     task.completedAt = new Date();
-    await task.save();
+    await taskService.updateById(task._id, {
+      status: task.status,
+      completedAt: task.completedAt,
+    });
 
     return res.status(200).json({ message: "Duty completed", task });
   } catch (error) {
@@ -874,10 +893,13 @@ exports.getFestivalDuties = async (req, res) => {
     const priestId = req.user.id;
     const user = await User.findById(priestId);
     
-    const duties = await Task.find({
-      $or: [{ staffId: priestId }, { staffEmail: user?.email }],
-      assignmentType: "Festival Duty",
-    }).sort({ createdAt: -1 });
+    const duties = await taskService.findMany({
+      filter: {
+        $or: [{ staffId: priestId }, { staffEmail: user?.email }],
+        assignmentType: "Festival Duty",
+      },
+      sort: { createdAt: -1 },
+    });
 
     const formatted = duties.map(d => ({
       id: d._id,
@@ -905,12 +927,15 @@ exports.markFestivalDutyAttendance = async (req, res) => {
     const priestId = req.user.id;
     const user = await User.findById(priestId);
 
-    const task = await Task.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
+    const task = await taskService.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
     if (!task) return res.status(404).json({ message: "Duty not found" });
 
     task.status = "Attended";
     task.attendanceStatus = "Present";
-    await task.save();
+    await taskService.updateById(task._id, {
+      status: task.status,
+      attendanceStatus: task.attendanceStatus,
+    });
 
     return res.status(200).json({ message: "Attendance marked successfully", task });
   } catch (error) {
@@ -925,12 +950,15 @@ exports.completeFestivalDuty = async (req, res) => {
     const priestId = req.user.id;
     const user = await User.findById(priestId);
 
-    const task = await Task.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
+    const task = await taskService.findOne({ _id: id, $or: [{ staffId: priestId }, { staffEmail: user?.email }] });
     if (!task) return res.status(404).json({ message: "Duty not found" });
 
     task.status = "Completed";
     task.completedAt = new Date();
-    await task.save();
+    await taskService.updateById(task._id, {
+      status: task.status,
+      completedAt: task.completedAt,
+    });
 
     return res.status(200).json({ message: "Festival duty completed", task });
   } catch (error) {
@@ -1156,9 +1184,11 @@ exports.getMyDuties = async (req, res) => {
 
     // 2. Fetch Tasks assigned to Priest
     const todayStr = new Date().toISOString().slice(0, 10);
-    const tasks = await Task.find({
-      $or: [{ staffId: priestId }, { staffEmail: user?.email }],
-      status: { $in: ["Pending", "Assigned", "Accepted", "In Progress", "Transfer Requested"] }
+    const tasks = await taskService.findMany({
+      filter: {
+        $or: [{ staffId: priestId }, { staffEmail: user?.email }],
+        status: { $in: ["Pending", "Assigned", "Accepted", "In Progress", "Transfer Requested"] }
+      }
     });
     
     // Check pending TransferRequests for the employee
@@ -1267,12 +1297,12 @@ exports.startMyDuty = async (req, res) => {
       booking.startedAt = new Date();
       await booking.save();
     } else if (referenceType === "Task") {
-      const task = await Task.findById(referenceId);
+      const task = await taskService.findById(referenceId);
       if (!task || task.status !== "Assigned") {
         return res.status(400).json({ message: "Cannot start this duty. It may not be in 'Assigned' state." });
       }
       task.status = "In Progress";
-      await task.save();
+      await taskService.updateById(task._id, { status: task.status });
     } else {
       return res.status(400).json({ message: "Invalid reference type" });
     }
@@ -1299,7 +1329,7 @@ exports.completeMyDuty = async (req, res) => {
       booking.completionDuration = Number(duration) || 0;
       await booking.save();
     } else if (referenceType === "Task") {
-      const task = await Task.findById(referenceId);
+      const task = await taskService.findById(referenceId);
       if (!task || task.status !== "In Progress") {
         return res.status(400).json({ message: "Cannot complete. Duty must be 'In Progress'." });
       }
@@ -1307,7 +1337,12 @@ exports.completeMyDuty = async (req, res) => {
       task.completedAt = new Date();
       task.completionRemarks = remarks || "";
       task.completionDuration = Number(duration) || 0;
-      await task.save();
+      await taskService.updateById(task._id, {
+        status: task.status,
+        completedAt: task.completedAt,
+        completionRemarks: task.completionRemarks,
+        completionDuration: task.completionDuration,
+      });
     } else {
       return res.status(400).json({ message: "Invalid reference type" });
     }
@@ -1337,7 +1372,7 @@ exports.requestTransfer = async (req, res) => {
       }
       dateStr = booking.datetime;
     } else if (referenceType === "Task") {
-      const task = await Task.findById(referenceId);
+      const task = await taskService.findById(referenceId);
       if (!task || task.status !== "Assigned") {
         return res.status(400).json({ message: "Can only transfer duties that are in 'Assigned' state." });
       }
@@ -1395,7 +1430,7 @@ exports.requestTransfer = async (req, res) => {
     if (referenceType === "Booking") {
       await Booking.findByIdAndUpdate(referenceId, { status: "Transfer Requested" });
     } else if (referenceType === "Task") {
-      await Task.findByIdAndUpdate(referenceId, { status: "Transfer Requested" });
+      await taskService.updateById(referenceId, { status: "Transfer Requested" });
     }
     // For DefaultDuty, we don't update status in any separate model right now.
 
@@ -1505,7 +1540,7 @@ exports.getMyTransfers = async (req, res) => {
       .sort({ createdAt: -1 });
 
     const Booking = require("../models/Booking");
-    const Task = require("../models/Task");
+    const taskService = require("../services/taskService");
 
     const formattedRequests = await Promise.all(
       transfers.map(async (req) => {
@@ -1523,7 +1558,7 @@ exports.getMyTransfers = async (req, res) => {
             time = new Date(booking.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           }
         } else if (req.referenceType === "Task") {
-          const task = await Task.findById(req.referenceId);
+          const task = await taskService.findById(req.referenceId);
           if (task) {
             dutyName = task.title || task.dutyName || task.duty;
             date = task.dateKey || new Date(task.createdAt).toLocaleDateString();
@@ -1579,7 +1614,7 @@ exports.respondToTransfer = async (req, res) => {
     await transfer.save();
 
     const Booking = require("../models/Booking");
-    const Task = require("../models/Task");
+    const taskService = require("../services/taskService");
 
     if (status === "Approved") {
       if (transfer.referenceType === "Booking") {
@@ -1588,16 +1623,13 @@ exports.respondToTransfer = async (req, res) => {
           status: "Assigned" 
         });
       } else {
-        await Task.findByIdAndUpdate(transfer.referenceId, {
-          assignedPriest: priestId,
-          status: "Assigned"
-        });
+        await taskService.updateById(transfer.referenceId, { status: "Assigned" });
       }
     } else {
       if (transfer.referenceType === "Booking") {
         await Booking.findByIdAndUpdate(transfer.referenceId, { status: "Assigned" });
       } else {
-        await Task.findByIdAndUpdate(transfer.referenceId, { status: "Assigned" });
+        await taskService.updateById(transfer.referenceId, { status: "Assigned" });
       }
     }
 
@@ -1652,9 +1684,11 @@ exports.getAvailablePriestsForTransfer = async (req, res) => {
         return bDate >= startOfDuty && bDate <= endOfDuty;
       }).map(b => b.assignedPriest?.toString()).filter(Boolean);
 
-      const busyTasks = await Task.find({
-        dateKey: { $regex: new RegExp(date.split("T")[0], "i") },
-        status: { $in: ["Pending", "Assigned", "Accepted", "In Progress"] }
+      const busyTasks = await taskService.findMany({
+        filter: {
+          dateKey: { $regex: new RegExp(date.split("T")[0], "i") },
+          status: { $in: ["Pending", "Assigned", "Accepted", "In Progress"] }
+        }
       });
       
       const busyTaskPriests = busyTasks.filter(t => {

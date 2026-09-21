@@ -365,8 +365,8 @@ const updateById = async (id, updates) => {
 };
 
 // Mirrors Shift.findByIdAndDelete(id) on the fallback branch. The controller's
-// follow-up Task.deleteMany({ shiftId }) stays in the controller — Task is a
-// separate domain and is not migrated in this phase.
+// follow-up Task cascade stays in the controller and routes through taskService
+// — Task is a separate domain with its own datasource selection.
 const destroy = async (id) => {
   if (!id) return null;
   if (!dbConfig.isDbConnected()) return Shift.findByIdAndDelete(String(id));

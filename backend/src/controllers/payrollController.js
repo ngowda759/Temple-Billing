@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 const Employee = require("../models/Employee");
 const attendanceService = require("../services/attendanceService");
 const leaveService = require("../services/leaveService");
-const Task = require("../models/Task");
+const taskService = require("../services/taskService");
 const payrollService = require("../services/payrollService");
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
@@ -268,8 +268,10 @@ const loadPayrollContext = async (monthValue) => {
     leaveService.findMany({
       filter: { status: "Approved", fromDate: { $lte: endKey }, toDate: { $gte: startOfYear } },
     }),
-    Task.find({
-      $or: [{ dateKey: { $gte: startKey, $lte: endKey } }, { dueDate: { $gte: startKey, $lte: endKey } }],
+    taskService.findMany({
+      filter: {
+        $or: [{ dateKey: { $gte: startKey, $lte: endKey } }, { dueDate: { $gte: startKey, $lte: endKey } }],
+      },
     }),
     payrollService.findMany({ filter: { monthKey: monthRange.monthKey } }),
   ]);
@@ -396,8 +398,10 @@ exports.payEmployeePayroll = async (req, res) => {
       leaveService.findMany({
         filter: { status: "Approved", fromDate: { $lte: endKey }, toDate: { $gte: startKey } },
       }),
-      Task.find({
-        $or: [{ dateKey: { $gte: startKey, $lte: endKey } }, { dueDate: { $gte: startKey, $lte: endKey } }],
+      taskService.findMany({
+        filter: {
+          $or: [{ dateKey: { $gte: startKey, $lte: endKey } }, { dueDate: { $gte: startKey, $lte: endKey } }],
+        },
       }),
       payrollService.findOne({ employeeId: employee._id, monthKey }),
     ]);

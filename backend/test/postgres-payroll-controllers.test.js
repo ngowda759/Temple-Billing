@@ -20,7 +20,7 @@ const Employee = require("../src/models/Employee");
 const PayrollRecord = require("../src/models/PayrollRecord");
 const attendanceService = require("../src/services/attendanceService");
 const leaveService = require("../src/services/leaveService");
-const Task = require("../src/models/Task");
+const taskService = require("../src/services/taskService");
 const accountingService = require("../src/services/accountingService");
 
 const TEST_DB_URL =
@@ -86,8 +86,8 @@ const stubPayrollInputs = () => {
   const originals = {
     attendanceFindMany: attendanceService.findMany,
     leaveFindMany: leaveService.findMany,
-    taskFind: Task.find,
-    taskDeleteMany: Task.deleteMany,
+    taskFindMany: taskService.findMany,
+    taskDeleteMany: taskService.deleteMany,
     employeeFindById: Employee.findById,
     employeeFind: Employee.find,
     recorded: accountingService.recordTransaction,
@@ -95,15 +95,15 @@ const stubPayrollInputs = () => {
   accountingService.recordTransaction = async () => null;
   attendanceService.findMany = async () => [];
   leaveService.findMany = async () => [];
-  Task.find = () => ({ then: (resolve) => Promise.resolve([]).then(resolve) });
+  taskService.findMany = async () => [];
   return originals;
 };
 
 const restorePayrollInputs = (originals) => {
   attendanceService.findMany = originals.attendanceFindMany;
   leaveService.findMany = originals.leaveFindMany;
-  Task.find = originals.taskFind;
-  Task.deleteMany = originals.taskDeleteMany;
+  taskService.findMany = originals.taskFindMany;
+  taskService.deleteMany = originals.taskDeleteMany;
   Employee.findById = originals.employeeFindById;
   Employee.find = originals.employeeFind;
   accountingService.recordTransaction = originals.recorded;
