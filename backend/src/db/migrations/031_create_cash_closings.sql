@@ -74,8 +74,12 @@
 --       → NULL with no default; the property stays undefined on a Mongo read,
 --         which the repository reproduces by returning undefined rather than
 --         null.
--- `status` is the fifth case: `default` plus an enum, so it is NOT NULL
--- DEFAULT 'Pending Verification' with the enum reproduced as a CHECK.
+-- `status` is the fifth case: `default` plus an enum, but NOT required. It is
+-- NULLABLE DEFAULT 'Pending Verification': an omitted value becomes the default,
+-- while an explicit null validates in Mongo and is stored as null.
+-- (This is reachable — verifyCashClosing passes req.body.status straight
+-- through with no validation, so `{"status": null}` succeeds on the Mongo path.
+-- Making the column NOT NULL would turn that 200 into a 500.)
 --
 -- Mongo → PostgreSQL field mapping — cash_closings (every persisted field):
 --   * _id                    → id TEXT PRIMARY KEY (24-hex Mongo-compatible id)
@@ -90,7 +94,7 @@
 --   * closingCash            → closing_cash NUMERIC NOT NULL (required, no default)
 --   * discrepancy            → discrepancy NUMERIC DEFAULT 0
 --   * notes                  → notes TEXT
---   * status                 → status TEXT NOT NULL DEFAULT 'Pending Verification'
+--   * status                 → status TEXT DEFAULT 'Pending Verification' (nullable)
 --   * recordedBy             → recorded_by TEXT NOT NULL
 --   * verifiedBy             → verified_by TEXT
 --   * createdAt              → created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -165,8 +169,13 @@ CREATE TABLE IF NOT EXISTS cash_closings (
   discrepancy NUMERIC DEFAULT 0,
   -- Mongo: notes String — optional, NO default (stays undefined on a read).
   notes TEXT,
-  -- Mongo: status String — enum, default 'Pending Verification'.
-  status TEXT NOT NULL DEFAULT 'Pending Verification',
+  -- Mongo: status String — enum, default 'Pending Verification', NOT required.
+  -- NULLABLE: `default` fires only on an omitted value, so an explicit null
+  -- (which verifyCashClosing can send straight from req.body) validates and is
+  -- stored as null in Mongo. NOT NULL here would reject that write. The CHECK
+  -- below still evaluates to NULL — i.e. passes — for a null status, which is
+  -- exactly the Mongo enum behaviour.
+  status TEXT DEFAULT 'Pending Verification',
   -- Mongo: recordedBy ObjectId ref 'User' — required. Plain indexed TEXT, no
   -- FK (see header). Stored as the 24-hex id string.
   recorded_by TEXT NOT NULL,

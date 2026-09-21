@@ -318,6 +318,26 @@ test("PG path: status enum is enforced like Mongo", async () => {
   );
 });
 
+test("PG path: an explicit null status is stored, matching Mongoose", async () => {
+  // Mongoose's `default` fires only on an omitted value, so `status: null`
+  // validates and persists as null. The column must be nullable for the
+  // PostgreSQL path to accept the same write. (A CHECK (status IN (...)) already
+  // evaluates to NULL — i.e. passes — for a null value.)
+  const closing = await cashClosingService.create(closingBase({ status: null }));
+  const raw = await poolQuery("SELECT status FROM cash_closings WHERE id = $1", [closing._id]);
+  assert.strictEqual(raw[0].status, null, "explicit null status is stored, not coerced");
+
+  const read = await cashClosingService.findById(closing._id);
+  assert.ok(read, "row is readable with a null status");
+  assert.strictEqual(read.status, null);
+});
+
+test("PG path: an omitted status still defaults to Pending Verification", async () => {
+  const closing = await cashClosingService.create(closingBase({ status: undefined }));
+  const raw = await poolQuery("SELECT status FROM cash_closings WHERE id = $1", [closing._id]);
+  assert.strictEqual(raw[0].status, "Pending Verification", "omitted status takes the default");
+});
+
 // ─── Populate shape ────────────────────────────────────────────────────────
 test("PG path: populate returns the { _id, name } shape the frontend reads", async () => {
   const cashier = await makeUser("cashier");
@@ -403,7 +423,10 @@ test("PG path: cash_closings table has the exact Mongo field mapping", async () 
   assert.strictEqual(byName.cash_collected.is_nullable, "NO", "cashCollected required+default");
   assert.strictEqual(byName.closing_cash.is_nullable, "NO", "closingCash required, no default");
   assert.strictEqual(byName.recorded_by.is_nullable, "NO", "recordedBy required");
-  assert.strictEqual(byName.status.is_nullable, "NO", "status has a default");
+  // `default` fires only on an omitted value, so an explicit null — which
+  // verifyCashClosing can pass straight from req.body — validates in Mongo and
+  // is stored as null. NOT NULL here would turn that 200 into a 500.
+  assert.strictEqual(byName.status.is_nullable, "YES", "status has a default but accepts an explicit null");
   assert.strictEqual(byName.upi_collected.is_nullable, "YES", "default-only paths accept null");
   assert.strictEqual(byName.card_collected.is_nullable, "YES");
   assert.strictEqual(byName.bank_transfer_collected.is_nullable, "YES");

@@ -374,6 +374,49 @@ test("cash closing controller (PG): submitCashClosing returns 500 when closingCa
   assert.match(res.body.error, /closingCash is required/);
 });
 
+test("cash closing controller (PG): verifyCashClosing with a null status does not 500 (Mongo parity)", async () => {
+  // Reproduces the reachable Mongo-only write this column must not reject.
+  // verifyCashClosing reads `req.body.status` with no validation and passes it
+  // straight to the write, so a PUT body of {"status": null} validates and
+  // persists null under Mongoose. PostgreSQL must not turn that 200 into a 500.
+  stubAccountingAndMongoWrites([tx("Cash", 100)]);
+  const submitRes = createMockRes();
+  await accountController.submitCashClosing(
+    { body: { openingCash: 0, cashDeposited: 0, closingCash: 100 }, user: { id: hex24() }, ip: "10.0.0.14" },
+    submitRes
+  );
+  const id = submitRes.body.closing._id;
+
+  const res = createMockRes();
+  await accountController.verifyCashClosing(
+    { params: { id }, body: { status: null }, user: { id: hex24() }, ip: "10.0.0.14" },
+    res
+  );
+
+  assert.strictEqual(res.statusCode, 200, "null status must not become a 500");
+  assert.strictEqual(res.body.closing.status, null);
+
+  const rows = await pgQuery("SELECT status, verified_by FROM cash_closings WHERE id = $1", [id]);
+  assert.strictEqual(rows[0].status, null, "null status persisted");
+  assert.ok(rows[0].verified_by, "verifiedBy is still recorded alongside the null status");
+});
+
+test("cash closing controller (PG): verifyCashClosing with an out-of-enum status is rejected", async () => {
+  stubAccountingAndMongoWrites([tx("Cash", 100)]);
+  const submitRes = createMockRes();
+  await accountController.submitCashClosing(
+    { body: { openingCash: 0, cashDeposited: 0, closingCash: 100 }, user: { id: hex24() }, ip: "10.0.0.15" },
+    submitRes
+  );
+
+  const res = createMockRes();
+  await accountController.verifyCashClosing(
+    { params: { id: submitRes.body.closing._id }, body: { status: "Bogus" }, user: { id: hex24() }, ip: "10.0.0.15" },
+    res
+  );
+  assert.strictEqual(res.statusCode, 500, "out-of-enum status is rejected, as Mongoose does");
+});
+
 // ─── Mongo fallback ───────────────────────────────────────────────────────
 test("cash closing controller (Mongo fallback): submitCashClosing writes through Mongoose", async () => {
   pinDisconnected();
