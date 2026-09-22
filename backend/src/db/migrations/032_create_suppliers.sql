@@ -1,0 +1,159 @@
+-- Phase 2AH: suppliers (MongoDB → PostgreSQL migration).
+--
+-- Numbered 032 to follow 031_create_cash_closings.sql, which was merged as part
+-- of the sibling Phase 2AH Cash Closing work (PR #37). The prefix sequence is
+-- continuous and collision-free:
+--
+--     029_create_audit_logs.sql
+--     030_create_tasks.sql
+--     031_create_cash_closings.sql
+--     032_create_suppliers.sql      (this migration)
+--
+-- migrate.js sorts filenames, so a duplicate prefix would make the apply order
+-- ambiguous — the 028→029 and 030→031 renumberings exist to avoid exactly that.
+--
+-- Mirrors backend/src/models/Supplier.js and every real usage of the Supplier
+-- model. Before this phase the domain had NO repository and NO service — the
+-- entire persistence surface was four controller handlers in
+-- inventorySupplierController.js plus one name-resolution lookup in
+-- publicAssetController.js.
+--
+--   * Supplier.js — the Mongoose model. Persisted paths:
+--     name (String, required, trim),
+--     address (String, trim, default ''),
+--     phone (String, trim, default ''),
+--     email (String, trim, default ''),
+--     gst (String, trim, default ''),
+--     itemsSupplied ([String], defaults to []).
+--     The model declares NO index of any kind, NO hook, NO virtual, NO
+--     sub-document, NO enum, NO unique constraint, NO validation beyond the
+--     single `required: true` on name, and NO ObjectId reference.
+--
+--   * inventorySupplierController.js — the ONLY consumer, via four mounted
+--     routes (mounted at /api/admin by app.js, admin/superadmin only):
+--       getAllSuppliers  GET    /api/admin/inventory-suppliers
+--         Supplier.find().sort({ name: 1 })
+--       createSupplier   POST   /api/admin/inventory-suppliers
+--         Supplier.create({ name, address, phone, email, gst })
+--       updateSupplier   PUT    /api/admin/inventory-suppliers/:id
+--         Supplier.findByIdAndUpdate(id, {name,address,phone,email,gst},
+--                                    { new: true })   — note: NO runValidators
+--       deleteSupplier   DELETE /api/admin/inventory-suppliers/:id
+--         Supplier.findByIdAndDelete(id)
+--     Every handler funnels its input through `const clean = (val) =>
+--     String(val || "").trim()`, so the controller only ever writes trimmed
+--     strings (never null) and validates `name` itself before calling create.
+--     No consumer writes or reads `itemsSupplied`.
+--
+--   * publicAssetController.js — resolves an asset's supplier NAME by looking
+--     the supplier up by id. The lookup goes through supplierService.findById,
+--     so it follows the selected datasource (this table when PostgreSQL is
+--     reachable, the Mongoose collection otherwise) and a supplier created
+--     through this path renders on the asset QR page. Previously it read the
+--     Mongoose collection directly; that direct read was only correct while
+--     suppliers were exclusively Mongo-backed.
+--
+-- This migration is strictly additive: it introduces an alternate persistence
+-- path (backed by supplierRepository, reachable through supplierService) that
+-- is selected only when the service is used AND PostgreSQL is reachable.
+-- MongoDB stays the source of truth and the fallback path; no Mongo →
+-- PostgreSQL switch happens anywhere in the application, there are no dual
+-- writes and no production data is migrated.
+--
+-- Primary keys are 24-char hex strings so they remain compatible with the
+-- MongoDB ObjectIds returned by the existing model.
+--
+-- Mongo → PostgreSQL field mapping — suppliers (every migrated field):
+--   * _id       → id TEXT PRIMARY KEY (24-hex Mongo-compatible id)
+--   * name      → name TEXT NOT NULL (required, trim; NO default, because an
+--                 omitted value fails Mongoose validation)
+--   * address   → address TEXT DEFAULT '' (default '', trim, NOT required)
+--   * phone     → phone TEXT DEFAULT '' (default '', trim, NOT required)
+--   * email     → email TEXT DEFAULT '' (default '', trim, NOT required)
+--   * gst       → gst TEXT DEFAULT '' (default '', trim, NOT required)
+--   * createdAt → created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+--   * updatedAt → updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+--
+-- Intentionally omitted field:
+--   * itemsSupplied ([String])
+--     NOT migrated, and NOT added as a column or a child table. It is written
+--     by no controller, service, script or seeder and read by no backend or
+--     frontend consumer — the only occurrence in the entire repository is the
+--     schema declaration itself. It is a dead field, so persisting it would add
+--     a column and an array-mapping rule with no reader. The Mongoose schema is
+--     deliberately left untouched in this phase, so the Mongo path keeps
+--     accepting and storing it exactly as before; only PostgreSQL does not
+--     represent it. Adding it later is a purely additive change.
+--
+-- Nullability and defaults are transcribed from the model's ACTUAL validator
+-- behaviour, verified by compiling the real schema (not from the presence of
+-- the `required` keyword alone). Mongoose distinguishes two cases here and the
+-- table reproduces both:
+--   * `required: true` + `trim` (name)
+--       → an omitted, empty or whitespace-only value FAILS validation (trim
+--         runs before the required check, so '   ' collapses to '' and fails).
+--         The column is therefore NOT NULL with NO default, so PostgreSQL
+--         rejects the same writes MongoDB rejects.
+--   * `default: ''` + `trim`, NOT required (address, phone, email, gst)
+--       → an omitted value is filled by the default and validates; an explicit
+--         null is ACCEPTED and stored as null (no required validator). The
+--         columns are therefore NULLABLE DEFAULT '' — NOT NULL would reject a
+--         payload MongoDB stores. The CHECK-free nullable default is the same
+--         decision made for cash_closings.status in Phase 2AH.
+--     Note the live controller never sends null (every field passes through
+--     `clean()`), so this nullability is only observable by calling the service
+--     or repository directly; it exists to keep the two datasources faithful,
+--     not to serve a current client.
+--
+-- TEXT is used for every field. The Mongoose schema declares all five as
+-- Strings — including `gst`, which is a GST number ("29ABCDE1234F1Z5"), not an
+-- amount. Nothing in the codebase parses, sums, formats or range-checks any of
+-- them, so no NUMERIC conversion and no format CHECK is introduced: a CHECK
+-- would make PostgreSQL stricter than the source of truth. Mongoose casts a
+-- non-string (e.g. `gst: 12345`) to its string form, so the repository does the
+-- same rather than rejecting it.
+--
+-- Uniqueness: NONE, deliberately. The model declares no unique index and
+-- createSupplier performs a bare `Supplier.create({...})` with no pre-check, so
+-- two suppliers may legitimately share a name (and a phone, email or GST
+-- number). Adding UNIQUE(name) — or uniqueness on any other column — would
+-- introduce a business rule the application does not enforce today. That would
+-- be a separate business-rule change, not part of this migration.
+--
+-- Foreign keys: NONE, and none are added anywhere else. In particular the
+-- existing `purchase_orders.supplier`, `goods_received_notes.supplier`,
+-- `inventory_batches.supplier`, `inventory_items.preferred_supplier`,
+-- `assets.supplier` and `repair_tickets.vendor` columns deliberately stay plain
+-- TEXT with no FK. Those columns hold opaque, unvalidated values today —
+-- including non-ObjectId strings such as 'S', 'Vendor A' and 'TEST_SUPPLIER'
+-- written by the rest of the inventory flow — so a FK would reject rows the
+-- application already stores. No supplier string is rewritten or backfilled in
+-- this phase, and no normalization of historical values is attempted.
+
+CREATE TABLE IF NOT EXISTS suppliers (
+  id TEXT PRIMARY KEY,
+  -- Mongo: name String — required, trim. NO default: an omitted value fails
+  -- Mongoose validation, so PostgreSQL rejects it too.
+  name TEXT NOT NULL,
+  -- Mongo: address String — default '', trim, NOT required (explicit null is
+  -- accepted by Mongoose and must remain accepted here).
+  address TEXT DEFAULT '',
+  -- Mongo: phone String — default '', trim, not required.
+  phone TEXT DEFAULT '',
+  -- Mongo: email String — default '', trim, not required.
+  email TEXT DEFAULT '',
+  -- Mongo: gst String — default '', trim, not required. A GST NUMBER, stored as
+  -- TEXT: nothing parses or validates it anywhere in the codebase.
+  gst TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- It is intentional that this table carries exactly ZERO CONSTRAINT beyond the
+-- primary key and the NOT NULLs. In particular there is no UNIQUE constraint,
+-- no CHECK constraint and no foreign key, because the Mongo schema declares
+-- none and adding one would introduce a rule the application lacks.
+
+-- getAllSuppliers: Supplier.find().sort({ name: 1 }) — the only ordering and the
+-- only listing query the domain has.
+CREATE INDEX IF NOT EXISTS idx_suppliers_name ON suppliers (name);
