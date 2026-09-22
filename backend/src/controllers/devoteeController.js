@@ -8,7 +8,10 @@ const notificationPersistenceService = require("../services/notificationPersiste
 // the Event path is used and PostgreSQL is reachable, and otherwise falls
 // back to the existing Mongoose model.
 const eventPersistenceService = require("../services/eventPersistenceService");
-const SupportRequest = require("../models/SupportRequest");
+// Support Request persistence is additive: the shared service selects PostgreSQL
+// when the Support Request path is used and PostgreSQL is reachable, and
+// otherwise falls back to the existing Mongoose model.
+const supportRequestService = require("../services/supportRequestService");
 const User = require("../models/User");
 const PrasadamOrder = require("../models/PrasadamOrder");
 const prasadamService = require("../services/prasadamService");
@@ -1265,7 +1268,7 @@ const submitSupportRequest = async (req, res) => {
       return res.status(400).json({ error: "Please provide a subject and message." });
     }
 
-    const supportRequest = await SupportRequest.create({
+    const supportRequest = await supportRequestService.create({
       name: name || "Anonymous Devotee",
       email: email || "support@devotee.com",
       subject,
@@ -1387,7 +1390,10 @@ const getSupportRequests = async (req, res) => {
   try {
     const email = String(req.query.email || "").trim().toLowerCase();
     const filter = email ? { email } : {};
-    const requests = await SupportRequest.find(filter).sort({ createdAt: -1 });
+    const requests = await supportRequestService.findMany({
+      filter,
+      sort: { createdAt: -1 },
+    });
     return res.status(200).json({ requests });
   } catch (error) {
     return res.status(500).json({ error: "Failed to load support requests." });
@@ -1402,18 +1408,21 @@ const replySupportRequest = async (req, res) => {
       return res.status(400).json({ error: "Reply text is required." });
     }
 
-    const supportRequest = await SupportRequest.findById(id);
+    const supportRequest = await supportRequestService.findById(id);
     if (!supportRequest) {
       return res.status(404).json({ error: "Support request not found." });
     }
 
-    supportRequest.reply = String(reply).trim();
-    if (status && ["Open", "In Progress", "Closed"].includes(status)) {
-      supportRequest.status = status;
-    } else {
-      supportRequest.status = "Closed";
-    }
-    await supportRequest.save();
+    const replyText = String(reply).trim();
+    const nextStatus =
+      status && ["Open", "In Progress", "Closed"].includes(status)
+        ? status
+        : "Closed";
+
+    const updated = await supportRequestService.updateById(id, {
+      reply: replyText,
+      status: nextStatus,
+    });
 
     await notificationPersistenceService.create({
       title: "Feedback Response",
@@ -1421,7 +1430,7 @@ const replySupportRequest = async (req, res) => {
       audienceEmail: supportRequest.email,
     });
 
-    return res.status(200).json({ request: supportRequest });
+    return res.status(200).json({ request: updated });
   } catch (error) {
     return res.status(500).json({ error: "Failed to reply to support request." });
   }
@@ -2121,11 +2130,7 @@ const markNotificationAsRead = async (req, res) => {
 const markSupportRequestAsRead = async (req, res) => {
   try {
     const { id } = req.params;
-    const supportRequest = await SupportRequest.findByIdAndUpdate(
-      id,
-      { read: true },
-      { new: true }
-    );
+    const supportRequest = await supportRequestService.updateById(id, { read: true });
     
     if (!supportRequest) {
       return res.status(404).json({ error: "Support request not found." });
