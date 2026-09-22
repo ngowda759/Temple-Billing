@@ -1,5 +1,18 @@
 # Phase 2AH — SupportRequest Mongo-only model gap audit
 
+> **Implemented since.** This audit recommended OPTION A — migrate
+> `SupportRequest` in a future, separately approved phase. That phase has now
+> been merged: `033_create_support_requests.sql`, `supportRequestRepository.js`
+> and `supportRequestService.js` exist, and the four devotee handlers were wired
+> to the service. The design points below that were left open at audit time were
+> resolved — `status` is nullable with an enum CHECK (not `NOT NULL`) and the
+> email index is a raw `(email, created_at DESC)` compound index (not a
+> `lower(email)` functional index). See
+> [postgres-supportrequest-phase-2ah-implementation.md](postgres-supportrequest-phase-2ah-implementation.md)
+> for what was actually built. The statements below such as "Proposed … NOT
+> implemented" and "Next free prefix after 030/031/032" describe the audit-time
+> state and no longer match the repository.
+
 Phase 2AH is an **audit only**. It does not migrate `SupportRequest`, does not
 remove MongoDB, does not change datasource selection and does not perform a
 cutover. No migration, repository, service, controller, route, model or schema

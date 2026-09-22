@@ -34,6 +34,9 @@ Files:
 - `backend/src/controllers/authController.js` — `sendVerificationLink`,
   `verifyRegistration`, `registerUser`
 
+The registration form is served at `/register`; login is at `/auth-login`
+(see `frontend/src/App.jsx`; `/login` renders the public landing page).
+
 The verification token is a JWT valid for **15 minutes** and carries the
 already-bcrypt-hashed password, so the raw password is never placed in the token.
 
@@ -142,11 +145,13 @@ instead.
 #### Email and SMS for other flows
 
 Booking, donation, prasadam, support, event, and staff notifications are also
-created through `backend/src/utils/notificationService.js`
-(`createNotification`, `createStaffNotification`, `sendBroadcastEmail`), which
-persists a `Notification` document and, where an audience email is resolvable,
-sends the email. `sendBroadcastEmail` supports image and PDF attachments for
-festival invitations.
+created through `backend/src/utils/notificationService.js`, which persists a
+`Notification` document and, where an audience email is resolvable, sends the
+email. Its exported functions are `createNotification`, `createStaffNotification`,
+`createStaffBroadcastNotifications`, `createEmployeeBroadcastNotifications`, and
+`createBroadcastNotifications`; the broadcast path (via the internal
+`sendBroadcastEmail` helper) supports image and PDF attachments for festival
+invitations.
 
 ### 4. Devotee controller — `backend/src/controllers/devoteeController.js`
 

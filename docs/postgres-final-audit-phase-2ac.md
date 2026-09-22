@@ -1,5 +1,19 @@
 # Phase 2AC — Final PostgreSQL migration audit
 
+> **Superseded in part.** This document is a snapshot of the repository at Phase
+> 2AC. Phases 2AD–2AH have since been merged and have changed some findings:
+>
+> - The 22 require-time destructures of `isDbConnected` were removed in Phase
+>   2AD; every module now reads the seam at call time. There are now **zero**.
+> - Four more entities gained tables, repositories and services: Tasks (`030`),
+>   Cash closings (`031`), Suppliers (`032`), Support requests (`033`).
+> - There are now **33** migration files, **49** distinct tables and **64** test
+>   files on disk (**61** registered in `npm test`).
+>
+> For the current state, use [postgres-migration.md](postgres-migration.md) as
+> the index. The Phase 2AC findings below remain an accurate record of the state
+> at the time it was written, not of the repository today.
+
 Phase 2AC is an **audit**, not a migration. It does not remove MongoDB, does not
 change datasource selection and does not perform a cutover. Its purpose is to
 determine whether the application is actually ready for a future MongoDB →

@@ -22,16 +22,19 @@ migrated **one at a time** without a big-bang switchover.
 
 ## Current status
 
-**Migrations applied:** 29 files, `backend/src/db/migrations/001`–`029`. Phase 2AC
+**Migrations applied:** 33 files, `backend/src/db/migrations/001`–`033`. Phase 2AC
 renumbered `audit_logs` from `028` to `029`: Phase 2AA had already used the `028`
 prefix for `028_create_settings.sql`, so the two shared a number.
-**PostgreSQL tables created:** 45 distinct tables across those files
+**PostgreSQL tables created:** 49 distinct tables across those files
 (this count includes the Phase 1 `pg_health` probe table; `schema_migrations` is
 created by the runner itself, not by a migration file).
-**Test files:** 53 under `backend/test/`, all 53 registered in the `npm test`
+**Test files:** 64 under `backend/test/`, 61 of them registered in the `npm test`
 script. Most entities have a PostgreSQL-path test plus a fallback test (from
 Phase 2G onward); several cover cross-cutting concerns (config, migrate, health,
-repositories, and the audit-log pair).
+repositories, and the audit-log pair). Three files are on disk but not yet in the
+`npm test` list, so their coverage is not enforced: `postgres-accounting-transactions.test.js`
+(Phase 2AF), `postgres-cash-closings.test.js` and `postgres-cash-closings-controllers.test.js`
+(Phase 2AH).
 
 | Phase | Entity / area | Migration file(s) | Documentation |
 |---|---|---|---|
@@ -53,16 +56,25 @@ repositories, and the audit-log pair).
 | 2O | Damage notes | `016_create_damage_notes.sql` | [phase 2O](postgres-damage-notes-phase-2o.md) |
 | 2P | Assets (+ maintenance history) | `017_create_assets.sql` | [phase 2P](postgres-assets-phase-2p.md) |
 | 2Q | Repair requests, Repair tickets (+ spare parts) | `018_create_repairs.sql` | [phase 2Q](postgres-repairs-phase-2q.md) |
+| 2R | Rooms | `019_create_rooms.sql` | [phase 2R](postgres-rooms-phase-2r.md) |
 | 2S | Attendance | `020_create_attendance.sql` | [phase 2S](postgres-attendance-phase-2s.md) |
 | 2T | Leaves | `021_create_leaves.sql` | [phase 2T](postgres-leaves-phase-2t.md) |
 | 2U | Shifts | `022_create_shifts.sql` | [phase 2U](postgres-shifts-phase-2u.md) |
 | 2V | Payroll | `023_create_payroll_records.sql` | [phase 2V](postgres-payroll-phase-2v.md) |
+| 2W | Notifications | `024_create_notifications.sql` | summarised below |
+| 2X | Events | `025_create_events.sql` | summarised below |
+| 2Y | Poojas, Pooja material requirements | `026_create_poojas.sql` | summarised below |
 | 2Z | Prasadam (stock master) | `027_create_prasadams.sql` | [phase 2Z](postgres-prasadam-phase-2z.md) |
 | 2AA | Settings (`AttendanceSetting`, `PriestSetting`) | `028_create_settings.sql` | [phase 2AA](postgres-settings-phase-2aa.md) |
 | 2AB | Audit logs | `029_create_audit_logs.sql` (renumbered from `028` in Phase 2AC) | summarised below |
+| 2AH | Tasks | `030_create_tasks.sql` | summarised below |
+| 2AH | Cash closings | `031_create_cash_closings.sql` | summarised below |
+| 2AH | Suppliers | `032_create_suppliers.sql` | summarised below |
+| 2AH | Support requests | `033_create_support_requests.sql` | [phase 2AH](postgres-supportrequest-phase-2ah-implementation.md) |
 
-Phases 2A–2H and 2N were implemented without a dedicated document. Their scope
-is summarised in [Entities without a dedicated document](#entities-without-a-dedicated-document)
+Phases 2A–2H, 2N, 2W, 2X, 2Y and 2AH were implemented without a dedicated
+document. Their scope is summarised in
+[Entities without a dedicated document](#entities-without-a-dedicated-document)
 below; the migration SQL and repository files are the authoritative reference.
 
 ## Configuration
@@ -134,8 +146,8 @@ Controller  →  Service  →  ├─ Repository  →  PostgreSQL
 The service owns the selection. **Two different gates exist**, and they are not
 equivalent — this matters when reasoning about behaviour:
 
-**Gate A — Mongo-connectivity only** (Phases 2A–2F: users/employees, accounting,
-bills, donations, bookings, pooja bookings):
+**Gate A — Mongo-connectivity only** (Phases 2A–2F: users/employees, bills,
+donations, bookings, pooja bookings, plus the unused `userEmployeeService`):
 
 ```js
 const isConnected = () => isDbConnected(); // mongoose.connection.readyState === 1
@@ -145,8 +157,11 @@ PostgreSQL is used whenever MongoDB is connected. There is no separate
 PostgreSQL reachability check.
 
 **Gate B — Mongo connectivity *and* PostgreSQL reachability** (Phase 2G onward:
-prasadam orders, inventory items/batches/logs/consumption/requests, purchase
-orders, GRNs, damage notes, assets, repairs):
+accounting, prasadam orders, inventory
+items/batches/logs/consumption/requests, purchase orders, GRNs, damage notes,
+assets, repairs, rooms, attendance, leaves, shifts, payroll, notifications,
+events, poojas, settings, audit logs, tasks, cash closings, suppliers, support
+requests):
 
 ```js
 const usePostgres = async () => {
@@ -183,6 +198,11 @@ if (dbConfig.isDbConnected()) { /* PostgreSQL path */ }
 This is what makes datasource switching testable within a single process. The
 dynamically-selected datasource behaviour is covered by
 `backend/test/postgres-datasource-seam.test.js`.
+
+**Current state:** the require-time destructure no longer exists anywhere in
+`backend/src/` — the Phase 2AD seam work converted every module to read
+`dbConfig.isDbConnected()` at call time. Phase 2AC's audit counted 22 such
+modules; that count is now zero.
 
 **Deferred:** repository-level PostgreSQL readiness is intentionally *not*
 implemented. The service-level gate (`usePostgres()`) is the single authoritative
@@ -268,17 +288,64 @@ use Gate B (Mongo connectivity **and** PostgreSQL reachability).
 Repositories: `goodsReceivedNoteRepository.js`, `goodsReceivedNoteItemRepository.js`.
 Service: `goodsReceivedNoteService.js`.
 
+**2W — Notifications** (`024_create_notifications.sql`).
+`notifications` mirrors `Notification.js`, including `audienceId`/`audienceEmail`/
+`audienceRole`, the `read`/`viewed` flags, and the two compound indexes
+(`audienceEmail`, `createdAt`)/`(audienceRole, createdAt)`. The model's
+`post("save")` email hook is reproduced on the PostgreSQL path by calling the
+shared `notificationEmail.dispatchNotificationEmail`, so email dispatch is not
+Mongo-only. Repository: `notificationRepository.js`. Service:
+`notificationPersistenceService.js`.
+
+**2X — Events** (`025_create_events.sql`).
+`events` mirrors `Event.js` with its 4-value status enum CHECK. Repository:
+`eventRepository.js`. Service: `eventPersistenceService.js`. Statistics reads
+still aggregate MongoDB.
+
+**2Y — Poojas** (`026_create_poojas.sql`).
+Four tables: `poojas`, `pooja_required_materials`,
+`pooja_material_requirements`, `pooja_material_requirement_items`, covering both
+the `Pooja` and `PoojaMaterialRequirement` models. Repositories:
+`poojaRepository.js`, `poojaMaterialRequirementRepository.js`. Services:
+`poojaService.js`, `poojaMaterialRequirementService.js`.
+
+**2AH — Tasks** (`030_create_tasks.sql`).
+`tasks` mirrors `Task.js`, the heavily used MongoDB-only model behind priest
+duties, shift assignments and festival duties. Repository: `taskRepository.js`.
+Service: `taskService.js`.
+
+**2AH — Cash closings** (`031_create_cash_closings.sql`).
+`cash_closings` mirrors `CashClosing.js` (`status` is nullable with an enum
+CHECK, matching Mongoose's not-`required` `status`). Repository:
+`cashClosingRepository.js`. Service: `cashClosingService.js`. Controller-level
+tests exist (`postgres-cash-closings*.test.js`) but are not registered in
+`npm test`.
+
+**2AH — Suppliers** (`032_create_suppliers.sql`).
+`suppliers` mirrors `Supplier.js`. Repository: `supplierRepository.js`. Service:
+`supplierService.js`.
+
+**2AH — Support requests** (`033_create_support_requests.sql`).
+`support_requests` mirrors `SupportRequest.js` (10 columns, no FK, no unique
+email, nullable status). Repository: `supportRequestRepository.js`. Service:
+`supportRequestService.js`. See
+[phase 2AH implementation](postgres-supportrequest-phase-2ah-implementation.md).
+
 ## Planned next steps
 
-1. Migrate the remaining MongoDB entities: Attendance locations, Payroll,
-   Notifications, Events, Poojas, Prasadam, Audit Logs,
-   InventoryIssue, Suppliers, Recipes, Tasks (and the legacy ShiftAssignment
-   model, whose only consumer is the offline
-   `backend/scripts/migrateShiftAssignments.js` script), CashClosing,
-   SupportRequest, TransferRequest, Instructions, RestockHistory, and
-   PoojaMaterialRequirement.
+1. Migrate the entities that still have no PostgreSQL representation:
+   AttendanceLocation, Instruction, InventoryIssue, Recipe, RestockHistory,
+   ShiftAssignment (whose only consumer is the offline
+   `backend/scripts/migrateShiftAssignments.js` script), and TransferRequest.
+   Everything else on the original list — Payroll, Notifications, Events,
+   Poojas, Prasadam, Audit Logs, Suppliers, Tasks, CashClosing, SupportRequest,
+   PoojaMaterialRequirement — now has a table, repository and service.
 2. Backfill production data into the migrated tables.
-3. Cut over each entity to PostgreSQL as the source of truth.
+3. Cut over each entity to PostgreSQL as the source of truth. Most migrated
+   entities are still written through Mongoose because their service is not yet
+   reachable from a mounted route — see
+   [phase 2AC](postgres-final-audit-phase-2ac.md) for the per-domain cutover
+   matrix.
 4. Remove Mongoose once every entity has moved.
 
 Until an entity's own phase is complete and cut over, MongoDB remains the source
