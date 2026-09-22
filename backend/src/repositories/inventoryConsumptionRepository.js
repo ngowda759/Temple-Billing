@@ -5,6 +5,11 @@ const crypto = require("crypto");
 
 const newId = () => crypto.randomBytes(12).toString("hex");
 
+// Optional pooled client supplied by a service-level unit of work. When given,
+// the query joins the caller's PostgreSQL transaction instead of checking out
+// its own connection. Repositories never probe PostgreSQL themselves.
+const run = (sql, params, client) => (client ? client.query(sql, params) : query(sql, params));
+
 const assertId = (value, label) => {
   if (value === undefined || value === null || String(value).trim() === "") {
     throw new Error(`${label} is required`);
@@ -207,10 +212,10 @@ const buildInventoryConsumptionFilter = (filter = {}) => {
   return { where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", values };
 };
 
-const findById = async (id) => {
+const findById = async (id, client) => {
   if (!id) return null;
   if (!dbConfig.isDbConnected()) return InventoryConsumption.findById(String(id));
-  const { rows } = await query(`SELECT ${INVENTORY_CONSUMPTION_COLS.join(", ")} FROM inventory_consumptions WHERE id = $1 LIMIT 1`, [String(id)]);
+  const { rows } = await run(`SELECT ${INVENTORY_CONSUMPTION_COLS.join(", ")} FROM inventory_consumptions WHERE id = $1 LIMIT 1`, [String(id)], client);
   return toDoc(rows[0]);
 };
 
@@ -247,7 +252,7 @@ const findMany = async (options = {}) => {
  * (inventoryIssueController.completeUsage). The INSERT is a single atomic
  * statement — a failure cannot leave a partial row.
  */
-const create = async (data) => {
+const create = async (data, client) => {
   assertId(data.item, "item");
   assertText(data.itemName, "itemName");
   assertId(data.userId, "userId");
@@ -263,13 +268,14 @@ const create = async (data) => {
   const id = data.id || newId();
   const row = toRow(data, id);
 
-  await query(
+  await run(
     `INSERT INTO inventory_consumptions (${INVENTORY_CONSUMPTION_COLS.join(", ")})
      VALUES (${INVENTORY_CONSUMPTION_COLS.map((_, i) => `$${i + 1}`).join(", ")})
      ON CONFLICT (id) DO NOTHING`,
-    INVENTORY_CONSUMPTION_COLS.map((col) => row[col])
+    INVENTORY_CONSUMPTION_COLS.map((col) => row[col]),
+    client
   );
-  return findById(id);
+  return findById(id, client);
 };
 
 const updateById = async (id, updates = {}) => {

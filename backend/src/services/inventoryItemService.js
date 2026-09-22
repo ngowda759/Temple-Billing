@@ -127,14 +127,14 @@ const validate = (data) => {
   normalizeInventoryItem(data);
 };
 
-const create = async (data) => {
+const create = async (data, client) => {
   const normalized = normalizeInventoryItem(data);
-  if (await usePostgres()) return inventoryItemRepository.create(normalized);
+  if (await usePostgres()) return inventoryItemRepository.create(normalized, client);
   return InventoryItem.create(normalized);
 };
 
-const findById = async (id) =>
-  (await usePostgres()) ? inventoryItemRepository.findById(id) : InventoryItem.findById(id);
+const findById = async (id, client) =>
+  (await usePostgres()) ? inventoryItemRepository.findById(id, client) : InventoryItem.findById(id);
 
 const findOne = async (filter = {}) =>
   (await usePostgres()) ? inventoryItemRepository.findOne(filter) : InventoryItem.findOne(filter);
@@ -145,14 +145,14 @@ const findMany = async (options = {}) =>
     : InventoryItem.find(options.filter || {}).sort(options.sort || { name: 1 });
 
 // issueInventoryRequest resolves an item by exact name (case-insensitive).
-const findByName = async (name) => {
+const findByName = async (name, client) => {
   if (!name) return [];
-  if (await usePostgres()) return inventoryItemRepository.findByName(name);
+  if (await usePostgres()) return inventoryItemRepository.findByName(name, client);
   const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return InventoryItem.find({ name: { $regex: new RegExp(`^${escaped}$`, "i") } });
 };
 
-const updateById = async (id, updates) => {
+const updateById = async (id, updates, client) => {
   if (updates) {
     assertEnum(updates.type, ITEM_TYPES, "type");
     assertEnum(updates.unit, UNITS, "unit");
@@ -171,7 +171,7 @@ const updateById = async (id, updates) => {
     // truthy/falsy value and the real update path (inventoryItemController)
     // passes Boolean(isActive), so no enum-style rejection is applied here.
   }
-  if (await usePostgres()) return inventoryItemRepository.updateById(id, updates);
+  if (await usePostgres()) return inventoryItemRepository.updateById(id, updates, client);
   return InventoryItem.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
 };
 

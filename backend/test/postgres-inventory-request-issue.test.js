@@ -31,6 +31,7 @@ const resetAllTables = async (databaseUrl) => {
     await pool.query("DROP TABLE IF EXISTS goods_received_notes CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_batches CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_consumptions CASCADE");
+    await pool.query("DROP TABLE IF EXISTS inventory_issues CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_requests CASCADE");
     await pool.query("DROP TABLE IF EXISTS inventory_items CASCADE");
     await pool.query("DROP TABLE IF EXISTS prasadam_orders CASCADE");
@@ -113,55 +114,73 @@ const requestBase = (overrides = {}) => ({
   ...overrides,
 });
 
-// ─── PG-selected path: the issue operation is refused, never half-performed ──
-test("PG path: issuing a PostgreSQL-backed request returns 409 with an explicit limitation", async () => {
-  const request = await inventoryRequestRepository.create(requestBase({ status: "Approved" }));
-  assert.ok(request._id, "request persisted to PostgreSQL");
-
-  const res = createMockRes();
-  await inventoryRequestController.issueInventoryRequest({ params: { id: request._id } }, res);
-
-  assert.strictEqual(res.statusCode, 409);
-  assert.strictEqual(res.body.success, false);
-  assert.match(res.body.message, /not yet available for requests stored in PostgreSQL/);
-});
-
-test("PG path: the 409 refusal leaves the request status and stock untouched (no partial state)", async () => {
+// ─── PG-selected path: the issue operation is performed atomically on PG ────
+test("PG path: issuing a PostgreSQL-backed request writes request + item + issue in one PG transaction", async () => {
   const itemName = `IssueItem-${unique()}`;
   const inventoryItemRepository = require("../src/repositories/inventoryItemRepository");
+  const inventoryIssueService = require("../src/services/inventoryIssueService");
+
   const item = await inventoryItemRepository.create({
     name: itemName,
     unit: "Pack",
     availableStock: 50,
     issuedStock: 0,
   });
-
   const request = await inventoryRequestRepository.create(
     requestBase({ itemName, quantity: 5, status: "Approved" })
   );
 
   const res = createMockRes();
   await inventoryRequestController.issueInventoryRequest({ params: { id: request._id } }, res);
-  assert.strictEqual(res.statusCode, 409);
+
+  assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+  assert.strictEqual(res.body.success, true);
+
+  // Request advanced to Issued on PostgreSQL.
+  const rereadRequest = await inventoryRequestRepository.findById(request._id);
+  assert.strictEqual(rereadRequest.status, "Issued");
+  assert.ok(rereadRequest.issuedAt instanceof Date);
+
+  // Stock effects preserved exactly: availableStock -= qty, issuedStock += qty.
+  const rereadItem = await inventoryItemRepository.findById(item._id);
+  assert.strictEqual(Number(rereadItem.availableStock), 45);
+  assert.strictEqual(Number(rereadItem.issuedStock), 5);
+
+  // The InventoryIssue row exists in PostgreSQL with a Mongo-compatible id.
+  const issues = await inventoryIssueService.findMany({ filter: { userId: request.userId } });
+  assert.strictEqual(issues.length, 1);
+  assert.match(issues[0]._id, /^[0-9a-f]{24}$/);
+  assert.strictEqual(issues[0].item, item._id);
+  assert.strictEqual(Number(issues[0].issuedQuantity), 5);
+  assert.strictEqual(issues[0].status, "Active");
+});
+
+test("PG path: issuing a request whose item is not on PostgreSQL leaves no partial state", async () => {
+  const inventoryItemRepository = require("../src/repositories/inventoryItemRepository");
+
+  // No matching item exists, so the transaction must roll back entirely.
+  const request = await inventoryRequestRepository.create(
+    requestBase({ itemName: `Missing-${unique()}`, quantity: 5, status: "Approved" })
+  );
+
+  const res = createMockRes();
+  await inventoryRequestController.issueInventoryRequest({ params: { id: request._id } }, res);
+  assert.strictEqual(res.statusCode, 400);
 
   const rereadRequest = await inventoryRequestRepository.findById(request._id);
-  assert.strictEqual(rereadRequest.status, "Approved", "request status was not advanced to Issued");
+  assert.strictEqual(rereadRequest.status, "Approved", "request was not advanced");
 
-  const rereadItem = await inventoryItemRepository.findById(item._id);
-  assert.strictEqual(Number(rereadItem.availableStock), 50, "available stock was not decremented");
-  assert.strictEqual(Number(rereadItem.issuedStock), 0, "issued stock was not incremented");
-
-  // No inventory_issues table exists in PostgreSQL, so nothing could have been
-  // written there either — the operation is genuinely all-or-nothing.
   const pool = new Pool({ connectionString: TEST_DB_URL });
   try {
     const { rows } = await pool.query(
-      "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'inventory_issues') AS exists"
+      "SELECT COUNT(*)::int AS n FROM inventory_issues WHERE request_id = $1",
+      [request._id]
     );
-    assert.strictEqual(rows[0].exists, false, "inventory_issues still has no PostgreSQL table");
+    assert.strictEqual(rows[0].n, 0, "no issue row leaked from the rolled-back transaction");
   } finally {
     await pool.end();
   }
+  assert.ok(inventoryItemRepository, "repository loaded for parity");
 });
 
 // ─── Mongo fallback: the whole issue operation stays on one datasource ───────
@@ -282,22 +301,63 @@ test("fallback: issuing performs the full operation inside one Mongo transaction
   }
 });
 
-test("fallback: the issue handler never dual-writes across PostgreSQL and MongoDB", async () => {
-  const request = await inventoryRequestRepository.create(requestBase({ status: "Approved" }));
+test("PG path: issuing performs no MongoDB write (Mongo models are never touched)", async () => {
+  const itemName = `IssueItem-${unique()}`;
+  const inventoryItemRepository = require("../src/repositories/inventoryItemRepository");
+  const notificationPersistenceService = require("../src/services/notificationPersistenceService");
+  const fileNotificationStore = require("../src/store/fileNotificationStore");
 
-  const pool = new Pool({ connectionString: TEST_DB_URL });
-  const countRequests = async () => {
-    const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM inventory_requests");
-    return rows[0].n;
+  const InventoryRequestModel = require("../src/models/InventoryRequest");
+  const InventoryItemModel = require("../src/models/InventoryItem");
+  const InventoryIssueModel = require("../src/models/InventoryIssue");
+  const InventoryConsumptionModel = require("../src/models/InventoryConsumption");
+
+  const item = await inventoryItemRepository.create({
+    name: itemName,
+    unit: "Pack",
+    availableStock: 20,
+    issuedStock: 0,
+  });
+  const request = await inventoryRequestRepository.create(
+    requestBase({ itemName, quantity: 4, status: "Approved" })
+  );
+
+  // Any Mongo write during the PostgreSQL issuance path would call one of these
+  // and fail the test.
+  const originals = {
+    reqCreate: InventoryRequestModel.create,
+    itemCreate: InventoryItemModel.create,
+    issueCreate: InventoryIssueModel.create,
+    consCreate: InventoryConsumptionModel.create,
+    persistNotify: notificationPersistenceService.create,
+    fileNotify: fileNotificationStore.createNotification,
   };
+  const mongoWrites = [];
+  const guard = (label) => async () => {
+    mongoWrites.push(label);
+    throw new Error(`unexpected MongoDB write: ${label}`);
+  };
+  InventoryRequestModel.create = guard("InventoryRequest.create");
+  InventoryItemModel.create = guard("InventoryItem.create");
+  InventoryIssueModel.create = guard("InventoryIssue.create");
+  InventoryConsumptionModel.create = guard("InventoryConsumption.create");
+  notificationPersistenceService.create = async () => ({ _id: "pg-note" });
+  fileNotificationStore.createNotification = async () => ({ _id: "pg-note" });
 
   try {
-    const before = await countRequests();
     const res = createMockRes();
     await inventoryRequestController.issueInventoryRequest({ params: { id: request._id } }, res);
-    const after = await countRequests();
-    assert.strictEqual(after, before, "no extra PostgreSQL write on the refused issue path");
+    assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+    assert.deepStrictEqual(mongoWrites, [], "the PostgreSQL issuance wrote nothing to MongoDB");
+
+    const rereadItem = await inventoryItemRepository.findById(item._id);
+    assert.strictEqual(Number(rereadItem.availableStock), 16);
   } finally {
-    await pool.end();
+    InventoryRequestModel.create = originals.reqCreate;
+    InventoryItemModel.create = originals.itemCreate;
+    InventoryIssueModel.create = originals.issueCreate;
+    InventoryConsumptionModel.create = originals.consCreate;
+    notificationPersistenceService.create = originals.persistNotify;
+    fileNotificationStore.createNotification = originals.fileNotify;
   }
 });

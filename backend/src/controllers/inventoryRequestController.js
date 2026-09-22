@@ -1,18 +1,33 @@
 // Inventory Request persistence is additive (Phase 2L): the service selects
 // PostgreSQL when the Inventory Request path is explicitly used and PostgreSQL
-// is reachable, and otherwise falls back to the existing Mongoose model. The
-// standalone request endpoints (create/read/status) go through this seam; the
-// multi-entity issue flow stays on Mongo but refuses PostgreSQL-backed requests
-// it cannot yet issue atomically (see exports.issueInventoryRequest).
+// is reachable, and otherwise falls back to the existing Mongoose model.
+//
+// Phase 2AH migrates InventoryIssue, so the multi-entity issue flow now has a
+// complete PostgreSQL path: when the seam selects PostgreSQL, the request
+// transition, the InventoryItem stock movement and the InventoryIssue row are
+// written in ONE PostgreSQL transaction (see exports.issueInventoryRequest).
+// The MongoDB path keeps its existing single Mongo multi-document transaction.
 const inventoryRequestService = require("../services/inventoryRequestService");
-// Direct model import retained for exports.issueInventoryRequest, which keeps
-// its single Mongo multi-document transaction (InventoryItem +
-// InventoryIssue + InventoryRequest) — see the comment there.
+const inventoryIssueService = require("../services/inventoryIssueService");
+const inventoryItemService = require("../services/inventoryItemService");
+const { runInTransaction } = require("../config/postgres");
+// Direct model import retained for the MongoDB issue path, which keeps its
+// single Mongo multi-document transaction (InventoryItem + InventoryIssue +
+// InventoryRequest).
 const InventoryRequest = require("../models/InventoryRequest");
 const InventoryItem = require("../models/InventoryItem");
 const InventoryIssue = require("../models/InventoryIssue");
 const { createStaffNotification } = require("../utils/notificationService");
 const { seedDefaultItems } = require("./inventoryItemController");
+
+// A 4xx-worthy failure inside the PostgreSQL issuance unit of work. Throwing
+// rolls the transaction back, so a refused issue leaves no partial state.
+class IssueOperationError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
 
 const INVENTORY_REQUEST_STATUSES = ["Pending", "Approved", "Rejected", "Issued"];
 
@@ -260,52 +275,158 @@ exports.updateInventoryRequestStatus = async (req, res) => {
 // Issuing is an atomic cross-entity business operation: it loads the request,
 // decrements InventoryItem.availableStock / increments
 // InventoryItem.issuedStock, writes an InventoryIssue row and sets the
-// request's status to 'Issued', all inside ONE Mongo multi-document
-// transaction (mongoose.startSession).
+// request's status to 'Issued'.
 //
-// InventoryIssue is still Mongo-backed and PostgreSQL has no inventory_issues
-// table (Phase 2AC audit, "MongoDB-only models"), so a Mongo session and a
-// PostgreSQL pool cannot participate in one atomic unit. Splitting the flow
-// would leave partial state (stock decremented with no issue record, or vice
-// versa), which is worse than not supporting the operation on PostgreSQL.
-// Issuing therefore stays wholly on the Mongoose path and is the single
-// datasource for the whole operation; the standalone request endpoints
-// (create / list / summary / approve / reject) keep the Phase 2L seam.
+// Phase 2AH migrated InventoryIssue to PostgreSQL, so the operation now has a
+// complete path on EITHER datasource — but never both:
 //
-// Because create/approve can persist a request to PostgreSQL, this handler
-// refuses an operation it cannot perform correctly instead of failing with a
-// misleading "not found": when the seam selects PostgreSQL and the request
-// exists there, it returns 409 with the explicit limitation.
+//   * PostgreSQL selected (seam connected AND PG reachable): the request
+//     transition, the item stock movement and the InventoryIssue row are
+//     written inside ONE PostgreSQL transaction on a single pooled client. A
+//     failure anywhere rolls the whole issuance back, so the stock decrement and
+//     the issue record can never diverge.
+//   * PostgreSQL not selected: the existing Mongo multi-document transaction
+//     (mongoose.startSession) runs unchanged.
+//
+// Exactly one datasource participates in the operation.
 exports.issueInventoryRequest = async (req, res) => {
-  const mongoose = require("mongoose");
-  const { id } = req.params;
+  try {
+    const { id } = req.params;
+    const issuedBy = req.user ? req.user.name || req.user.id : "Admin";
+    const usePostgres = await inventoryRequestService.usePostgres();
 
-  if (await inventoryRequestService.usePostgres()) {
-    const postgresRequest = await inventoryRequestService.findById(id).catch(() => null);
-    if (postgresRequest) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "Issuing is not yet available for requests stored in PostgreSQL: the operation " +
-          "also writes an InventoryIssue record, which has no PostgreSQL table, so it " +
-          "cannot share one transaction. Use the MongoDB path to issue this request.",
-      });
+    if (usePostgres) {
+      return await issueInventoryRequestPostgres(req, res, { id, issuedBy });
     }
+    return await issueInventoryRequestMongo(req, res, { id, issuedBy });
+  } catch (error) {
+    if (error instanceof IssueOperationError) {
+      return res.status(error.status).json({ success: false, message: error.message });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * PostgreSQL issuance path — ONE transaction covering the request transition,
+ * the item stock movement and the InventoryIssue row.
+ */
+const issueInventoryRequestPostgres = async (req, res, { id, issuedBy }) => {
+  // The whole operation must be PG-native. If the item or issue store is not
+  // available on PostgreSQL, refuse rather than half-write across datasources.
+  const itemUsesPostgres = await inventoryItemService.usePostgres();
+  const issueUsesPostgres = await inventoryIssueService.usePostgres();
+  if (!itemUsesPostgres || !issueUsesPostgres) {
+    return res.status(500).json({
+      success: false,
+      message:
+        "Issuing requires a single datasource: the request, item and issue stores " +
+        "must all be available on PostgreSQL for this operation.",
+    });
   }
 
+  const result = await runInTransaction(async (client) => {
+    const request = await inventoryRequestService.findById(id, client);
+    if (!request) {
+      throw new IssueOperationError(400, "Inventory request not found");
+    }
+
+    if (request.status !== "Approved") {
+      throw new IssueOperationError(400, "Only approved requests can be issued.");
+    }
+
+    const parsedQty = parseFloat(request.quantity);
+    if (!Number.isFinite(parsedQty)) {
+      throw new IssueOperationError(400, `Invalid request quantity for ${request.itemName}.`);
+    }
+
+    const candidates = await inventoryItemService.findByName(request.itemName, client);
+    if (!candidates || candidates.length === 0) {
+      throw new IssueOperationError(400, "Inventory item not found.");
+    }
+
+    const inventoryItem = candidates.find((item) => Number(item.availableStock) >= parsedQty);
+    if (!inventoryItem) {
+      throw new IssueOperationError(
+        400,
+        `Insufficient inventory stock for ${request.itemName}. Needed: ${parsedQty}.`
+      );
+    }
+
+    const updatedItem = await inventoryItemService.updateById(
+      inventoryItem._id,
+      {
+        availableStock: Number(inventoryItem.availableStock) - parsedQty,
+        issuedStock: Number(inventoryItem.issuedStock || 0) + parsedQty,
+      },
+      client
+    );
+
+    const updatedRequest = await inventoryRequestService.updateById(
+      id,
+      { status: "Issued", issuedAt: new Date() },
+      client
+    );
+
+    const issue = await inventoryIssueService.create(
+      {
+        request: request._id,
+        item: inventoryItem._id,
+        itemName: inventoryItem.name,
+        userId: request.userId,
+        userName: request.userName,
+        role: request.role,
+        issuedQuantity: parsedQty,
+        unit: inventoryItem.unit,
+        issuedBy,
+        purpose: request.purpose || request.reason,
+      },
+      client
+    );
+
+    return { request: updatedRequest || request, issue, item: updatedItem || inventoryItem };
+  });
+
+  // Notifications are dispatched AFTER the transaction commits: they are
+  // side-channel and must not be able to roll back the issuance.
+  await createStaffNotification({
+    title: "📦 Items Issued",
+    message: `Your approved request for ${result.request.itemName} (${result.request.quantity} ${result.request.unit}) has been issued.`,
+    audienceId: result.request.userId,
+    category: "inventory",
+  });
+
+  if (Number(result.item.availableStock) <= Number(result.item.minimumStock)) {
+    await createStaffNotification({
+      title: "⚠️ Low Stock Alert",
+      message: `${result.item.name} stock is now at or below minimum level. Current: ${result.item.availableStock} ${result.item.unit}, Minimum: ${result.item.minimumStock} ${result.item.unit}. Please reorder soon.`,
+      audienceRole: "admin",
+      category: "inventory",
+    });
+  }
+
+  return res.json({ success: true, request: result.request, issue: result.issue });
+};
+
+/**
+ * MongoDB issuance path — the pre-Phase-2AH implementation, preserved exactly:
+ * ONE Mongo multi-document transaction, no PostgreSQL writes.
+ */
+const issueInventoryRequestMongo = async (req, res, { id, issuedBy }) => {
+  const mongoose = require("mongoose");
   const session = await mongoose.startSession();
-  
+
   try {
     let resultRequest, resultIssue;
     await session.withTransaction(async () => {
       const request = await InventoryRequest.findById(id).session(session);
       if (!request) throw new Error("Inventory request not found");
-      
+
       if (request.status !== "Approved") {
         throw new Error("Only approved requests can be issued.");
       }
 
-      const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const inventoryItems = await InventoryItem.find({
         name: { $regex: new RegExp(`^${escapeRegExp(request.itemName)}$`, "i") },
       }).session(session);
@@ -315,7 +436,7 @@ exports.issueInventoryRequest = async (req, res) => {
       }
 
       const parsedQty = parseFloat(request.quantity);
-      let inventoryItem = inventoryItems.find(item => item.availableStock >= parsedQty);
+      let inventoryItem = inventoryItems.find((item) => item.availableStock >= parsedQty);
 
       if (!inventoryItem) {
         throw new Error(`Insufficient inventory stock for ${request.itemName}. Needed: ${parsedQty}.`);
@@ -329,18 +450,23 @@ exports.issueInventoryRequest = async (req, res) => {
       request.issuedAt = new Date();
       await request.save({ session });
 
-      resultIssue = await InventoryIssue.create([{
-        request: request._id,
-        item: inventoryItem._id,
-        itemName: inventoryItem.name,
-        userId: request.userId,
-        userName: request.userName,
-        role: request.role,
-        issuedQuantity: parsedQty,
-        unit: inventoryItem.unit,
-        issuedBy: req.user ? req.user.name || req.user.id : "Admin",
-        purpose: request.purpose || request.reason,
-      }], { session });
+      resultIssue = await InventoryIssue.create(
+        [
+          {
+            request: request._id,
+            item: inventoryItem._id,
+            itemName: inventoryItem.name,
+            userId: request.userId,
+            userName: request.userName,
+            role: request.role,
+            issuedQuantity: parsedQty,
+            unit: inventoryItem.unit,
+            issuedBy,
+            purpose: request.purpose || request.reason,
+          },
+        ],
+        { session }
+      );
 
       await createStaffNotification({
         title: "📦 Items Issued",
@@ -357,15 +483,20 @@ exports.issueInventoryRequest = async (req, res) => {
           category: "inventory",
         });
       }
-      
+
       resultRequest = request;
     });
-    
+
     session.endSession();
     return res.json({ success: true, request: resultRequest, issue: resultIssue[0] });
   } catch (error) {
-    if (error.message.includes("not found") || error.message.includes("Insufficient") || error.message.includes("Only approved")) {
-       return res.status(400).json({ success: false, message: error.message });
+    session.endSession();
+    if (
+      error.message.includes("not found") ||
+      error.message.includes("Insufficient") ||
+      error.message.includes("Only approved")
+    ) {
+      return res.status(400).json({ success: false, message: error.message });
     }
     return res.status(500).json({ success: false, message: error.message });
   }

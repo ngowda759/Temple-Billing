@@ -5,6 +5,11 @@ const crypto = require("crypto");
 
 const newId = () => crypto.randomBytes(12).toString("hex");
 
+// Optional pooled client supplied by a service-level unit of work. When given,
+// the query joins the caller's PostgreSQL transaction instead of checking out
+// its own connection. Repositories never probe PostgreSQL themselves.
+const run = (sql, params, client) => (client ? client.query(sql, params) : query(sql, params));
+
 // Mirrors the enums declared in backend/src/models/InventoryRequest.js.
 const PRIORITIES = new Set(["High", "Medium", "Low"]);
 const REQUEST_STATUSES = new Set(["Pending", "Approved", "Rejected", "Issued"]);
@@ -262,10 +267,10 @@ const buildInventoryRequestFilter = (filter = {}) => {
   return { where: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", values };
 };
 
-const findById = async (id) => {
+const findById = async (id, client) => {
   if (!id) return null;
   if (!dbConfig.isDbConnected()) return InventoryRequest.findById(String(id));
-  const { rows } = await query(`SELECT ${INVENTORY_REQUEST_COLS.join(", ")} FROM inventory_requests WHERE id = $1 LIMIT 1`, [String(id)]);
+  const { rows } = await run(`SELECT ${INVENTORY_REQUEST_COLS.join(", ")} FROM inventory_requests WHERE id = $1 LIMIT 1`, [String(id)], client);
   return toDoc(rows[0]);
 };
 
@@ -302,7 +307,7 @@ const findMany = async (options = {}) => {
  * devoteeController/poojaBookingController system-generated requests). The
  * INSERT is a single atomic statement — a failure cannot leave a partial row.
  */
-const create = async (data) => {
+const create = async (data, client) => {
   assertId(data.userId, "userId");
   assertText(data.userName, "userName");
   assertText(data.itemName, "itemName");
@@ -323,16 +328,17 @@ const create = async (data) => {
   const id = data.id || newId();
   const row = toRow(data, id);
 
-  await query(
+  await run(
     `INSERT INTO inventory_requests (${INVENTORY_REQUEST_COLS.join(", ")})
      VALUES (${INVENTORY_REQUEST_COLS.map((_, i) => `$${i + 1}`).join(", ")})
      ON CONFLICT (id) DO NOTHING`,
-    INVENTORY_REQUEST_COLS.map((col) => row[col])
+    INVENTORY_REQUEST_COLS.map((col) => row[col]),
+    client
   );
-  return findById(id);
+  return findById(id, client);
 };
 
-const updateById = async (id, updates = {}) => {
+const updateById = async (id, updates = {}, client) => {
   if (!id) return null;
   if (updates.userId !== undefined && updates.userId !== null && String(updates.userId).trim() === "") {
     throw new Error("userId is required");
@@ -360,7 +366,7 @@ const updateById = async (id, updates = {}) => {
     return InventoryRequest.findByIdAndUpdate(String(id), updates, { new: true, runValidators: true });
   }
 
-  const existing = await findById(id);
+  const existing = await findById(id, client);
   if (!existing?._id) return null;
 
   const fields = [];
@@ -415,8 +421,8 @@ const updateById = async (id, updates = {}) => {
 
   fields.push(`updated_at = now()`);
   values.push(id);
-  await query(`UPDATE inventory_requests SET ${fields.join(", ")} WHERE id = $${values.length}`, values);
-  return findById(id);
+  await run(`UPDATE inventory_requests SET ${fields.join(", ")} WHERE id = $${values.length}`, values, client);
+  return findById(id, client);
 };
 
 const count = async (filter = {}) => {
