@@ -212,17 +212,18 @@ test("migration: applying twice is idempotent and creates no duplicate table", a
   assert.strictEqual(after[0].n, 1, "the migration is recorded exactly once");
 });
 
-test("migration: the chain 029→033 is continuous and prefix-unique", async () => {
+test("migration: the chain 029→034 is continuous and prefix-unique", async () => {
   const rows = await poolQuery("SELECT name FROM schema_migrations ORDER BY id");
   const names = rows.map((r) => r.name);
-  assert.deepStrictEqual(names.slice(-5), [
+  assert.deepStrictEqual(names.slice(-6), [
     "029_create_audit_logs.sql",
     "030_create_tasks.sql",
     "031_create_cash_closings.sql",
     "032_create_suppliers.sql",
     "033_create_support_requests.sql",
+    "034_create_inventory_issues.sql",
   ]);
-  assert.strictEqual(names.length, 33, "029–032 were not renumbered");
+  assert.strictEqual(names.length, 34, "029–033 were not renumbered");
 });
 
 // ─── Round trip ────────────────────────────────────────────────────────────

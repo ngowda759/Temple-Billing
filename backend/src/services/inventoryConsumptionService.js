@@ -104,14 +104,14 @@ const validate = (data) => {
   normalizeInventoryConsumption(data);
 };
 
-const create = async (data) => {
+const create = async (data, client) => {
   const normalized = normalizeInventoryConsumption(data);
-  if (await usePostgres()) return inventoryConsumptionRepository.create(normalized);
+  if (await usePostgres()) return inventoryConsumptionRepository.create(normalized, client);
   return InventoryConsumption.create(normalized);
 };
 
-const findById = async (id) =>
-  (await usePostgres()) ? inventoryConsumptionRepository.findById(id) : InventoryConsumption.findById(id);
+const findById = async (id, client) =>
+  (await usePostgres()) ? inventoryConsumptionRepository.findById(id, client) : InventoryConsumption.findById(id);
 
 const findOne = async (filter = {}) =>
   (await usePostgres()) ? inventoryConsumptionRepository.findOne(filter) : InventoryConsumption.findOne(filter);

@@ -135,14 +135,14 @@ const validate = (data) => {
   normalizeInventoryRequest(data);
 };
 
-const create = async (data) => {
+const create = async (data, client) => {
   const normalized = normalizeInventoryRequest(data);
-  if (await usePostgres()) return inventoryRequestRepository.create(normalized);
+  if (await usePostgres()) return inventoryRequestRepository.create(normalized, client);
   return InventoryRequest.create(normalized);
 };
 
-const findById = async (id) =>
-  (await usePostgres()) ? inventoryRequestRepository.findById(id) : InventoryRequest.findById(id);
+const findById = async (id, client) =>
+  (await usePostgres()) ? inventoryRequestRepository.findById(id, client) : InventoryRequest.findById(id);
 
 const findOne = async (filter = {}) =>
   (await usePostgres()) ? inventoryRequestRepository.findOne(filter) : InventoryRequest.findOne(filter);
@@ -152,7 +152,7 @@ const findMany = async (options = {}) =>
     ? inventoryRequestRepository.findMany(options)
     : InventoryRequest.find(options.filter || {}).sort(options.sort || { createdAt: -1 });
 
-const updateById = async (id, updates) => {
+const updateById = async (id, updates, client) => {
   if (updates) {
     if (updates.userId !== undefined && updates.userId !== null && String(updates.userId).trim() === "") {
       throw new Error("userId is required");
@@ -176,7 +176,7 @@ const updateById = async (id, updates) => {
     assertEnum(updates.priority, PRIORITIES, "priority");
     assertEnum(updates.status, REQUEST_STATUSES, "status");
   }
-  if (await usePostgres()) return inventoryRequestRepository.updateById(id, updates);
+  if (await usePostgres()) return inventoryRequestRepository.updateById(id, updates, client);
   return InventoryRequest.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
 };
 

@@ -5,6 +5,11 @@ const crypto = require("crypto");
 
 const newId = () => crypto.randomBytes(12).toString("hex");
 
+// Optional pooled client supplied by a service-level unit of work. When given,
+// the query joins the caller's PostgreSQL transaction instead of checking out
+// its own connection. Repositories never probe PostgreSQL themselves.
+const run = (sql, params, client) => (client ? client.query(sql, params) : query(sql, params));
+
 // Mirrors the enums + unit list declared in backend/src/models/InventoryItem.js.
 const ITEM_TYPES = new Set(["Raw Material", "Finished Good", "Asset", "Consumable", "Other"]);
 const INVENTORY_UNITS = [
@@ -330,10 +335,10 @@ const validateUpdates = (updates) => {
   }
 };
 
-const findById = async (id) => {
+const findById = async (id, client) => {
   if (!id) return null;
   if (!dbConfig.isDbConnected()) return InventoryItem.findById(String(id));
-  const { rows } = await query(`SELECT ${INVENTORY_ITEM_COLS.join(", ")} FROM inventory_items WHERE id = $1 LIMIT 1`, [String(id)]);
+  const { rows } = await run(`SELECT ${INVENTORY_ITEM_COLS.join(", ")} FROM inventory_items WHERE id = $1 LIMIT 1`, [String(id)], client);
   return toDoc(rows[0]);
 };
 
@@ -371,22 +376,23 @@ const findMany = async (options = {}) => {
  * rejects an existing name+category combination as a duplicate. The INSERT is
  * a single atomic statement; a failure cannot leave a partial row behind.
  */
-const create = async (data) => {
+const create = async (data, client) => {
   assertValidCreate(data);
   if (!dbConfig.isDbConnected()) return InventoryItem.create(data);
 
   const id = data.id || newId();
   const row = toRow(data, id);
-  await query(
+  await run(
     `INSERT INTO inventory_items (${INVENTORY_ITEM_COLS.join(", ")})
      VALUES (${INVENTORY_ITEM_COLS.map((_, i) => `$${i + 1}`).join(", ")})
      ON CONFLICT (id) DO NOTHING`,
-    INVENTORY_ITEM_COLS.map((col) => row[col])
+    INVENTORY_ITEM_COLS.map((col) => row[col]),
+    client
   );
-  return findById(id);
+  return findById(id, client);
 };
 
-const updateById = async (id, updates = {}) => {
+const updateById = async (id, updates = {}, client) => {
   if (!id) return null;
   if (updates.name !== undefined && (updates.name === null || String(updates.name).trim() === "")) {
     throw new Error("name is required");
@@ -397,7 +403,7 @@ const updateById = async (id, updates = {}) => {
     return InventoryItem.findByIdAndUpdate(String(id), updates, { new: true, runValidators: true });
   }
 
-  const existing = await findById(id);
+  const existing = await findById(id, client);
   if (!existing?._id) return null;
 
   const fields = [];
@@ -471,8 +477,8 @@ const updateById = async (id, updates = {}) => {
 
   fields.push(`updated_at = now()`);
   values.push(id);
-  await query(`UPDATE inventory_items SET ${fields.join(", ")} WHERE id = $${values.length}`, values);
-  return findById(id);
+  await run(`UPDATE inventory_items SET ${fields.join(", ")} WHERE id = $${values.length}`, values, client);
+  return findById(id, client);
 };
 
 const count = async (filter = {}) => {
@@ -492,12 +498,13 @@ const destroy = async (id) => {
 // issueInventoryRequest resolves an item by exact name, case-insensitive
 // ({ name: { $regex: '^name$', 'i' } }). PostgreSQL can use the
 // idx_inventory_items_name_lower index for lower(name).
-const findByName = async (name) => {
+const findByName = async (name, client) => {
   if (!name) return null;
   if (!dbConfig.isDbConnected()) return InventoryItem.findOne({ name: { $regex: new RegExp(`^${String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") } });
-  const { rows } = await query(
+  const { rows } = await run(
     `SELECT ${INVENTORY_ITEM_COLS.join(", ")} FROM inventory_items WHERE lower(name) = lower($1) ORDER BY name ASC, id ASC`,
-    [String(name).trim()]
+    [String(name).trim()],
+    client
   );
   return rows.map(toDoc);
 };
