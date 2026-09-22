@@ -27,7 +27,7 @@ The application minimizes manual paperwork, improves transparency in temple acco
 ### Backend
 - Node.js
 - Express 5
-- JWT (`jsonwebtoken`) authentication with bcrypt password hashing
+- JWT (`jsonwebtoken`) authentication with bcrypt password hashing (`bcryptjs`)
 - `razorpay` (online payments)
 - `nodemailer` (email notifications)
 - `pdfkit` (server-side receipt/document generation)
@@ -74,7 +74,13 @@ Devotee Details:
 - Booking history and donation history
 
 Backend routes: `devoteeRoutes.js` (mounted at both `/api/devotee` and `/api/devotees`)
+Backend models: `User.js`
 Frontend pages: `frontend/src/pages/devotee/`
+
+Devotee routes also expose support requests (`POST/GET /api/devotee/support`,
+`PATCH /api/devotee/support/:id`, `PATCH /api/devotee/support/:id/read`) backed
+by the `SupportRequest` model. These four routes carry **no** auth middleware —
+they are public, which is the pre-existing state.
 
 ### 3. Pooja Booking Module
 Manages pooja and seva booking operations.
@@ -161,7 +167,11 @@ Functions:
 - Track festival donations and registrations
 - Generate event reports
 
-Backend routes: `eventRoutes.js`
+Backend routes: `eventRoutes.js` — note this router is **not mounted** on any
+`/api/*` prefix in `backend/src/app.js`. The live festival/event endpoints are
+the `eventController` handlers exposed on the devotee router
+(`/api/devotee/events*`, see module 2); `/api/devotee/events/overview` serves the
+festival overview.
 Backend models: `Event.js`
 
 ### 9. Notification Module
@@ -208,7 +218,7 @@ Functions:
 
 Features:
 - JWT authentication (`Authorization: Bearer <token>`, 7-day expiry)
-- bcrypt password hashing (10 rounds)
+- bcrypt password hashing (10 rounds, via `bcryptjs`)
 - Protected APIs via `authenticate` / `authorizeRoles` middleware
 - Email-verification-link registration flow (15-minute token)
 - Account status gating (`accountEnabled`, employee access status)
@@ -220,7 +230,26 @@ role strings; keep this in mind when auditing role checks.
 Backend routes: `authRoutes.js`
 Backend middleware: `backend/src/middleware/authMiddleware.js`
 
-### 12. Receipt & Document Management Module
+### 12. Room Allotment Module
+Manages guest-room inventory and devotee/staff room allotment.
+
+Functions:
+- Manage rooms (number, type, block, floor, price, capacity, bed type, amenities)
+- Allot and release rooms, recording the stay as a `Booking`
+- Automatic check-in when a reserved room's check-in time is reached
+- Automatic check-out and release when a stay's check-out time passes
+
+Features:
+- Per-room status tracking (`Available` / `Occupied` and friends, see
+  `roomService.STATUSES`)
+- Cron job in `backend/src/app.js` sweeping check-ins and check-outs every 60 seconds
+- Admin UI at `frontend/src/pages/admin/RoomAllotment.jsx`
+
+Backend routes: `roomRoutes.js` (mounted at `/api/rooms`)
+Backend models: `Room.js`
+Frontend pages: `frontend/src/pages/admin/RoomAllotment.jsx`
+
+### 13. Receipt & Document Management Module
 Manages temple receipts and financial documents.
 
 Functions:
@@ -240,7 +269,7 @@ The backend runs on MongoDB today and is migrating to PostgreSQL **entity by ent
 additively**, so that an unavailable PostgreSQL never takes the app down.
 
 - Phase 1 established the connection pool, migration runner, and `/api/health` probe.
-- Phases 2A–2U have added PostgreSQL tables, repositories, and services for many entities.
+- Phases 2A–2AH have added PostgreSQL tables, repositories, and services for many entities.
 - Each migrated entity keeps its Mongoose model as a **fallback**; there are **no dual writes**.
 
 Start here: [`docs/postgres-migration.md`](docs/postgres-migration.md) — the migration
@@ -303,10 +332,19 @@ Documented here so contributors do not assume capabilities that do not exist yet
 - **Email credentials are committed in source.** `communicationService.js` contains a
   hard-coded fallback Gmail address and app password. These should be removed and read
   from the environment only.
-- Several API base URLs are hard-coded to `http://localhost:5000` in `frontend/src/services/`
-  and in notification email templates rather than using an environment variable.
-- Migration phases 2A–2H and 2N do not have dedicated `docs/` files; they are summarised
-  in the migration index.
+- Several API base URLs are hard-coded to `http://localhost:5000` in
+  `frontend/src/services/` rather than using an environment variable. The same
+  hard-coded host also appears in backend email templates
+  (`backend/src/utils/notificationEmail.js`, `backend/src/utils/notificationService.js`)
+  and in the registration verification link built in
+  `backend/src/controllers/authController.js`.
+- The `eventRoutes.js` router is not mounted in `backend/src/app.js`; the live
+  festival/event endpoints are the devotee-router handlers.
+- Three PostgreSQL test files are not registered in the `npm test` script, so
+  their coverage is not enforced: `postgres-accounting-transactions.test.js`,
+  `postgres-cash-closings.test.js`, `postgres-cash-closings-controllers.test.js`.
+- Migration phases 2A–2H, 2N, 2W, 2X, 2Y and 2AH do not have dedicated `docs/`
+  files; they are summarised in the migration index.
 
 ## Future Enhancements
 - Mobile application integration

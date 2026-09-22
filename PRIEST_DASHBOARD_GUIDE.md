@@ -50,9 +50,11 @@ Apply Leave, Notifications, Profile, Logout.
 
 Additional sections reachable by route/dashboard links but **not** listed in the
 sidebar (see the "Hidden routes" branch in `PriestLayout.findActiveItem`):
-**Seva Schedule**, **Completed Services**, **Special Duties**, **Festival Duties**,
-and **Settings**. `PriestLayout` still resolves their active sidebar item from
-`location.pathname`.
+**Assigned Poojas**, **Seva Schedule**, **Completed Services**, **Special
+Duties**, and **Festival Duties**. `PriestLayout` still resolves their active
+sidebar item from `location.pathname`. `/priest/settings` is a route but has no
+dedicated sidebar or hidden-route name — `findActiveItem` falls back to
+"Dashboard" for it.
 
 ## File structure
 
@@ -194,6 +196,10 @@ Defined in `frontend/src/App.jsx`, all guarded by
 `/priest/festival-duties`, `/priest/notifications`, `/priest/profile`,
 `/priest/settings`, `/priest/my-duties`, `/priest/transfer-requests`,
 `/priest/inventory-requests`.
+Every `/priest/*` path renders the same `PriestDashboard` under a
+`priest`-only `ProtectedRoute`. `findActiveItem` also recognises
+`/priest/assigned-poojas` as "Assigned Poojas", but that path has **no** route
+declared in `App.jsx`.
 
 ## Setup
 
@@ -229,7 +235,7 @@ useEffect(() => {
 }, []);
 ```
 
-`priestService.js` exposes roughly 40 functions covering the endpoints above
+`priestService.js` exposes 32 functions covering the endpoints above
 (`getPriestDashboard`, `getPriestTodaySchedule`, `getMyDuties`, `startMyDuty`,
 `requestTransfer`, `getSevaSchedule`, `getSpecialDuties`, `getFestivalDuties`,
 `getProfile`, `updateProfile`, `getSettings`, `updateSettings`, and so on).
