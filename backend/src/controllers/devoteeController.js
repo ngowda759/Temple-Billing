@@ -8,8 +8,8 @@ const notificationPersistenceService = require("../services/notificationPersiste
 // the Event path is used and PostgreSQL is reachable, and otherwise falls
 // back to the existing Mongoose model.
 const eventPersistenceService = require("../services/eventPersistenceService");
-// Support Request persistence is additive: the shared service selects PostgreSQL
-// when the Support Request path is used and PostgreSQL is reachable, and
+// Support request persistence is additive: the shared service selects PostgreSQL
+// when the SupportRequest path is used and PostgreSQL is reachable, and
 // otherwise falls back to the existing Mongoose model.
 const supportRequestService = require("../services/supportRequestService");
 const User = require("../models/User");
@@ -1413,21 +1413,18 @@ const replySupportRequest = async (req, res) => {
       return res.status(404).json({ error: "Support request not found." });
     }
 
-    const replyText = String(reply).trim();
-    const nextStatus =
-      status && ["Open", "In Progress", "Closed"].includes(status)
-        ? status
-        : "Closed";
-
     const updated = await supportRequestService.updateById(id, {
-      reply: replyText,
-      status: nextStatus,
+      reply: String(reply).trim(),
+      status: status && ["Open", "In Progress", "Closed"].includes(status) ? status : "Closed",
     });
+    if (!updated) {
+      return res.status(404).json({ error: "Support request not found." });
+    }
 
     await notificationPersistenceService.create({
       title: "Feedback Response",
-      message: `Your feedback on '${supportRequest.subject}' has been replied to.`,
-      audienceEmail: supportRequest.email,
+      message: `Your feedback on '${updated.subject}' has been replied to.`,
+      audienceEmail: updated.email,
     });
 
     return res.status(200).json({ request: updated });
@@ -2130,7 +2127,7 @@ const markNotificationAsRead = async (req, res) => {
 const markSupportRequestAsRead = async (req, res) => {
   try {
     const { id } = req.params;
-    const supportRequest = await supportRequestService.updateById(id, { read: true });
+    const supportRequest = await supportRequestService.markRead(id);
     
     if (!supportRequest) {
       return res.status(404).json({ error: "Support request not found." });
